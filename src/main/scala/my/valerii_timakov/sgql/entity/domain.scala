@@ -3,6 +3,26 @@ package my.valerii_timakov.sgql.entity
 
 import java.time.{LocalDate, LocalDateTime, LocalTime}
 
+
+case class Entity(id: EntityId, value: EntityFieldType)
+
+type EntityDefinition = EntityIdTypeDefinition | EntityType
+case class EntityType(
+                         name: String,
+                         definition: EntityDefinition, 
+                         valueType: EntityFieldTypeDefinition, 
+                         isAbstract: Boolean
+                     ):
+    def idType: EntityIdTypeDefinition = definition match 
+        case parentType: EntityType => parentType.idType
+        case idType: EntityIdTypeDefinition => idType        
+    def parentType: EntityType = definition match 
+        case parentType: EntityType => parentType
+        case _: EntityIdTypeDefinition => throw new IllegalStateException("Entity has no a parent type!")        
+    def isNested: Boolean = definition match 
+        case _: EntityType => true
+        case _: EntityIdTypeDefinition => false
+
 sealed trait EntityId {
     def serialize: String
 }
@@ -42,28 +62,6 @@ case object UUIDIdTypeDefinition extends EntityIdTypeDefinition {
     protected override def parseIner(value: String): EntityId = UUIDId(java.util.UUID.fromString(value))
 }
 
-case class EntityType(name: String, idType: EntityIdTypeDefinition, valueType: EntityFieldTypeDefinition)
-case class Entity(id: EntityId, value: EntityFieldType)
-
-sealed trait GetFieldsDescriptor
-case class ObjectGetFieldsDescriptor(fields: Map[String, GetFieldsDescriptor])
-case class ListGetFieldsDescriptor(fields: GetFieldsDescriptor, limit: Int, offset: Int)
-case object AllGetFieldsDescriptor extends GetFieldsDescriptor
-
-sealed trait SearchCondition
-final case class EqSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
-final case class NeSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
-final case class GtSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
-final case class GeSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
-final case class LtSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
-final case class LeSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
-final case class BetweenSearchCondition(fieldName: String, from: EntityFieldType, to: EntityFieldType) extends SearchCondition
-final case class LikeSearchCondition(fieldName: String, value: String) extends SearchCondition
-final case class InSearchCondition[T <: EntityFieldType](fieldName: String, value: List[T]) extends SearchCondition
-final case class AndSearchCondition(conditions: List[SearchCondition]) extends SearchCondition
-final case class OrSearchCondition(conditions: List[SearchCondition]) extends SearchCondition
-final case class NotSearchCondition(condition: SearchCondition) extends SearchCondition
-
 sealed trait EntityFieldType
 sealed class PrimitiveFieldType extends EntityFieldType
 final case class StringType(value: String) extends PrimitiveFieldType
@@ -91,5 +89,24 @@ case object DateTypeDefinition extends PrimitiveFieldTypeDefinition
 case object DateTimeTypeDefinition extends PrimitiveFieldTypeDefinition
 case object TimeTypeDefinition extends PrimitiveFieldTypeDefinition
 case object BinaryTypeDefinition extends PrimitiveFieldTypeDefinition
-final case class ArrayTypeDefinition(elementType: EntityFieldTypeDefinition) extends EntityFieldTypeDefinition
-final case class ObjectTypeDefinition(value: Map[String, EntityFieldTypeDefinition]) extends EntityFieldTypeDefinition
+final case class ArrayTypeDefinition(elementType: Set[EntityFieldTypeDefinition]) extends EntityFieldTypeDefinition
+final case class ObjectTypeDefinition(value: Map[String, EntityType]) extends EntityFieldTypeDefinition
+
+sealed trait GetFieldsDescriptor
+case class ObjectGetFieldsDescriptor(fields: Map[String, GetFieldsDescriptor])
+case class ListGetFieldsDescriptor(fields: GetFieldsDescriptor, limit: Int, offset: Int)
+case object AllGetFieldsDescriptor extends GetFieldsDescriptor
+
+sealed trait SearchCondition
+final case class EqSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
+final case class NeSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
+final case class GtSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
+final case class GeSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
+final case class LtSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
+final case class LeSearchCondition(fieldName: String, value: EntityFieldType) extends SearchCondition
+final case class BetweenSearchCondition(fieldName: String, from: EntityFieldType, to: EntityFieldType) extends SearchCondition
+final case class LikeSearchCondition(fieldName: String, value: String) extends SearchCondition
+final case class InSearchCondition[T <: EntityFieldType](fieldName: String, value: List[T]) extends SearchCondition
+final case class AndSearchCondition(conditions: List[SearchCondition]) extends SearchCondition
+final case class OrSearchCondition(conditions: List[SearchCondition]) extends SearchCondition
+final case class NotSearchCondition(condition: SearchCondition) extends SearchCondition

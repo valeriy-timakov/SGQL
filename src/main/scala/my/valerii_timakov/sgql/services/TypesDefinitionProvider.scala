@@ -11,7 +11,7 @@ trait TypesDefinitionProvider:
     def parseSearchCondition(condition: Option[String], entityType: EntityType): Try[Either[SearchConditionParseError, SearchCondition]]
 
 class TypesDefinitionProviderImpl extends TypesDefinitionProvider:
-    def getType(name: String): Try[Option[EntityType]] = Success(Some(EntityType(name, IntIdTypeDefinition, StringTypeDefinition)))
-    def getAllTypes: Try[Seq[EntityType]] = Success(Seq(EntityType("TestType", IntIdTypeDefinition, StringTypeDefinition)))
+    def getType(name: String): Try[Option[EntityType]] = Success(Some(EntityType(name, IntIdTypeDefinition, StringTypeDefinition, false)))
+    def getAllTypes: Try[Seq[EntityType]] = Success(Seq(EntityType("TestType", IntIdTypeDefinition, StringTypeDefinition, false)))
     def parseGetFieldsDescriptor(descriptor: Option[String], entityType: EntityType): Try[Either[GetFieldsParseError, GetFieldsDescriptor]] = Success(Right(AllGetFieldsDescriptor))
     def parseSearchCondition(condition: Option[String], entityType: EntityType): Try[Either[SearchConditionParseError, SearchCondition]] = ???

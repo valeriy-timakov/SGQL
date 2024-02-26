@@ -154,8 +154,9 @@ implicit val entityFieldTypeDefinitionFormat: RootJsonFormat[EntityFieldTypeDefi
         case DateTimeTypeDefinition => JsString("DateTimeTypeDefinition")
         case TimeTypeDefinition => JsString("TimeTypeDefinition")
         case BinaryTypeDefinition => JsString("BinaryTypeDefinition")
-        case ArrayTypeDefinition(elementsType) => JsArray(write(elementsType))
-        case ObjectTypeDefinition(fieldsTypes) => JsObject(fieldsTypes.map((fieldName, fieldType) => fieldName -> write(fieldType)))
+        case ArrayTypeDefinition(elementsType) => JsArray(elementsType.map(write).toVector)
+        case ObjectTypeDefinition(fieldsTypes) => JsObject(fieldsTypes.map((fieldName, fieldType) => fieldName -> fieldType.toJson))
+            
     override def read(json: JsValue): EntityFieldTypeDefinition = json match 
         case JsString(value) => value match
             case "StringTypeDefinition" => StringTypeDefinition
@@ -169,33 +170,37 @@ implicit val entityFieldTypeDefinitionFormat: RootJsonFormat[EntityFieldTypeDefi
             case "TimeTypeDefinition" => TimeTypeDefinition
             case "BinaryTypeDefinition" => BinaryTypeDefinition
             case _ => deserializationError("EntityFieldTypeDefinition expected")
-        case JsArray(elements) => 
-            if (elements.size == 1) 
-                ArrayTypeDefinition(read(elements(0)))
-            else 
-                deserializationError("ArrayTypeDefinition expected") 
+        case JsArray(elements) => ArrayTypeDefinition(elements.map(read).toSet)
         case JsObject(fields) =>
-            ObjectTypeDefinition(fields.map((fieldName, fieldType) => fieldName -> read(fieldType)))
+            ObjectTypeDefinition(fields.map((fieldName, fieldType) => fieldName -> fieldType.convertTo[EntityType]))
         case _ => deserializationError("EntityFieldTypeDefinition expected")
 
 
 implicit val entityTypeFormat: RootJsonFormat[EntityType] = new RootJsonFormat[EntityType]:    
     override def write(obj: EntityType): JsValue = JsObject(
         "name" -> JsString(obj.name),
-        "idType" -> obj.idType.toJson,
-        "valueType" -> obj.valueType.toJson
+        if obj.isNested then "parentType" -> obj.parentType.toJson else "idType" -> obj.idType.toJson,
+        "valueType" -> obj.valueType.toJson, 
+        "isAbstract" -> JsBoolean(obj.isAbstract), 
     )    
-    override def read(json: JsValue): EntityType = json.asJsObject.getFields("name", "idType", "fields") match 
-        case Seq(JsString(name), idType, fieldsType) => 
-            EntityType(name, idType.convertTo[EntityIdTypeDefinition], fieldsType.convertTo[EntityFieldTypeDefinition])
-        case _ => deserializationError("EntityType expected")
+    override def read(json: JsValue): EntityType = 
+        val obj = json.asJsObject
+        obj.getFields("name", "fields", "isAbstract") match 
+            case Seq(JsString(name), fieldsType, JsBoolean(isAbstract)) => 
+                val definition = obj.fields.get("parentType")
+                    .map(_.convertTo[EntityType])
+                    .orElse(obj.fields.get("idType")
+                        .map(_.convertTo[EntityIdTypeDefinition]))
+                    .getOrElse(deserializationError("EntityDefinition(idType or parentType) expected!"))
+                EntityType(name, definition, fieldsType.convertTo[EntityFieldTypeDefinition], isAbstract)
+            case _ => deserializationError("EntityType expected!")
 
 
 implicit val entityTypeListFormat: RootJsonFormat[Seq[EntityType]] = new RootJsonFormat[Seq[EntityType]]:
     def write(obj: Seq[EntityType]): JsValue = JsArray(obj.map(_.toJson).toVector)
     def read(json: JsValue): Seq[EntityType] = json match
         case JsArray(array) => array.map(_.convertTo[EntityType]).toList
-        case _ => deserializationError("List[Entity] expected")
+        case _ => deserializationError("List[Entity] expected!")
 
 
 //implicit val entityTypeFormat: RootJsonFormat[entity.EntityType] = jsonFormat3(entity.EntityType.apply)
