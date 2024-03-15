@@ -1,45 +1,54 @@
 package my.valerii_timakov.sgql.entity
 
 
+import akka.parboiled2.util.Base64
+import my.valerii_timakov.sgql.exceptions.TypeReinitializationException
+
 import java.time.{LocalDate, LocalDateTime, LocalTime}
+import java.util.UUID
 
 
 case class Entity(id: EntityId, value: EntityFieldType)
 
-type EntityDefinition = EntityIdTypeDefinition | EntityType
+
+//sealed trait EntityTypeHolder
+sealed trait AbstractEntityType: //extends EntityTypeHolder:
+    def valueType: EntityFieldTypeDefinition     
+sealed trait AbstractNamedEntityType extends AbstractEntityType:
+    def name: String
 case class EntityType(
-                         name: String,
-                         definition: EntityDefinition, 
-                         valueType: EntityFieldTypeDefinition, 
-                         isAbstract: Boolean
-                     ):
-    def idType: EntityIdTypeDefinition = definition match 
-        case parentType: EntityType => parentType.idType
-        case idType: EntityIdTypeDefinition => idType        
-    def parentType: EntityType = definition match 
-        case parentType: EntityType => parentType
-        case _: EntityIdTypeDefinition => throw new IllegalStateException("Entity has no a parent type!")        
-    def isNested: Boolean = definition match 
-        case _: EntityType => true
-        case _: EntityIdTypeDefinition => false
-
-sealed trait EntityId {
+    name: String,
+    idType: EntityIdTypeDefinition,
+    valueType: EntityFieldTypeDefinition,
+) extends AbstractNamedEntityType
+trait NamedEntitySuperType extends AbstractNamedEntityType:
+    def name: String
+    def valueType: EntityFieldTypeDefinition
+case class PrimitiveEntitySuperType(
+    name: String,
+    valueType: PrimitiveFieldTypeDefinition,
+) extends NamedEntitySuperType
+case class ArrayEntitySuperType(
+    name: String,
+    valueType: ArrayTypeDefinition,
+) extends NamedEntitySuperType
+case class ObjectEntitySuperType(
+    name: String,
+    valueType: ObjectTypeDefinition,
+) extends NamedEntitySuperType
+case class SimpleEntityType(valueType: EntityFieldTypeDefinition) extends AbstractEntityType
+sealed trait EntityId:
     def serialize: String
-}
-final case class IntId(value: Int) extends EntityId {
+final case class IntId(value: Int) extends EntityId:
     override def serialize: String = value.toString
-}
-final case class LongId(value: Long) extends EntityId {
+final case class LongId(value: Long) extends EntityId:
     override def serialize: String = value.toString
-}
-final case class StringId(value: String) extends EntityId {
+final case class StringId(value: String) extends EntityId:
     override def serialize: String = value
-}
-final case class UUIDId(value: java.util.UUID) extends EntityId {
+final case class UUIDId(value: java.util.UUID) extends EntityId:
     override def serialize: String = value.toString
-}
 
-sealed trait EntityIdTypeDefinition {
+sealed trait EntityIdTypeDefinition(val name: String):
     def parse(value: String): Either[IdParseError, EntityId] = {
         try {
             Right(parseIner(value))
@@ -48,22 +57,26 @@ sealed trait EntityIdTypeDefinition {
         }
     }
     protected def parseIner(value: String): EntityId
-}
-case object IntIdTypeDefinition extends EntityIdTypeDefinition {
+    
+case object IntIdTypeDefinition extends EntityIdTypeDefinition("Integer"):
     protected override def parseIner(value: String): EntityId = IntId(value.toInt)
-}
-case object LongIdTypeDefinition extends EntityIdTypeDefinition {
+case object LongIdTypeDefinition extends EntityIdTypeDefinition("Long"):
     protected override def parseIner(value: String): EntityId = LongId(value.toLong)
-}
-case object StringIdTypeDefinition extends EntityIdTypeDefinition {
+case object StringIdTypeDefinition extends EntityIdTypeDefinition("String"):
     protected override def parseIner(value: String): EntityId = StringId(value)
-}
-case object UUIDIdTypeDefinition extends EntityIdTypeDefinition {
+case object UUIDIdTypeDefinition extends EntityIdTypeDefinition("UUID"):
     protected override def parseIner(value: String): EntityId = UUIDId(java.util.UUID.fromString(value))
-}
 
-sealed trait EntityFieldType
-sealed class PrimitiveFieldType extends EntityFieldType
+
+val idTypesMap = Map(
+    IntIdTypeDefinition.name -> IntIdTypeDefinition,
+    LongIdTypeDefinition.name -> LongIdTypeDefinition,
+    StringIdTypeDefinition.name -> StringIdTypeDefinition,
+    UUIDIdTypeDefinition.name -> UUIDIdTypeDefinition,
+)
+
+sealed abstract class EntityFieldType
+sealed abstract class PrimitiveFieldType extends EntityFieldType
 final case class StringType(value: String) extends PrimitiveFieldType
 final case class IntType(value: Int) extends PrimitiveFieldType
 final case class LongType(value: Long) extends PrimitiveFieldType
@@ -73,24 +86,91 @@ final case class BooleanType(value: Boolean) extends PrimitiveFieldType
 final case class DateType(value: LocalDate) extends PrimitiveFieldType
 final case class DateTimeType(value: LocalTime) extends PrimitiveFieldType
 final case class TimeType(value: LocalDateTime) extends PrimitiveFieldType
+final case class UUIDType(value: UUID) extends PrimitiveFieldType
 final case class BinaryType(value: Array[Byte]) extends PrimitiveFieldType
 final case class ArrayType[T <: EntityFieldType](value: List[T]) extends EntityFieldType
 final case class ObjectType(value: Map[String, EntityFieldType]) extends EntityFieldType
 
-sealed trait EntityFieldTypeDefinition
-sealed class PrimitiveFieldTypeDefinition extends EntityFieldTypeDefinition
-case object StringTypeDefinition extends PrimitiveFieldTypeDefinition
-case object IntTypeDefinition extends PrimitiveFieldTypeDefinition
-case object LongTypeDefinition extends PrimitiveFieldTypeDefinition
-case object DoubleTypeDefinition extends PrimitiveFieldTypeDefinition
-case object FloatTypeDefinition extends PrimitiveFieldTypeDefinition
-case object BooleanTypeDefinition extends PrimitiveFieldTypeDefinition
-case object DateTypeDefinition extends PrimitiveFieldTypeDefinition
-case object DateTimeTypeDefinition extends PrimitiveFieldTypeDefinition
-case object TimeTypeDefinition extends PrimitiveFieldTypeDefinition
-case object BinaryTypeDefinition extends PrimitiveFieldTypeDefinition
-final case class ArrayTypeDefinition(elementType: Set[EntityFieldTypeDefinition]) extends EntityFieldTypeDefinition
-final case class ObjectTypeDefinition(value: Map[String, EntityType]) extends EntityFieldTypeDefinition
+val primitiveFieldTypesMap = Map(
+    StringTypeDefinition.name -> StringTypeDefinition,
+    LongIdTypeDefinition.name -> LongTypeDefinition,
+    IntTypeDefinition.name -> IntTypeDefinition,
+    DoubleTypeDefinition.name -> DoubleTypeDefinition,
+    FloatTypeDefinition.name -> FloatTypeDefinition,
+    BooleanTypeDefinition.name -> BooleanTypeDefinition,
+    DateTypeDefinition.name -> DateTypeDefinition,
+    DateTimeTypeDefinition.name -> DateTimeTypeDefinition,
+    TimeTypeDefinition.name -> TimeTypeDefinition,
+    UUIDTypeDefinition.name -> UUIDTypeDefinition,
+    BinaryTypeDefinition.name -> BinaryTypeDefinition
+)
+
+sealed abstract class EntityFieldTypeDefinition
+sealed abstract class PrimitiveFieldTypeDefinition extends EntityFieldTypeDefinition:
+    def parse(value: String): Either[IdParseError, EntityFieldType]
+final case class CustomPrimitiveTypeDefinition(parent: PrimitiveEntitySuperType) 
+extends PrimitiveFieldTypeDefinition:
+    def parse(value: String): Either[IdParseError, EntityFieldType] = parent.valueType.parse(value)
+sealed abstract case class RootPrimitiveTypeDefinition(name: String) extends PrimitiveFieldTypeDefinition:
+    def parse(value: String): Either[IdParseError, EntityFieldType] = {
+        try {
+            Right(parseIner(value))
+        } catch {
+            case _: Throwable => Left(new IdParseError(this.getClass.getSimpleName, value))
+        }
+    }
+    protected def parseIner(value: String): EntityFieldType
+object StringTypeDefinition extends RootPrimitiveTypeDefinition("String"):
+    protected override def parseIner(value: String): StringType = StringType(value)
+object IntTypeDefinition extends RootPrimitiveTypeDefinition("Integer"):
+    protected override def parseIner(value: String): IntType = IntType(value.toInt)
+object LongTypeDefinition extends RootPrimitiveTypeDefinition("Long"):
+    protected override def parseIner(value: String): LongType = LongType(value.toLong)
+object DoubleTypeDefinition extends RootPrimitiveTypeDefinition("Double"):
+    protected override def parseIner(value: String): DoubleType = DoubleType(value.toDouble)
+object FloatTypeDefinition extends RootPrimitiveTypeDefinition("Float"):
+    protected override def parseIner(value: String): FloatType = FloatType(value.toFloat)
+object BooleanTypeDefinition extends RootPrimitiveTypeDefinition("Boolean"):
+    protected override def parseIner(value: String): BooleanType = BooleanType(value.toBoolean)
+object DateTypeDefinition extends RootPrimitiveTypeDefinition("Date"):
+    protected override def parseIner(value: String): DateType = DateType(LocalDate.parse(value))
+object DateTimeTypeDefinition extends RootPrimitiveTypeDefinition("DateTime"):
+    protected override def parseIner(value: String): DateTimeType = DateTimeType(LocalTime.parse(value))
+object TimeTypeDefinition extends RootPrimitiveTypeDefinition("Time"):
+    protected override def parseIner(value: String): TimeType = TimeType(LocalDateTime.parse(value))
+object UUIDTypeDefinition extends RootPrimitiveTypeDefinition("UUID"):
+    protected override def parseIner(value: String): UUIDType = UUIDType(java.util.UUID.fromString(value))
+object BinaryTypeDefinition extends RootPrimitiveTypeDefinition("Binary"):
+    protected override def parseIner(value: String): BinaryType = BinaryType(Base64.rfc2045().decode(value))
+object ArrayTypeDefinition {
+    val name = "Array"
+}
+    
+final case class ArrayTypeDefinition(private var _elementTypes: Set[AbstractEntityType], parent: Option[ArrayEntitySuperType]) 
+extends EntityFieldTypeDefinition:
+    private var initiated = false
+    def elementTypes: Set[AbstractEntityType] = _elementTypes
+    def setChildren(elementTypesValues: Set[AbstractEntityType]): Unit =
+        if (initiated) throw new TypeReinitializationException
+        _elementTypes = elementTypesValues
+        initiated = true
+    lazy val allElementTypes: Set[AbstractEntityType] =
+        _elementTypes ++ parent.map(_.valueType.allElementTypes).getOrElse(Set.empty[AbstractEntityType])
+object ObjectTypeDefinition {
+    val name = "Object"
+}
+final case class ObjectTypeDefinition(
+    private var _fields: Map[String, AbstractEntityType],
+    parent: Option[ObjectEntitySuperType]
+) extends EntityFieldTypeDefinition:
+    private var initiated = false
+    def fields: Map[String, AbstractEntityType] = _fields
+    def setChildren(fieldsValues: Map[String, AbstractEntityType]): Unit =
+        if (initiated) throw new TypeReinitializationException
+        _fields = fieldsValues
+        initiated = true
+    lazy val allFields: Map[String, AbstractEntityType] = 
+        _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, AbstractEntityType])
 
 sealed trait GetFieldsDescriptor
 case class ObjectGetFieldsDescriptor(fields: Map[String, GetFieldsDescriptor])

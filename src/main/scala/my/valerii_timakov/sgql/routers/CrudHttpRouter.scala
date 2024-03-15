@@ -35,7 +35,7 @@ class CrudHttpRouter(
                             appActor ? (GetMessage(objectType, objectId, params.get("fields"), _))
                         onSuccess(result) {
                             case Left(error) =>
-                                complete(StatusCodes.BadRequest, messageSource.getMessage(error.mnemo, Language("en")))
+                                complete(StatusCodes.BadRequest, messageSource.getMessage(error.message, Language("en")))
                             case Right(Failure(exception)) =>
                                 complete(StatusCodes.InternalServerError, exception.getMessage)
                             case Right(Success(None)) =>
@@ -51,7 +51,7 @@ class CrudHttpRouter(
                                 appActor ? (UpdateMessage(objectType, objectId, requestEntity, _))
                             onSuccess(result) {
                                 case Left(error) =>
-                                    complete(StatusCodes.BadRequest, messageSource.getMessage(error.mnemo, Language("en")))
+                                    complete(StatusCodes.BadRequest, messageSource.getMessage(error.message, Language("en")))
                                 case Right(Failure(exception)) =>
                                     complete(StatusCodes.InternalServerError, exception.getMessage)
                                 case Right(Success(None)) =>
@@ -67,7 +67,7 @@ class CrudHttpRouter(
                                 appActor ? (DeleteMessage(objectType, objectId, _))
                             onSuccess(result) {
                                 case Left(error) =>
-                                    complete(StatusCodes.BadRequest, messageSource.getMessage(error.mnemo, Language("en")))
+                                    complete(StatusCodes.BadRequest, messageSource.getMessage(error.message, Language("en")))
                                 case Right(Failure(exception)) =>
                                     complete(StatusCodes.InternalServerError, exception.getMessage)
                                 case Right(Success(None)) =>
@@ -81,11 +81,11 @@ class CrudHttpRouter(
             path("search") {
                 get {
                     parameterMap { params =>
-                        val result: Future[Either[Error, Try[List[Entity]]]] =
+                        val result: Future[Either[Error, Try[Seq[Entity]]]] =
                             appActor ? (SearchMessage(objectType, params.get("search"), params.get("fields"), _))
                         onSuccess(result) {
                             case Left(error) =>
-                                complete(StatusCodes.BadRequest, messageSource.getMessage(error.mnemo, Language("en")))
+                                complete(StatusCodes.BadRequest, messageSource.getMessage(error.message, Language("en")))
                             case Right(Failure(exception)) =>
                                 complete(StatusCodes.InternalServerError, exception.getMessage)
                             case Right(Success(entities)) =>
@@ -101,7 +101,7 @@ class CrudHttpRouter(
                             appActor ? (CreateMessage(objectType, requestEntity, _))
                         onSuccess(result) {
                             case Left(error) =>
-                                complete(StatusCodes.BadRequest, messageSource.getMessage(error.mnemo, Language("en")))
+                                complete(StatusCodes.BadRequest, messageSource.getMessage(error.message, Language("en")))
                             case Right(Failure(exception)) =>
                                 complete(StatusCodes.InternalServerError, exception.getMessage)
                             case Right(Success(entity)) =>

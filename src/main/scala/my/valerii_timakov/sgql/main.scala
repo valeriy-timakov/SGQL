@@ -16,11 +16,10 @@ import scala.language.postfixOps
     lazy val conf: Config = ConfigFactory.load("application.config.yaml")
         .withFallback(ConfigFactory.load("default.application.config.conf"))
 
-    import com.softwaremill.macwire.*
-
-    lazy val crudRepository: CrudRepository = wire[CrudRepositoryImpl]
-    lazy val typesDefinitionProvider: TypesDefinitionProvider = wire[TypesDefinitionProviderImpl]
-    lazy val messageSource: MessageSource =  wire[MessageSourceImpl]
+    implicit lazy val typesDefinitionsLoader: TypesDefinitionsLoader = TypesDefinitionsLoader
+    lazy val typesDefinitionProvider: TypesDefinitionProvider = TypesDefinitionProvider.create
+    lazy val crudRepository: CrudRepository = CrudRepositoryImpl()
+    lazy val messageSource: MessageSource =  MessageSourceImpl()
 
 
     implicit val system: ActorSystem[MainActor.Message] = ActorSystem(MainActor(crudRepository, typesDefinitionProvider), "main-system")

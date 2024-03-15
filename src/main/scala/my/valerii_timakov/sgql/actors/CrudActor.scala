@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.actors
 
 import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import my.valerii_timakov.sgql.entity.{Entity, EntityFieldType, EntityId, EntityType, Error, GetFieldsDescriptor, SearchCondition, TypeNotFountError}
+import my.valerii_timakov.sgql.entity.{AbstractTypeError, Entity, EntityFieldType, EntityId, EntityType, Error, GetFieldsDescriptor, NamedEntitySuperType, SearchCondition, TypeNotFountError}
 import my.valerii_timakov.sgql.services.{CrudRepository, TypesDefinitionProvider}
 
 import scala.util.{Failure, Success, Try}
@@ -64,7 +64,9 @@ class CrudActor(
                 Right(Failure(ex))
             case Success(None) =>
                 Left(TypeNotFountError(entityTypeName))
-            case Success(Some(entityType)) =>
+            case Success(Some(_: NamedEntitySuperType)) =>
+                Left(AbstractTypeError(entityTypeName))
+            case Success(Some(entityType: EntityType)) =>
                 typeMapper(entityType)
                 
     private def parseId[Res](entityType: EntityType, idStr: String)
@@ -116,4 +118,4 @@ object CrudActor:
                                 replyTo: ActorRef[Either[Error, Try[Option[Entity]]]]) extends CrudMessage
 
     final case class SearchMessage(entityTypeName: String, searchQuery: Option[String], getFieldsQuery: Option[String], 
-                                 replyTo: ActorRef[Either[Error, Try[List[Entity]]]]) extends CrudMessage
+                                 replyTo: ActorRef[Either[Error, Try[Seq[Entity]]]]) extends CrudMessage

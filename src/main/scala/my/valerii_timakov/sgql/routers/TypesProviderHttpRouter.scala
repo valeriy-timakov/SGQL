@@ -9,7 +9,7 @@ import akka.http.scaladsl.server.{Directives, Route}
 import akka.util.Timeout
 import my.valerii_timakov.sgql.actors.TypesProviderActor
 import my.valerii_timakov.sgql.actors.TypesProviderActor.*
-import my.valerii_timakov.sgql.entity.EntityType
+import my.valerii_timakov.sgql.entity.{AbstractNamedEntityType, EntityType}
 import my.valerii_timakov.sgql.services.MessageSource
 
 import scala.concurrent.Future
@@ -27,10 +27,10 @@ class TypesProviderHttpRouter(
     implicit val timeout: Timeout = Timeout(5.seconds)
 
     val route: Route =
-        pathPrefix("types") { 
+        pathPrefix("type_definitions") { 
             path(Segment) { name =>
                 get {
-                    val result: Future[Try[Option[EntityType]]] =
+                    val result: Future[Try[Option[AbstractNamedEntityType]]] =
                         appActor ? (Get(name, _))
                     onSuccess(result) {
                         case Failure(exception) =>
@@ -44,7 +44,7 @@ class TypesProviderHttpRouter(
             } ~
             pathEnd {
                 get {
-                    val result: Future[Try[Seq[EntityType]]] =
+                    val result: Future[Try[Seq[AbstractNamedEntityType]]] =
                         appActor ? GetAll.apply
                     onSuccess(result) {
                         case Failure(exception) =>
