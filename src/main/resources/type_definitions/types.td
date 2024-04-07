@@ -3,7 +3,6 @@ i.valerii_timakov.home_finances {
     MyInt: Integer(Integer)
     users {
         MyArray: Array(UUID) [String]
-        MyArray2: (Long) [Date]
         User: Object(UUID) {
             userName: String
             firstName: String
@@ -16,9 +15,15 @@ i.valerii_timakov.home_finances {
         U3: U2 {
             vbn: MyInt
         }
+        inner {
+            sdf{
+                MyArray1: Array [String]
+            }
+            MyArray2: sdf.MyArray1(Long) [Date]
+        }
         U4: U3(Long) {
-            yhn: MyArray2,
-            acc: finances.Account,
+            yhn: inner.MyArray2,
+            acc: i.valerii_timakov.home_finances.finances.Account,
         }
     }
     finances {
@@ -26,7 +31,7 @@ i.valerii_timakov.home_finances {
             name: String,
             description: String,
             external: Boolean,
-            owner: users.User
+            owner: i.valerii_timakov.home_finances.users.User
         }
     }
 }

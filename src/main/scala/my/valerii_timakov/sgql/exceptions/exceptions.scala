@@ -10,3 +10,4 @@ class NotArrayAbstractTypeException(typeName: String) extends Exception(s"Type $
 class NotObjectAbstractTypeException(typeName: String) extends Exception(s"Type $typeName is not primitive!")
 class NoTypeFound(typeName: String) extends Exception(s"No type found for name $typeName!")
 class NoIdTypeFound(typeName: String) extends Exception(s"No ID type found for name $typeName!")
+class WrongTypeNameException(name: String) extends Exception(s"Wrong type name '$name'!")
