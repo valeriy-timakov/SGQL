@@ -47,9 +47,9 @@ object TypesDefinitionsParser extends RegexParsers with LazyLogging {
         mapParseResult(parseAll(packageContent, input))
 
     private def log[I](p: Parser[I], name: String): Parser[I] = Parser { in =>
-        logger.debug(s">$name input: ${in.source.toString} at ${in.offset} (${in.pos})${in.source.toString.substring(in.offset)}")
+        logger.debug(s">>>$name input: ${in.source.toString} at ${in.offset} (${in.pos})${in.source.toString.substring(in.offset)}")
         val r = p(in)
-        logger.debug(s"<$name result: ${r}")
+        logger.debug(s"<<<$name result: $r")
         r
     } /*^^ {
         case name => logger.debug(s"found ${name}: " + name)
@@ -81,7 +81,8 @@ object TypesDefinitionsParser extends RegexParsers with LazyLogging {
     private def primitiveType: Parser[PrimitiveTypeData] = log(typeName ~ typeRefName ~ opt(idType) ^^ {
         case name ~ typeName ~ idType => PrimitiveTypeData(name, idType, typeName)
     }, "primitiveType")
-    private def packageContent: Parser[RootPackageData] = log(rep(arrayType | objectType | primitiveType | packageItem) ^^ {
+    private def anyTypeItem: Parser[TypeData] = log(arrayType | objectType | primitiveType, "anyItem")
+    private def packageContent: Parser[RootPackageData] = log(rep(anyTypeItem | singleTypePackageItem | packageItem) ^^ {
         typesAndPackages =>
             var types = List[TypeData]()
             var packages = List[PackageData]()
@@ -94,13 +95,16 @@ object TypesDefinitionsParser extends RegexParsers with LazyLogging {
     private def packageItem: Parser[PackageData] = log((typeRefName <~ "{") ~ packageContent <~ "}" ^^ {
         case packageName ~ packageContent => packageContent.toNamed(packageName)
     }, "packageItem")
+    private def singleTypePackageItem: Parser[PackageData] = log(("""[\w.]+?(?=\.\w+:)""".r <~ ".") ~ anyTypeItem ^^ {
+        case packageName ~ typeData => PackageData(packageName, List(), List(typeData))
+    }, "singleTypePackageItem")
     
     private def mapParseResult(result: ParseResult[RootPackageData] ): Either[TypesDefinitionsParseError, RootPackageData] =
         result match
             case Success(result, _) => Right(result)
             case Failure(e, next) => Left(TypesDefinitionsParseError(
-                s"Failure: ${e} at ${next.pos.longString} line, position: ${next.pos.column}"))
+                s"Failure: $e at ${next.pos.longString} line, position: ${next.pos.column}"))
             case Error(e, next) => Left(TypesDefinitionsParseError(
-                s"Error:  ${e} at ${next.pos.longString} line, position: ${next.pos.column}"))
+                s"Error:  $e at ${next.pos.longString} line, position: ${next.pos.column}"))
 
 }

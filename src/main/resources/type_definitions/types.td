@@ -33,5 +33,6 @@ i.valerii_timakov.home_finances {
             external: Boolean,
             owner: i.valerii_timakov.home_finances.users.User
         }
+        some.inner.super.type1.HiddenAccount: Array(UUID) [String]
     }
 }
