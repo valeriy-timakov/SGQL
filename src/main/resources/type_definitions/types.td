@@ -2,11 +2,12 @@
 i.valerii_timakov.home_finances {
     MyInt: Integer(Integer)
     users {
-        MyArray: Array(UUID) [String]
+        MyArray: (UUID) [String]
         User: Object(UUID) {
             userName: String
             firstName: String
             lastName: String
+            accounts: Array [finances.Account+owner]
         }
         U2: {
             abc: String
@@ -14,6 +15,8 @@ i.valerii_timakov.home_finances {
         }
         U3: U2 {
             vbn: MyInt
+            vbn2: MyInt
+            vbn3: MyInt
         }
         inner {
             sdf{

@@ -106,6 +106,7 @@ val primitiveFieldTypesMap = Map(
 )
 
 sealed abstract class EntityFieldTypeDefinition
+sealed case class TypeReferenceDefinition(referencedType: AbstractNamedEntityType, refField: Option[String]) extends EntityFieldTypeDefinition
 sealed abstract class PrimitiveFieldTypeDefinition extends EntityFieldTypeDefinition:
     def parse(value: String): Either[IdParseError, EntityFieldType]
 final case class CustomPrimitiveTypeDefinition(parent: PrimitiveEntitySuperType) 
@@ -146,11 +147,11 @@ object ArrayTypeDefinition {
     val name = "Array"
 }
     
-final case class ArrayTypeDefinition(private var _elementTypes: Set[AbstractEntityType], parent: Option[ArrayEntitySuperType]) 
+final case class ArrayTypeDefinition(private var _elementTypes: Set[SimpleEntityType], parent: Option[ArrayEntitySuperType])
 extends EntityFieldTypeDefinition:
     private var initiated = false
-    def elementTypes: Set[AbstractEntityType] = _elementTypes
-    def setChildren(elementTypesValues: Set[AbstractEntityType]): Unit =
+    def elementTypes: Set[SimpleEntityType] = _elementTypes
+    def setChildren(elementTypesValues: Set[SimpleEntityType]): Unit =
         if (initiated) throw new TypeReinitializationException
         _elementTypes = elementTypesValues
         initiated = true

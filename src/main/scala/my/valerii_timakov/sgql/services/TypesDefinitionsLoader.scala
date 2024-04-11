@@ -158,28 +158,36 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
                                      typePrefix: Option[String],
                                      typesMap: Map[String, AbstractNamedEntityType]): SimpleEntityType =
         SimpleEntityType(ArrayTypeDefinition(rawType.elementTypesNames.map(parseAnyTypeDef(_, typePrefix, typesMap)).toSet,
-            rawType.parentTypeName.map(parentTypeName =>
-                arraySuperTypesMap.getOrElse(parentTypeName, throw new NoTypeFound(parentTypeName)))))
+            rawType.parentTypeName
+                .filter(_ != ArrayTypeDefinition.name)
+                .map(parentTypeName =>
+                    arraySuperTypesMap.getOrElse(parentTypeName, throw new NoTypeFound(parentTypeName)))))
 
     private def parseObjectSimpleType(rawType: ObjectData,
                                       typePrefix: Option[String],
                                       typesMap: Map[String, AbstractNamedEntityType]): SimpleEntityType =
         SimpleEntityType(ObjectTypeDefinition(rawType.fields.map(fieldRaw =>
             fieldRaw.name -> parseAnyTypeDef(fieldRaw.typeDef, typePrefix, typesMap)).toMap,
-            rawType.parentTypeName.map(parentTypeName =>
-                objectSuperTypesMap.getOrElse(parentTypeName, throw new NoTypeFound(parentTypeName)))))
+            rawType.parentTypeName
+                .filter(_ != ObjectTypeDefinition.name)
+                .map(parentTypeName =>
+                    objectSuperTypesMap.getOrElse(parentTypeName, throw new NoTypeFound(parentTypeName)))))
 
     def parseAnyTypeDef(rowData: AnyTypeDef,
                         typePrefix: Option[String],
                         typesMap: Map[String, AbstractNamedEntityType]): SimpleEntityType =
         rowData match
-            case typeName: String => SimpleEntityType(
-                typesMap.get(typeName)
+            case refData: ReferenceData => 
+                typesMap.get(refData.refTypeName)
                     .orElse(
-                        findUpstears(typeName, typePrefix, typesMap)
+                        findUpstears(refData.refTypeName, typePrefix, typesMap)
                             .map(_._2)
                     )
-                    .getOrElse(throw new NoTypeFound(typeName)).valueType)
+                    .getOrElse(throw new NoTypeFound(refData.refTypeName)) match
+                        case entityType: EntityType =>
+                            SimpleEntityType(TypeReferenceDefinition(entityType, refData.refFieldName))
+                        case anyTypeDefinition: AbstractNamedEntityType => 
+                            SimpleEntityType(TypeReferenceDefinition(anyTypeDefinition, None))
             case typeDefRaw: ArrayData => parseArraySimpleType(typeDefRaw, typePrefix, typesMap)
             case typeDefRaw: ObjectData => parseObjectSimpleType(typeDefRaw, typePrefix, typesMap)
 

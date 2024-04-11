@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.entity.json
 
 import akka.parboiled2.util.Base64
 import my.valerii_timakov.sgql.entity
-import my.valerii_timakov.sgql.entity.{AbstractEntityType, AbstractNamedEntityType, ArrayType, ArrayTypeDefinition, BinaryType, BinaryTypeDefinition, BooleanType, BooleanTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeType, DateTimeTypeDefinition, DateType, DateTypeDefinition, DoubleType, DoubleTypeDefinition, Entity, EntityFieldType, EntityFieldTypeDefinition, EntityId, EntityIdTypeDefinition, EntityType, FloatType, FloatTypeDefinition, IntId, IntIdTypeDefinition, IntType, IntTypeDefinition, LongId, LongIdTypeDefinition, LongType, LongTypeDefinition, NamedEntitySuperType, ObjectType, ObjectTypeDefinition, PrimitiveFieldTypeDefinition, RootPrimitiveTypeDefinition, SimpleEntityType, StringId, StringIdTypeDefinition, StringType, StringTypeDefinition, TimeType, TimeTypeDefinition, UUIDId, UUIDIdTypeDefinition}
+import my.valerii_timakov.sgql.entity.{AbstractEntityType, AbstractNamedEntityType, ArrayType, ArrayTypeDefinition, BinaryType, BinaryTypeDefinition, BooleanType, BooleanTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeType, DateTimeTypeDefinition, DateType, DateTypeDefinition, DoubleType, DoubleTypeDefinition, Entity, EntityFieldType, EntityFieldTypeDefinition, EntityId, EntityIdTypeDefinition, EntityType, FloatType, FloatTypeDefinition, IntId, IntIdTypeDefinition, IntType, IntTypeDefinition, LongId, LongIdTypeDefinition, LongType, LongTypeDefinition, NamedEntitySuperType, ObjectType, ObjectTypeDefinition, PrimitiveFieldTypeDefinition, RootPrimitiveTypeDefinition, SimpleEntityType, StringId, StringIdTypeDefinition, StringType, StringTypeDefinition, TimeType, TimeTypeDefinition, TypeReferenceDefinition, UUIDId, UUIDIdTypeDefinition}
 import spray.json.*
 import spray.json.DefaultJsonProtocol.*
 
@@ -155,8 +155,13 @@ implicit val entityFieldTypeDefinitionFormat: RootJsonFormat[EntityFieldTypeDefi
         case ObjectTypeDefinition(fields, parentType) => JsObject(
             "type" -> JsString("Object"),
             "parent" -> parentType.map(p => JsString(p.name)).getOrElse(JsNull),
-            "fields" -> JsObject(fields.map((fieldName, fieldType) => fieldName -> writeEntityType(fieldType)))
-        )
+            "fields" -> JsObject(fields.map((fieldName, fieldType) => fieldName -> writeEntityType(fieldType))))
+        case TypeReferenceDefinition(referencedType, refFieldOpt) => JsObject(
+            "type" -> JsString("Reference"),
+            "referencedType" -> JsString(referencedType.name),
+            "refField" -> (refFieldOpt match 
+                case Some(refField: String) => JsString(refField)
+                case None => JsNull))
             
 //    def readPrimitiveType(name: String): Option[PrimitiveFieldTypeDefinition] = name match
 //        case "String" => Some(StringTypeDefinition)

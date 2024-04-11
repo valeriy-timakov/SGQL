@@ -10,7 +10,8 @@ import scala.util.parsing.combinator.*
 import scala.util.parsing.input.{Reader, StreamReader}
 
 
-type AnyTypeDef = String | ArrayData | ObjectData
+type AnyTypeDef = ReferenceData | ArrayData | ObjectData
+case class ReferenceData(refTypeName: String, refFieldName: Option[String])
 case class FieldData(name: String, typeDef: AnyTypeDef)
 case class ObjectData(parentTypeName: Option[String], fields: List[FieldData])
 case class ArrayData(parentTypeName: Option[String], elementTypesNames: List[AnyTypeDef])
@@ -46,27 +47,45 @@ object TypesDefinitionsParser extends RegexParsers with LazyLogging {
     def parse(input: Reader[Char]): Either[TypesDefinitionsParseError, RootPackageData] =
         mapParseResult(parseAll(packageContent, input))
 
+    var logId: Int = 0
+
     private def log[I](p: Parser[I], name: String): Parser[I] = Parser { in =>
-        logger.debug(s">>>$name input: ${in.source.toString} at ${in.offset} (${in.pos})${in.source.toString.substring(in.offset)}")
+        logId += 1
+        var inLogId = logId
+        val inBefore = in.source.toString.substring(0, in.offset)
+        val isShort = in.source.toString.substring(in.offset, in.offset + Math.min(40, in.source.length() - in.offset))
+        print(s"[$inLogId]>>>$name at ${in.offset} (${in.pos})  input: $inBefore")
+        val red = "\u001b[0;31m"
+        val reset = "\u001b[0m"
+        print(red + " |> " + reset)
+        println(isShort)
+
+
+
+        //logger.debug(s"[$inLogId]>>>$name at ${in.offset} (${in.pos})  input: $inBefore | $isShort")
         val r = p(in)
-        logger.debug(s"<<<$name result: $r")
+        //logger.debug(s"[$inLogId]<<<$name result: $r")
+        System.out.println(s"[$inLogId]<<<$name result: $r")
         r
     } /*^^ {
         case name => logger.debug(s"found ${name}: " + name)
             name
     }*/
         
-    private def itemName: Parser[String] = log("""\w+""".r, "itemName")
-    private def typeRefName: Parser[String] = log("""[\w.]+""".r, "typeRefName")
+    private def itemName: Parser[String] = log("""[\w_]+""".r, "itemName")
+    private def typeRefName: Parser[String] = log("""[\w_]+([\w_.]+[\w_]+)?""".r, "typeRefName")
+    private def typeReference: Parser[ReferenceData] = log(typeRefName ~ opt("+" ~> itemName) ^^ {
+        case refTypeName ~ refFieldName => ReferenceData(refTypeName, refFieldName)
+    }, "typeReference")
     private def typeName: Parser[String] = log(itemName <~ ":", "typeName")
     private def idType: Parser[String] = log("(" ~> itemName <~ ")", "idType")
-    private def typeDef: Parser[AnyTypeDef] = log(typeRefName | arrayDef | objectDef, "typeDef")
+    private def typeDef: Parser[AnyTypeDef] = log(arrayDef | objectDef | typeReference, "typeDef")
     private def field: Parser[FieldData] = log((itemName <~ ":") ~ typeDef <~ opt(",") ^^ {
         case name ~ typeName => FieldData(name, typeName)
     }, "field")
     private def fields: Parser[List[FieldData]] = log("{" ~> rep(field) <~ "}", "fields")
     private def array: Parser[List[AnyTypeDef]] = log("[" ~> rep(typeDef <~ opt(",")) <~ "]", "array")
-    private def arrayDef: Parser[ArrayData] = log(opt(typeName) ~ array ^^ {
+    private def arrayDef: Parser[ArrayData] = log(opt(typeRefName) ~ array ^^ {
         case parent ~ elements => ArrayData(parent, elements)
     }, "arrayDef")
     private def objectDef: Parser[ObjectData] = log(opt(typeRefName) ~ fields ^^ {
@@ -95,7 +114,7 @@ object TypesDefinitionsParser extends RegexParsers with LazyLogging {
     private def packageItem: Parser[PackageData] = log((typeRefName <~ "{") ~ packageContent <~ "}" ^^ {
         case packageName ~ packageContent => packageContent.toNamed(packageName)
     }, "packageItem")
-    private def singleTypePackageItem: Parser[PackageData] = log(("""[\w.]+?(?=\.\w+:)""".r <~ ".") ~ anyTypeItem ^^ {
+    private def singleTypePackageItem: Parser[PackageData] = log(("""[\w_]+([\w_.]+[\w_]+)??(?=\.[\w_]+:)""".r <~ ".") ~ anyTypeItem ^^ {
         case packageName ~ typeData => PackageData(packageName, List(), List(typeData))
     }, "singleTypePackageItem")
     

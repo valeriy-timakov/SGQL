@@ -11,3 +11,5 @@ class NotObjectAbstractTypeException(typeName: String) extends Exception(s"Type 
 class NoTypeFound(typeName: String) extends Exception(s"No type found for name $typeName!")
 class NoIdTypeFound(typeName: String) extends Exception(s"No ID type found for name $typeName!")
 class WrongTypeNameException(name: String) extends Exception(s"Wrong type name '$name'!")
+class AbstractTypeException(typeName: String, reason: String) extends Exception(s"Type $typeName is abstract! " + reason):
+    def this(typeName: String) = this(typeName, "")
