@@ -1,0 +1,43 @@
+
+i.valerii_timakov.home_finances {
+    MyInt (my_int, id: integer, value: integer)
+    users {
+        MyArray (my_array, id: uuid, value: text)
+        User (user, id: uuid) {
+            userName (user_name: text)
+            firstName (first_name: text)
+            lastName (last_name: text)
+        }
+        U2 (u2) {
+            abc (abc: text)
+            dcf (my_array_id@my_array)
+        }
+        U3 (u2) {
+            vbn (my_int_id@)
+            vbn2 (my_int_id2: integer)
+            vbn3 (my_int_id3)
+        }
+        inner {
+            sdf {
+                MyArray1 (value: text)
+            }
+            MyArray2 (
+                <String | my_array_2_text, id: bigint, value: text>
+                <Date | my_array_2_date, id: bigint, value: date>
+            )
+        }
+        U4 (u4, id: biging) {
+            yhn (my_array_2_id)
+            acc (account_id)
+        }
+    }
+    finances {
+        Account (account, id: uuid) {
+            name (name: text)
+            description (description: text)
+            external (external: boolean)
+            owner (owner_id@user)
+        }
+        some.inner.super.type1.HiddenAccount: (hidden_account, id: uuid, value: text)
+    }
+}

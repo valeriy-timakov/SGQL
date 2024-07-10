@@ -26,26 +26,39 @@ case class ArrayTypeData(
         idType: Option[String],
         definition: ArrayData, 
     ) extends  TypeData
-class RootPackageData(val packages: List[PackageData], val types: List[TypeData]):
-    def toNamed(name: String): PackageData = PackageData(name, packages, types)
+class TypesRootPackageData(val packages: List[TypesPackageData], val types: List[TypeData]):
+    def toNamed(name: String): TypesPackageData = TypesPackageData(name, packages, types)
     def typesCount(): Int =
         packages.foldLeft( types.size )( (acc, p) => acc + p.typesCount() )    
     def toMap: Map[String, TypeData] = toPairsStream.toMap
     private def toPairsStream: LazyList[(String, TypeData)] =
         types.map(_.pair("")).to(LazyList) ++ packages.flatMap(_.toPairsStream("")).to(LazyList)
 
-case class PackageData(name: String, override val packages: List[PackageData], override val types: List[TypeData]) extends RootPackageData(packages, types):
+case class TypesPackageData(name: String, override val packages: List[TypesPackageData], override val types: List[TypeData]) extends TypesRootPackageData(packages, types):
     def toPairsStream(parentPrefix: String): LazyList[(String, TypeData)] =
         val currentPrefix = parentPrefix + name + "."
         types.map(_.pair(currentPrefix)).to(LazyList) ++ packages.flatMap(_.toPairsStream(currentPrefix)).to(LazyList)
 
-object TypesDefinitionsParser extends RegexParsers with LazyLogging {
+abstract class DefinitionsParser[Result] extends RegexParsers with LazyLogging:
 
-    def parse(input: String): Either[TypesDefinitionsParseError, RootPackageData] =
+    def parse(input: String): Either[TypesDefinitionsParseError, Result] =
         mapParseResult(parseAll(packageContent, input))
 
-    def parse(input: Reader[Char]): Either[TypesDefinitionsParseError, RootPackageData] =
+    def parse(input: Reader[Char]): Either[TypesDefinitionsParseError, Result] =
         mapParseResult(parseAll(packageContent, input))
+
+    protected def packageContent: Parser[Result]
+
+    private def mapParseResult(result: ParseResult[Result] ): Either[TypesDefinitionsParseError, Result] =
+        result match
+            case Success(result, _) => Right(result)
+            case Failure(e, next) => Left(TypesDefinitionsParseError(
+                s"Failure: $e at ${next.pos.longString} line, position: ${next.pos.column}"))
+            case Error(e, next) => Left(TypesDefinitionsParseError(
+                s"Error:  $e at ${next.pos.longString} line, position: ${next.pos.column}"))
+    
+
+object TypesDefinitionsParser extends DefinitionsParser[TypesRootPackageData]:
 
     var logId: Int = 0
 
@@ -101,29 +114,21 @@ object TypesDefinitionsParser extends RegexParsers with LazyLogging {
         case name ~ typeName ~ idType => PrimitiveTypeData(name, idType, typeName)
     }, "primitiveType")
     private def anyTypeItem: Parser[TypeData] = log(arrayType | objectType | primitiveType, "anyItem")
-    private def packageContent: Parser[RootPackageData] = log(rep(anyTypeItem | singleTypePackageItem | packageItem) ^^ {
+    protected def packageContent: Parser[TypesRootPackageData] = log(rep(anyTypeItem | singleTypePackageItem | packageItem) ^^ {
         typesAndPackages =>
             var types = List[TypeData]()
-            var packages = List[PackageData]()
+            var packages = List[TypesPackageData]()
             typesAndPackages.foreach {
-                case packageItem: PackageData => packages = packages :+ packageItem
+                case packageItem: TypesPackageData => packages = packages :+ packageItem
                 case typeItem: TypeData => types = types :+ typeItem
             }
-            RootPackageData(packages, types)
+            TypesRootPackageData(packages, types)
     }, "packageContent")
-    private def packageItem: Parser[PackageData] = log((typeRefName <~ "{") ~ packageContent <~ "}" ^^ {
+    private def packageItem: Parser[TypesPackageData] = log((typeRefName <~ "{") ~ packageContent <~ "}" ^^ {
         case packageName ~ packageContent => packageContent.toNamed(packageName)
     }, "packageItem")
-    private def singleTypePackageItem: Parser[PackageData] = log(("""[\w_]+([\w_.]+[\w_]+)??(?=\.[\w_]+:)""".r <~ ".") ~ anyTypeItem ^^ {
-        case packageName ~ typeData => PackageData(packageName, List(), List(typeData))
+    private def singleTypePackageItem: Parser[TypesPackageData] = log(("""[\w_]+([\w_.]+[\w_]+)??(?=\.[\w_]+:)""".r <~ ".") ~ anyTypeItem ^^ {
+        case packageName ~ typeData => TypesPackageData(packageName, List(), List(typeData))
     }, "singleTypePackageItem")
-    
-    private def mapParseResult(result: ParseResult[RootPackageData] ): Either[TypesDefinitionsParseError, RootPackageData] =
-        result match
-            case Success(result, _) => Right(result)
-            case Failure(e, next) => Left(TypesDefinitionsParseError(
-                s"Failure: $e at ${next.pos.longString} line, position: ${next.pos.column}"))
-            case Error(e, next) => Left(TypesDefinitionsParseError(
-                s"Error:  $e at ${next.pos.longString} line, position: ${next.pos.column}"))
 
-}
+

@@ -109,6 +109,10 @@ sealed abstract class EntityFieldTypeDefinition
 sealed case class TypeReferenceDefinition(referencedType: AbstractNamedEntityType, refField: Option[String]) extends EntityFieldTypeDefinition
 sealed abstract class PrimitiveFieldTypeDefinition extends EntityFieldTypeDefinition:
     def parse(value: String): Either[IdParseError, EntityFieldType]
+    def rootType: RootPrimitiveTypeDefinition = this match 
+        case root: RootPrimitiveTypeDefinition => root
+        case custom: CustomPrimitiveTypeDefinition => custom.parent.valueType.rootType
+        
 final case class CustomPrimitiveTypeDefinition(parent: PrimitiveEntitySuperType) 
 extends PrimitiveFieldTypeDefinition:
     def parse(value: String): Either[IdParseError, EntityFieldType] = parent.valueType.parse(value)

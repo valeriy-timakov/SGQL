@@ -15,7 +15,7 @@ object TypesDefinitionsLoader extends TypesDefinitionsLoader:
     def load(typesDefinitionResourcePath: String): Map[String, AbstractNamedEntityType] =
         val tdSource = Source.fromResource (typesDefinitionResourcePath)
         TypesDefinitionsParser.parse(StreamReader( tdSource.reader() )) match
-            case Right(packageData: RootPackageData) =>
+            case Right(packageData: TypesRootPackageData) =>
                 val rawTypesDataMap = packageData.toMap
                 val parser = new AbstractTypesParser(rawTypesDataMap)
 

@@ -18,9 +18,11 @@ libraryDependencies ++= Seq(
     "com.typesafe.akka" %% "akka-http-spray-json" % AkkaHttpVersion,
     "com.typesafe.akka" %% "akka-slf4j" % AkkaVersion,
     "com.typesafe.scala-logging" %% "scala-logging" % "3.9.5",
-    "ch.qos.logback" % "logback-classic" % "1.4.14",
+    "ch.qos.logback" % "logback-classic" % "1.5.2",
     "com.typesafe" % "config" % "1.4.3",
-    "org.scala-lang.modules" %% "scala-parser-combinators" % "2.3.0"
+    "org.scala-lang.modules" %% "scala-parser-combinators" % "2.3.0",
+    "org.scalikejdbc" %% "scalikejdbc" % "4.2.1",
+    "org.postgresql" % "postgresql" % "42.7.2",
 )
 
 

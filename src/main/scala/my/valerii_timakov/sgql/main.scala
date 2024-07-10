@@ -18,7 +18,7 @@ import scala.language.postfixOps
 
     implicit lazy val typesDefinitionsLoader: TypesDefinitionsLoader = TypesDefinitionsLoader
     lazy val typesDefinitionProvider: TypesDefinitionProvider = TypesDefinitionProvider.create
-    lazy val crudRepository: CrudRepository = CrudRepositoryImpl()
+    lazy val crudRepository: CrudRepository = PostgresCrudRepository(conf.getConfig("persistence.postgres"))
     lazy val messageSource: MessageSource =  MessageSourceImpl()
 
 
