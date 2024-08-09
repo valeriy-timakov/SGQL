@@ -60,19 +60,17 @@ class CrudActor(
                             (typeMapper: EntityType => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
         typesDefinitionProvider.getType(entityTypeName) match
-            case Failure(ex) =>
-                Right(Failure(ex))
-            case Success(None) =>
+            case None =>
                 Left(TypeNotFountError(entityTypeName))
-            case Success(Some(_: NamedEntitySuperType)) =>
+            case Some(_: NamedEntitySuperType) =>
                 Left(AbstractTypeError(entityTypeName))
-            case Success(Some(entityType: EntityType)) =>
+            case Some(entityType: EntityType) =>
                 typeMapper(entityType)
                 
     private def parseId[Res](entityType: EntityType, idStr: String)
                             (idMapper: EntityId => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
-        entityType.idType.parse(idStr) match
+        entityType.valueType.idType.parse(idStr) match
             case Left(error) =>
                 Left(error)
             case Right(id) =>

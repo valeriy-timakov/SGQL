@@ -5,12 +5,36 @@ i.valerii_timakov.home_finances {
         MyArray (my_array, id: uuid, value: text)
         User (user, id: uuid) {
             userName (user_name: text)
-            firstName (first_name: text)
-            lastName (last_name: text)
+            firstName (first_name)
+            lastName (: text)
         }
         U2 (u2) {
             abc (abc: text)
             dcf (my_array_id@my_array)
+            fakeObj {
+                fakeField (fake_field: text)
+                field2 (@)
+                field3 (field3: integer)
+                field14 (@)
+                field4 {
+                    field5 (@)
+                    field6 (field_6_123@)
+                    field7 (text)
+                }
+                field7 @u2fake_obj_some_fileld8
+                field11 @xxx_unique_table_name
+                user _
+            }
+            fakeObj2 {
+                fakeField (fake_field_2: text)
+                field3 (field__3@)
+                description varchar(12),
+                something integer
+            }
+            fakeObj3 (user_id@user) {
+                field3 (field3_id@)
+            }
+            fakeObj4 _ {}
         }
         U3 (u2) {
             vbn (my_int_id@)
@@ -19,25 +43,33 @@ i.valerii_timakov.home_finances {
         }
         inner {
             sdf {
-                MyArray1 (value: text)
+                MyArray1 (value: varchar(26))
             }
             MyArray2 (
-                <String | my_array_2_text, id: bigint, value: text>
-                <Date | my_array_2_date, id: bigint, value: date>
+                <String | my_array_2_text, id: long, value: text>
+                <Date | my_array_2_date, id: long, value: date>
             )
         }
-        U4 (u4, id: biging) {
+        U4 (u4, id: long) {
+            yhn (my_array_2_id)
+            acc (account_id)
+        }
+        U5 (u5, id: long) _ {
+            yhn (my_array_2_id)
+            acc (account_id)
+        }
+        U6 (u6, id: long) test_u3_id@ {
             yhn (my_array_2_id)
             acc (account_id)
         }
     }
     finances {
         Account (account, id: uuid) {
-            name (name: text)
-            description (description: text)
+            name (name: varchar(32))
+            description (:text)
             external (external: boolean)
             owner (owner_id@user)
         }
-        some.inner.super.type1.HiddenAccount: (hidden_account, id: uuid, value: text)
+        some.inner.super.type1.HiddenAccount (hidden_account, id: uuid, value: text)
     }
 }

@@ -1,6 +1,7 @@
 
 i.valerii_timakov.home_finances {
     MyInt: Integer(Integer)
+    MyIntSub: MyInt
     users {
         MyArray: (UUID) [String]
         User: Object(UUID) {
@@ -9,9 +10,47 @@ i.valerii_timakov.home_finances {
             lastName: String
             accounts: Array [finances.Account+owner]
         }
-        U2: {
+        U2: (Long) {
             abc: String
             dcf: MyArray
+            fakeObj: {
+                fakeField: String
+                field2: MyArray
+                field3: MyInt
+                field14: MyInt
+                field4: Object {
+                    field5: MyArray
+                    field6: MyArray
+                    field7: String
+                }
+                field7: {
+                    field8: inner.sdf.MyArray
+                    field9: String
+                }
+                field11: U3 {
+                    field8: inner.sdf.MyArray
+                    field9: String
+                }
+                user: User
+                user1: User {  }
+            }
+            fakeObj2: finances.Account {
+                fakeField: String
+                field2: MyArray
+                field3: MyInt
+                something: MyIntSub
+                something1: MyIntSub
+            }
+            fakeObj3: User {
+                fakeField: String
+                field2: MyArray
+                field3: MyInt
+            }
+            fakeObj4: User {
+                fakeField: String
+                field2: MyArray
+                field3: MyInt
+            }
         }
         U3: U2 {
             vbn: MyInt
@@ -20,11 +59,20 @@ i.valerii_timakov.home_finances {
         }
         inner {
             sdf{
-                MyArray1: Array [String]
+                MyArray1!: Array(Long) [String],
+                MyArray2!: Array(UUID) [String, DateTime],
             }
-            MyArray2: sdf.MyArray1(Long) [Date]
+            MyArray2: sdf.MyArray1 [Date]
         }
-        U4: U3(Long) {
+        U4: U3 {
+            yhn: inner.MyArray2,
+            acc: i.valerii_timakov.home_finances.finances.Account,
+        }
+        U5: U3 {
+            yhn: inner.MyArray2,
+            acc: i.valerii_timakov.home_finances.finances.Account,
+        }
+        U6: U3 {
             yhn: inner.MyArray2,
             acc: i.valerii_timakov.home_finances.finances.Account,
         }
@@ -35,6 +83,8 @@ i.valerii_timakov.home_finances {
             description: String,
             external: Boolean,
             owner: i.valerii_timakov.home_finances.users.User
+            something: MyInt
+            something1: MyInt
         }
         some.inner.super.type1.HiddenAccount: Array(UUID) [String]
     }

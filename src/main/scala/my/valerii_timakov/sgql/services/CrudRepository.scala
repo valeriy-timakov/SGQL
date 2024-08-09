@@ -53,9 +53,9 @@ class PostgresCrudRepository(conf: Config) extends CrudRepository:
     ConnectionPool.singleton(s"jdbc:postgresql://${conf.getString("host")}:${conf.getInt("port")}/${conf.getString("database")}", 
         conf.getString("username"), conf.getString("password"))
     
-    var typesPersistenceData: Map[AbstractNamedEntityType, TypePersistanceData] = Map();
+    var typesPersistenceData: Map[AbstractNamedEntityType, TypePersistenceData] = Map()
     
-    def init(typesDefinitions: Seq[AbstractNamedEntityType]): Unit = {
+    def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit = {
         
     }
 

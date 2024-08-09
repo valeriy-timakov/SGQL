@@ -26,13 +26,13 @@ class HttpServer(
 
     private val bindingFuture: Future[Http.ServerBinding] = Http().newServerAt(conf.getString("host"), conf.getInt("port")).bind(
         crudHttpRouter.route ~
-            typesProviderHttpRouter.route ~
-            path("terminate") {
-                post {
-                    destroyPromise.success(())
-                    complete("")
-                }
-            })
+        typesProviderHttpRouter.route ~
+        path("terminate") {
+            post {
+                destroyPromise.success(())
+                complete("")
+            }
+        })
     
     def stop(): Future[Done] = 
         bindingFuture.flatMap(_.unbind())

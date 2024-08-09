@@ -3,6 +3,7 @@ package my.valerii_timakov.sgql.services
 
 import com.typesafe.scalalogging.LazyLogging
 import my.valerii_timakov.sgql.entity.{ArrayTypeDefinition, Error, ObjectTypeDefinition, TypesDefinitionsParseError}
+import my.valerii_timakov.sgql.services.TypesDefinitionsParser.IdTypeRef
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Try
@@ -10,21 +11,33 @@ import scala.util.parsing.combinator.*
 import scala.util.parsing.input.{Reader, StreamReader}
 
 
-type AnyTypeDef = ReferenceData | ArrayData | ObjectData
+type AnyTypeDef = ReferenceData | SimpleObjectData
+
 case class ReferenceData(refTypeName: String, refFieldName: Option[String])
 case class FieldData(name: String, typeDef: AnyTypeDef)
-case class ObjectData(parentTypeName: Option[String], fields: List[FieldData])
-case class ArrayData(parentTypeName: Option[String], elementTypesNames: List[AnyTypeDef])
+case class ObjectData(idOrParent: Either[IdTypeRef, String], fields: List[FieldData])
+case class ArrayData(idOrParent: Either[IdTypeRef, String], elementTypesNames: List[AnyTypeDef])
+
+case class SimpleObjectData(parent: Option[String], fields: List[FieldData])
+
+case class TypeNameData(name: String, mandatoryConreteType: Boolean)
 
 trait TypeData:
     def typeName: String
     def pair(prefix: String): (String, TypeData) = (prefix + typeName, this)
-case class ObjectTypeData(typeName: String, idType: Option[String], data: ObjectData) extends  TypeData
-case class PrimitiveTypeData(typeName: String, idType: Option[String], parentTypeName: String) extends  TypeData
-case class ArrayTypeData(
-        typeName: String, 
-        idType: Option[String],
-        definition: ArrayData, 
+    
+case class ObjectTypeData(typeName: String, 
+                          data: ObjectData, 
+                          mandatoryConreteType: Boolean) extends  TypeData
+
+case class PrimitiveTypeData(typeName: String, 
+                             idType: Option[String], 
+                             parentTypeName: String, 
+                             mandatoryConreteType: Boolean) extends  TypeData
+
+case class ArrayTypeData(typeName: String,    
+                         definition: ArrayData,         
+                         mandatoryConreteType: Boolean,  
     ) extends  TypeData
 class TypesRootPackageData(val packages: List[TypesPackageData], val types: List[TypeData]):
     def toNamed(name: String): TypesPackageData = TypesPackageData(name, packages, types)
@@ -61,60 +74,67 @@ abstract class DefinitionsParser[Result] extends RegexParsers with LazyLogging:
 object TypesDefinitionsParser extends DefinitionsParser[TypesRootPackageData]:
 
     var logId: Int = 0
+    val debugLogEnabled: Boolean = false
 
     private def log[I](p: Parser[I], name: String): Parser[I] = Parser { in =>
         logId += 1
-        var inLogId = logId
+        val inLogId = logId
         val inBefore = in.source.toString.substring(0, in.offset)
         val isShort = in.source.toString.substring(in.offset, in.offset + Math.min(40, in.source.length() - in.offset))
-        print(s"[$inLogId]>>>$name at ${in.offset} (${in.pos})  input: $inBefore")
         val red = "\u001b[0;31m"
         val reset = "\u001b[0m"
-        print(red + " |> " + reset)
-        println(isShort)
+        if (debugLogEnabled) {
+            print(s"[$inLogId]>>>$name at ${in.offset} (${in.pos})  input: $inBefore")
+            print(red + " |> " + reset)
+            println(isShort)
+        }
 
-
-
-        //logger.debug(s"[$inLogId]>>>$name at ${in.offset} (${in.pos})  input: $inBefore | $isShort")
         val r = p(in)
-        //logger.debug(s"[$inLogId]<<<$name result: $r")
-        System.out.println(s"[$inLogId]<<<$name result: $r")
+        if (debugLogEnabled) {
+            System.out.println(s"[$inLogId]<<<$name result: $r")
+        }
         r
-    } /*^^ {
-        case name => logger.debug(s"found ${name}: " + name)
-            name
-    }*/
+    }
+    case class IdTypeRef(name: String)
         
     private def itemName: Parser[String] = log("""[\w_]+""".r, "itemName")
     private def typeRefName: Parser[String] = log("""[\w_]+([\w_.]+[\w_]+)?""".r, "typeRefName")
     private def typeReference: Parser[ReferenceData] = log(typeRefName ~ opt("+" ~> itemName) ^^ {
         case refTypeName ~ refFieldName => ReferenceData(refTypeName, refFieldName)
     }, "typeReference")
-    private def typeName: Parser[String] = log(itemName <~ ":", "typeName")
-    private def idType: Parser[String] = log("(" ~> itemName <~ ")", "idType")
-    private def typeDef: Parser[AnyTypeDef] = log(arrayDef | objectDef | typeReference, "typeDef")
+    private def typeName: Parser[TypeNameData] = log(itemName ~ opt("!") <~ ":"  ^^ {
+        case name ~ mandatoryConcreteOpt => TypeNameData(name, mandatoryConcreteOpt.isDefined)
+    }, "typeName")
+    private def idType: Parser[IdTypeRef] = log(("(" ~> itemName <~ ")") ^^ { name => IdTypeRef(name) }, "idType")
+    private def typeDef: Parser[AnyTypeDef] = log(objectDef | typeReference, "typeDef")
     private def field: Parser[FieldData] = log((itemName <~ ":") ~ typeDef <~ opt(",") ^^ {
         case name ~ typeName => FieldData(name, typeName)
     }, "field")
     private def fields: Parser[List[FieldData]] = log("{" ~> rep(field) <~ "}", "fields")
     private def array: Parser[List[AnyTypeDef]] = log("[" ~> rep(typeDef <~ opt(",")) <~ "]", "array")
-    private def arrayDef: Parser[ArrayData] = log(opt(typeRefName) ~ array ^^ {
-        case parent ~ elements => ArrayData(parent, elements)
+    private def arrayDef: Parser[ArrayData] = log((typeRefName | idType) ~ array ^^ {
+        case idOrParent ~ elements => idOrParent match
+            case idTypeRef: IdTypeRef => ArrayData(Left(idTypeRef), elements)
+            case parentName: String => ArrayData(Right(parentName), elements)
     }, "arrayDef")
-    private def objectDef: Parser[ObjectData] = log(opt(typeRefName) ~ fields ^^ {
-        case parent ~ fields => ObjectData(parent, fields)
+    private def objectDef: Parser[SimpleObjectData] = log(opt(typeRefName) ~ fields ^^ {
+        case parent ~ fields => SimpleObjectData(parent, fields)
     }, "objectDef")
-    private def objectType: Parser[ObjectTypeData] = log(typeName ~ opt(typeRefName) ~ opt(idType) ~ fields ^^ {
-        case typeName ~ parent ~ idType ~ fields => ObjectTypeData(typeName, idType, ObjectData(parent, fields))
+    private def objectType: Parser[ObjectTypeData] = log(typeName ~ (typeRefName | (ObjectTypeDefinition.name ~> idType)) ~ fields ^^ {
+        case typeName ~ idOrParent ~ fields => idOrParent match
+            case idTypeRef: IdTypeRef => ObjectTypeData(typeName.name, ObjectData(Left(idTypeRef), fields), typeName.mandatoryConreteType)
+            case parentName: String => ObjectTypeData(typeName.name, ObjectData(Right(parentName), fields), typeName.mandatoryConreteType)
     }, "objectType")
-    private def arrayType: Parser[ArrayTypeData] = log(typeName ~ opt(typeRefName) ~  opt(idType) ~ array ^^ {
-        case name ~ parent ~ idType ~ elements => ArrayTypeData(name, idType, ArrayData(parent, elements))
+    private def arrayType: Parser[ArrayTypeData] = log(typeName ~ (typeRefName | (ArrayTypeDefinition.name ~> idType)) ~ array ^^ {
+        case typeName ~ idOrParent ~ elements => idOrParent match
+            case idTypeRef: IdTypeRef =>  ArrayTypeData(typeName.name, ArrayData(Left(idTypeRef), elements), typeName.mandatoryConreteType)
+            case parentName: String => ArrayTypeData(typeName.name, ArrayData(Right(parentName), elements), typeName.mandatoryConreteType)
     }, "arrayType")
     private def primitiveType: Parser[PrimitiveTypeData] = log(typeName ~ typeRefName ~ opt(idType) ^^ {
-        case name ~ typeName ~ idType => PrimitiveTypeData(name, idType, typeName)
+        case typeName ~ parentTypeName ~ idType => PrimitiveTypeData(typeName.name, idType.map(_.name), parentTypeName, typeName.mandatoryConreteType)
     }, "primitiveType")
     private def anyTypeItem: Parser[TypeData] = log(arrayType | objectType | primitiveType, "anyItem")
-    protected def packageContent: Parser[TypesRootPackageData] = log(rep(anyTypeItem | singleTypePackageItem | packageItem) ^^ {
+    protected def packageContent: Parser[TypesRootPackageData] = log(rep((anyTypeItem | singleTypePackageItem | packageItem) <~ opt(",")) ^^ {
         typesAndPackages =>
             var types = List[TypeData]()
             var packages = List[TypesPackageData]()

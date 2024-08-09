@@ -29,5 +29,5 @@ object TypesProviderActor:
     def apply(typesDefinitionProvider: TypesDefinitionProvider): Behavior[Command] =
         Behaviors.setup(context => new TypesProviderActor(context, typesDefinitionProvider))
     sealed trait Command extends MainActor.Message
-    final case class Get(name: String, replyTo: ActorRef[Try[Option[AbstractNamedEntityType]]]) extends Command
-    final case class GetAll(replyTo: ActorRef[Try[Seq[AbstractNamedEntityType]]]) extends Command
+    final case class Get(name: String, replyTo: ActorRef[Option[AbstractNamedEntityType]]) extends Command
+    final case class GetAll(replyTo: ActorRef[Seq[AbstractNamedEntityType]]) extends Command

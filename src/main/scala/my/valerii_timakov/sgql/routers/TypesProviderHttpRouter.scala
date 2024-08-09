@@ -30,28 +30,20 @@ class TypesProviderHttpRouter(
         pathPrefix("type_definitions") { 
             path(Segment) { name =>
                 get {
-                    val result: Future[Try[Option[AbstractNamedEntityType]]] =
+                    val result: Future[Option[AbstractNamedEntityType]] =
                         appActor ? (Get(name, _))
                     onSuccess(result) {
-                        case Failure(exception) =>
-                            complete(StatusCodes.InternalServerError, exception.getMessage)
-                        case Success(None) =>
+                        case None =>
                             complete(StatusCodes.NotFound)
-                        case Success(Some(typeDefinition: EntityType)) =>
+                        case Some(typeDefinition: AbstractNamedEntityType) =>
                             complete(StatusCodes.OK, typeDefinition)
                     }
                 }
             } ~
             pathEnd {
                 get {
-                    val result: Future[Try[Seq[AbstractNamedEntityType]]] =
-                        appActor ? GetAll.apply
-                    onSuccess(result) {
-                        case Failure(exception) =>
-                            complete(StatusCodes.InternalServerError, exception.getMessage)
-                        case Success(types) =>
-                            complete(StatusCodes.OK, types)
-                    }
+                    val result: Future[Seq[AbstractNamedEntityType]] = appActor ? GetAll.apply
+                    onSuccess(result)(types => complete(StatusCodes.OK, types))
                 }
             }
         }
