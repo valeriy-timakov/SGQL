@@ -8,7 +8,7 @@ i.valerii_timakov.home_finances {
             userName: String
             firstName: String
             lastName: String
-            accounts: Array [finances.Account+owner]
+            accounts: finances.Account+owner
         }
         U2: (Long) {
             abc: String
@@ -24,11 +24,11 @@ i.valerii_timakov.home_finances {
                     field7: String
                 }
                 field7: {
-                    field8: inner.sdf.MyArray
+                    field8: inner.sdf.MyArray1
                     field9: String
                 }
                 field11: U3 {
-                    field8: inner.sdf.MyArray
+                    field8: inner.sdf.MyArray2
                     field9: String
                 }
                 user: User
@@ -38,6 +38,7 @@ i.valerii_timakov.home_finances {
                 fakeField: String
                 field2: MyArray
                 field3: MyInt
+                userX: $User
                 something: MyIntSub
                 something1: MyIntSub
             }
@@ -53,7 +54,7 @@ i.valerii_timakov.home_finances {
             }
         }
         U3: U2 {
-            vbn: MyInt
+            vbn: $MyInt
             vbn2: MyInt
             vbn3: MyInt
         }

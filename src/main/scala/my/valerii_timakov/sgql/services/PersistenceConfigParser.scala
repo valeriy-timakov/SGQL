@@ -1,9 +1,6 @@
 package my.valerii_timakov.sgql.services
 
-import com.typesafe.scalalogging.LazyLogging
-
 import scala.collection.immutable.LazyList
-import scala.util.parsing.combinator.RegexParsers
 
 class ExpandParentMarker
 
@@ -35,7 +32,7 @@ object TextFieldType extends FieldType("text")
 
 object BLOBFieldType extends FieldType("blob")
 
-final case class StringFieldType(maxLength: Int) extends FieldType("String")
+final case class StringFieldType(maxLength: Int) extends FieldType("string")
 
 val allEmptyTypes = List(LongFieldType, IntFieldType, DoubleFieldType, FloatFieldType, BooleanFieldType, DateFieldType, 
     DateTimeFieldType, TimeFieldType, UUIDFieldType, TextFieldType, BLOBFieldType)
@@ -43,14 +40,13 @@ val allEmptyTypes = List(LongFieldType, IntFieldType, DoubleFieldType, FloatFiel
 sealed trait ValuePersistenceData:
     val columnName: Option[String]
 
-case class SimpleValuePersistenceData(
+case class PrimitiveValuePersistenceData(
     columnName: Option[String],
     columnType: Option[FieldType],
 ) extends ValuePersistenceData
 
 case class ReferenceValuePersistenceData(
     columnName: Option[String],
-    referenceTable: Option[String],
 ) extends ValuePersistenceData
 
 case class SimpleObjectValuePersistenceData(
@@ -71,47 +67,47 @@ trait TypePersistenceData extends AbstractTypePersistenceData:
     def idColumn: Option[ValuePersistenceData]
 
 private class PrimitiveTypePersistenceDataPartial(
-    val tableName: Option[String],
-    val idColumn: Option[SimpleValuePersistenceData],
-    val valueColumn: Option[SimpleValuePersistenceData],
+                                                     val tableName: Option[String],
+                                                     val idColumn: Option[PrimitiveValuePersistenceData],
+                                                     val valueColumn: Option[PrimitiveValuePersistenceData],
 ) 
 
 class PrimitiveTypePersistenceData(
-    val typeName: String,
-    val tableName: Option[String],
-    val idColumn: Option[SimpleValuePersistenceData],
-    val valueColumn: Option[SimpleValuePersistenceData],
+                                      val typeName: String,
+                                      val tableName: Option[String],
+                                      val idColumn: Option[PrimitiveValuePersistenceData],
+                                      val valueColumn: Option[PrimitiveValuePersistenceData],
 ) extends TypePersistenceData:
     def this(typeName: String, data: PrimitiveTypePersistenceDataPartial) =
         this(typeName, data.tableName, data.idColumn, data.valueColumn)
 
-class SimpleTypePersistenceDataPartial(
+class ArrayItemPersistenceDataPartial(
     val tableName: Option[String],
-    val idColumn: Option[SimpleValuePersistenceData],
-    val valueColumn: Option[ValuePersistenceData],
+    val idColumn: Option[PrimitiveValuePersistenceData],
+    val valueColumn: Option[PrimitiveValuePersistenceData | ReferenceValuePersistenceData],
 )
 
 //for use as part of ArrayTypePersistenceData only
-class SimpleTypePersistenceData(
+class ArrayItemPersistenceData(
     val typeName: String,
     val tableName: Option[String],
-    val idColumn: Option[SimpleValuePersistenceData],
-    val valueColumn: Option[ValuePersistenceData],
+    val idColumn: Option[PrimitiveValuePersistenceData],
+    val valueColumn: Option[PrimitiveValuePersistenceData | ReferenceValuePersistenceData],
 ) extends TypePersistenceData:
-    def this(typeName: String, data: SimpleTypePersistenceDataPartial) = 
+    def this(typeName: String, data: ArrayItemPersistenceDataPartial) = 
         this(typeName, data.tableName, data.idColumn, data.valueColumn)
 
 class ArrayTypePersistenceData(
-    val typeName: String, 
-    val data: Seq[SimpleTypePersistenceData],
+    val typeName: String,
+    val data: Seq[ArrayItemPersistenceData],
 ) extends AbstractTypePersistenceData
 
 class ObjectTypePersistenceData(
     val typeName: String,
     val tableName: Option[String],
-    val idColumn: Option[SimpleValuePersistenceData],
+    val idColumn: Option[PrimitiveValuePersistenceData],
     val fields: Map[String, ValuePersistenceData],
-    val parentRelation: Either[ExpandParentMarker, ReferenceValuePersistenceData],
+    val parentRelation: Option[Either[ExpandParentMarker, ReferenceValuePersistenceData]],
 ) extends TypePersistenceData
 
 type RootPackagePersistenceData = RootPackageData[AbstractTypePersistenceData]
@@ -151,99 +147,117 @@ object PersistenceConfigParser extends DefinitionsParser[RootPackagePersistenceD
         .foldLeft(failure("Not filed type!"): Parser[FieldType])(_ | _) 
         ^^ (t => t), 
         "simpleFieldType")
-    private def simpleFieldPersistenceData: Parser[SimpleValuePersistenceData] = log(
-        opt(itemName) ~ opt(":" ~> simpleFieldType) ^^ { case columnName ~ columnType => SimpleValuePersistenceData(columnName, columnType) },
-        "simpleFieldPersistenceData")   
+    private def simpleFieldData: Parser[PrimitiveValuePersistenceData] = log(
+        opt(itemName) ~ opt(":" ~> simpleFieldType) ^^ { case columnName ~ columnType => PrimitiveValuePersistenceData(columnName, columnType) },
+        "simpleFieldData")   
     
-    private def referenceFieldPersistenceData: Parser[ReferenceValuePersistenceData] = log(
-        opt(itemName) ~ "@" ~ opt(itemName) ^^ { case tableName ~ _ ~ refTableName => ReferenceValuePersistenceData(tableName, refTableName) },
-        "ReferenceFieldPersistenceData")
+    private def referenceFieldData: Parser[ReferenceValuePersistenceData] = log(
+        opt(itemName) ~ "@" ^^ { case columnName ~ _ => ReferenceValuePersistenceData(columnName) },
+        "referenceFieldData")
     
     private def primitiveTypeData: Parser[PrimitiveTypePersistenceDataPartial] = log(
-        itemName ~ opt("," ~> simpleFieldPersistenceData) ~ opt("," ~> simpleFieldPersistenceData) ^^ {
+        itemName ~ opt("," ~> simpleFieldData) ~ opt("," ~> simpleFieldData) ^^ {
             case tableName ~ idColumn ~ valueColumn => new PrimitiveTypePersistenceDataPartial(Some(tableName), idColumn, valueColumn)
         },
-        "simpleValueData")
+        "primitiveTypeData")
     
-    private def primitiveTypePersistenceData: Parser[PrimitiveTypePersistenceData] = log(
-        (itemName <~ "(") ~ (primitiveTypeData | simpleFieldPersistenceData) <~ ")" ^^ {
+    private def primitiveType: Parser[PrimitiveTypePersistenceData] = log(
+        (itemName <~ "(") ~ (primitiveTypeData | simpleFieldData) <~ ")" ^^ {
             case typeName ~ (simpleValuePersData: PrimitiveTypePersistenceDataPartial) =>
                 new PrimitiveTypePersistenceData(typeName, simpleValuePersData)
-            case typeName ~ (simpleValuePersData: SimpleValuePersistenceData) =>
+            case typeName ~ (simpleValuePersData: PrimitiveValuePersistenceData) =>
                 new PrimitiveTypePersistenceData(typeName, None, None, Some(simpleValuePersData))
         },
-        "primitiveTypePersistenceData")
+        "primitiveType")
 
-    private def simpleValueData: Parser[SimpleTypePersistenceDataPartial] = log(
-        itemName ~ opt("," ~> simpleFieldPersistenceData) ~ opt("," ~> (simpleFieldPersistenceData | referenceFieldPersistenceData)) ^^ {
-            case tableName ~ idColumn ~ valueColumn => new SimpleTypePersistenceDataPartial(Some(tableName), idColumn, valueColumn)
+    private def arrayItemValueData: Parser[PrimitiveValuePersistenceData | ReferenceValuePersistenceData] = log(
+        referenceFieldData | simpleFieldData ,
+        "arrayItemValueData")
+
+    private def arrayItemDataPartial: Parser[ArrayItemPersistenceDataPartial] = log(
+        itemName ~ opt("," ~> simpleFieldData) ~ opt("," ~> arrayItemValueData) ^^ {
+            case tableName ~ idColumn ~ valueColumn => ArrayItemPersistenceDataPartial(Some(tableName), idColumn, valueColumn)
         },
-        "simpleValueData")
+        "arrayItemDataPartial")
     
-    private def arrayItemPersistenceData: Parser[SimpleTypePersistenceData] = log(
-        ("<" ~> typeRefName <~ "|") ~ ( simpleValueData <~ ">") ^^ { 
-            case typeName ~ data => new SimpleTypePersistenceData(typeName, data) },
+    private def arrayItemPersistenceData: Parser[ArrayItemPersistenceData] = log(
+        ("<" ~> typeRefName <~ "|") ~ ( arrayItemDataPartial <~ ">") ^^ { 
+            case typeName ~ data => new ArrayItemPersistenceData(typeName, data) },
         "arrayItemPersistenceData")
     
-    private def arrayTypePersistenceData: Parser[ArrayTypePersistenceData] = log(
+    private def arrayType: Parser[ArrayTypePersistenceData] = log(
         (itemName <~ "(") ~ rep(arrayItemPersistenceData <~ opt(",")) <~ ")" ^^ {
             case typeName ~ data => new ArrayTypePersistenceData(typeName, data) },
-        "arrayTypePersistenceData")
+        "arrayType")
 
-    private def objectFieldPersistenceData: Parser[FieldPersistenceData] = log(
-        itemName ~ ("(" ~> (simpleObjectPersistenceData | referenceFieldPersistenceData | simpleFieldPersistenceData) <~ ")")
+    private def fieldData: Parser[FieldPersistenceData] = log(
+        itemName ~ (simpleObjectData | ("(" ~> (referenceFieldData | simpleFieldData) <~ ")"))
             ^^ {
                 case fieldName ~ fieldData => FieldPersistenceData(fieldName, fieldData)
-            }, "objectFieldPersistenceData")
-
-    private def tableWithIdData: Parser[(String, Option[SimpleValuePersistenceData])] = log(
-        "(" ~> itemName ~ opt("," ~> simpleFieldPersistenceData) <~ ")" ^^ {
-            case tableName ~ idColumn => (tableName, idColumn)
-        }, "tableWithIdData")
+            }, "fieldData")
 
     private def fieldsData: Parser[List[FieldPersistenceData]] = log(
-        "{" ~> rep(objectFieldPersistenceData <~ opt(",")) <~ "}", "fieldsData")
+        "{" ~> rep(fieldData <~ opt(",")) <~ "}", "fieldsData")
 
-    private def expandParentSingle: Parser[ExpandParentMarker] = log("""\s+_\s+""".r, "expandParent") ^^ { _ => ExpandParentMarkerSingle }
+    private def expandParentSingle: Parser[ExpandParentMarker] = log("_", "expandParentSingle") ^^ { _ => ExpandParentMarkerSingle }
 
-    private def expandParentTotal: Parser[ExpandParentMarker] = log("""\s+__\s+""".r, "expandParent") ^^ { _ => ExpandParentMarkerTotal }
+    private def expandParentTotal: Parser[ExpandParentMarker] = log("__", "expandParentTotal") ^^ { _ => ExpandParentMarkerTotal }
     
-    private def simpleObjectPersistenceData: Parser[SimpleObjectValuePersistenceData] = log(
-        opt(expandParentSingle | expandParentTotal | ("(" ~> referenceFieldPersistenceData <~ ")") ) ~ fieldsData ^^ {
-            case inheritanceData ~ fields => 
+    private def simpleObjectPersistenceDataWithExpantion: Parser[SimpleObjectValuePersistenceData] = log(
+        (expandParentSingle | expandParentTotal ) ~ opt(fieldsData) ^^ {
+            case expandData ~ fieldsOpt =>
+                SimpleObjectValuePersistenceData(Left(expandData), fieldsOpt.getOrElse(List())
+                    .map(f => f.fieldName -> f.columnData).toMap)
+        }, "simpleObjectPersistenceDataWithExpantion")
+
+    private def simpleObjectPersistenceDataWithReference: Parser[SimpleObjectValuePersistenceData] = log(
+        opt(":" ~> referenceFieldData) ~ fieldsData ^^ {
+            case inheritanceData ~ fields =>
                 val parentRelation = inheritanceData match
                     case Some(refData: ReferenceValuePersistenceData) => Right(refData)
-                    case Some(expandParentMarker: ExpandParentMarker) => Left(expandParentMarker)
                     case None => Left(ExpandParentMarkerSingle)
                 SimpleObjectValuePersistenceData(parentRelation, fields.map(f => f.fieldName -> f.columnData).toMap)
-        }, "simpleObjectPersistenceData")
+        }, "simpleObjectPersistenceDataWithReference")
+
+    private def simpleObjectData: Parser[SimpleObjectValuePersistenceData] = log(
+        simpleObjectPersistenceDataWithExpantion | simpleObjectPersistenceDataWithReference , "simpleObjectData")
+
+    private def tableWithIdData: Parser[(String, Option[PrimitiveValuePersistenceData])] = log(
+        "(" ~> itemName ~ opt("," ~> simpleFieldData) <~ ")" ^^ {
+            case tableName ~ idColumn => (tableName, idColumn)
+        }, "tableWithIdData")
     
-    private def objectTypePersistenceData: Parser[ObjectTypePersistenceData] = log(
-        itemName ~ opt(tableWithIdData) ~ (expandParentSingle | expandParentTotal | ("(" ~> referenceFieldPersistenceData <~ ")") ) ~ fieldsData
+    private def objectType: Parser[ObjectTypePersistenceData] = log(
+        itemName ~ opt(tableWithIdData) ~ opt(expandParentSingle | expandParentTotal | 
+            //TODO check why ":"
+            (":" ~> referenceFieldData) ) ~ fieldsData
         ^^ {
-            case typeName ~ tableData ~ inheritanceData ~ fields => 
+            case typeName ~ tableData ~ inheritanceDataOpt ~ fields => 
                 val fieldsMap = fields.map(f => f.fieldName -> f.columnData).toMap
-                val parentRelation = inheritanceData match
+                val parentRelation = inheritanceDataOpt.map {
                     case refData: ReferenceValuePersistenceData => Right(refData)
                     case expandParentMarker: ExpandParentMarker => Left(expandParentMarker)
+                }
                 tableData match 
-                    case Some((tableName, idColumn)) => new ObjectTypePersistenceData(typeName, Some(tableName), idColumn, fieldsMap, parentRelation)
+                    case Some((tableName, idColumn)) => new ObjectTypePersistenceData(typeName, Some(tableName), 
+                        idColumn, fieldsMap, parentRelation)
                     case None => new ObjectTypePersistenceData(typeName, None, None, fieldsMap, parentRelation)
         },
-        "objectTypePersistenceData")
+        "objectType")
     private def anyItem: Parser[AbstractTypePersistenceData] = 
-        log(objectTypePersistenceData | arrayTypePersistenceData | primitiveTypePersistenceData, "anyItem")
+        log(objectType | arrayType | primitiveType, "anyItem")
         
-    protected def packageContent: Parser[RootPackagePersistenceData] = log(rep(anyItem | singleTypePackageItem | packageItem) ^^ {
-        typesAndPackages =>
-            var types = List[AbstractTypePersistenceData]()
-            var packages = List[PackagePersistenceData]()
-            typesAndPackages.foreach {
-                case packageItem: PackagePersistenceData => packages = packages :+ packageItem
-                case typeItem: AbstractTypePersistenceData => types = types :+ typeItem
-            }
-            RootPackageData[AbstractTypePersistenceData](packages, types)
-    }, "packageContent")
+    protected def packageContent: Parser[RootPackagePersistenceData] = log(
+        rep(anyItem | singleTypePackageItem | packageItem) ^^ {
+            typesAndPackages =>
+                var types = List[AbstractTypePersistenceData]()
+                var packages = List[PackagePersistenceData]()
+                typesAndPackages.foreach {
+                    case packageItem: PackagePersistenceData => packages = packages :+ packageItem
+                    case typeItem: AbstractTypePersistenceData => types = types :+ typeItem
+                }
+                RootPackageData[AbstractTypePersistenceData](packages, types)
+        }, "packageContent")
     
     private def packageItem: Parser[PackagePersistenceData] = log((typeRefName <~ "{") ~ packageContent <~ "}" ^^ {
         case packageName ~ packageContent => packageContent.toNamed(packageName)
@@ -263,7 +277,7 @@ object PersistenceConfigParser extends DefinitionsParser[RootPackagePersistenceD
         val inLogId = logId
         val inBefore = in.source.toString.substring(0, in.offset)
         val isShort = in.source.toString.substring(in.offset, in.offset + Math.min(50, in.source.length() - in.offset))
-        val callsLine = callStack.reverse.mkString(":\n\t-> ")
+        val callsLine = callStack.reverse.zipWithIndex.map { case (elem, index) => s"{$index}: $elem" }.mkString(":\n\t-> ")
         val red = "\u001b[0;31m"
         val reset = "\u001b[0m"
         if (debugLogEnabled) {

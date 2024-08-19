@@ -39,7 +39,7 @@ class TypesDefinitionProviderImpl(
 
     def getType(name: String): Option[AbstractNamedEntityType] = typesDefinitionsMap.get(name) 
     def getAllTypes: Seq[AbstractNamedEntityType] = typesDefinitionsMap.values.toSeq
-    def getPersistanseData(name: String): Option[AbstractTypePersistenceData] = typesPersistenceData.get(name)
-    def getAllPersistanseData: Seq[AbstractTypePersistenceData] = typesPersistenceData.values.toSeq
+    def getPersistanseData(name: String): Option[TypePersistenceDataFinal] = typesPersistenceData.get(name)
+    def getAllPersistanseData: Seq[TypePersistenceDataFinal] = typesPersistenceData.values.toSeq
     def parseGetFieldsDescriptor(descriptor: Option[String], entityType: AbstractNamedEntityType): Try[Either[GetFieldsParseError, GetFieldsDescriptor]] = Success(Right(AllGetFieldsDescriptor))
     def parseSearchCondition(condition: Option[String], entityType: AbstractNamedEntityType): Try[Either[SearchConditionParseError, SearchCondition]] = ???

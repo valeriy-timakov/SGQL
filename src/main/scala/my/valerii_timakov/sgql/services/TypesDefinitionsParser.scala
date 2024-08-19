@@ -13,10 +13,10 @@ import scala.util.parsing.input.{Reader, StreamReader}
 
 type AnyTypeDef = ReferenceData | SimpleObjectData
 
-case class ReferenceData(refTypeName: String, refFieldName: Option[String])
+case class ReferenceData(refTypeName: String, refFieldName: Option[String], unique: Boolean = false)
 case class FieldData(name: String, typeDef: AnyTypeDef)
 case class ObjectData(idOrParent: Either[IdTypeRef, String], fields: List[FieldData])
-case class ArrayData(idOrParent: Either[IdTypeRef, String], elementTypesNames: List[AnyTypeDef])
+case class ArrayData(idOrParent: Either[IdTypeRef, String], elementTypesNames: List[ReferenceData])
 
 case class SimpleObjectData(parent: Option[String], fields: List[FieldData])
 
@@ -99,33 +99,34 @@ object TypesDefinitionsParser extends DefinitionsParser[TypesRootPackageData]:
         
     private def itemName: Parser[String] = log("""[\w_]+""".r, "itemName")
     private def typeRefName: Parser[String] = log("""[\w_]+([\w_.]+[\w_]+)?""".r, "typeRefName")
-    private def typeReference: Parser[ReferenceData] = log(typeRefName ~ opt("+" ~> itemName) ^^ {
-        case refTypeName ~ refFieldName => ReferenceData(refTypeName, refFieldName)
+    private def typeReference: Parser[ReferenceData] = log(opt("$") ~ typeRefName ~ opt("+" ~> itemName) ^^ {
+        case uniqueMark ~ refTypeName ~ refFieldName => ReferenceData(refTypeName, refFieldName, uniqueMark.isDefined)
     }, "typeReference")
     private def typeName: Parser[TypeNameData] = log(itemName ~ opt("!") <~ ":"  ^^ {
         case name ~ mandatoryConcreteOpt => TypeNameData(name, mandatoryConcreteOpt.isDefined)
     }, "typeName")
     private def idType: Parser[IdTypeRef] = log(("(" ~> itemName <~ ")") ^^ { name => IdTypeRef(name) }, "idType")
-    private def typeDef: Parser[AnyTypeDef] = log(objectDef | typeReference, "typeDef")
-    private def field: Parser[FieldData] = log((itemName <~ ":") ~ typeDef <~ opt(",") ^^ {
+//    private def typeDef: Parser[AnyTypeDef] = log(simpleObjectType | typeReference, "typeDef")
+    private def field: Parser[FieldData] = log((itemName <~ ":") ~ (simpleObjectType | typeReference) <~ opt(",") ^^ {
         case name ~ typeName => FieldData(name, typeName)
     }, "field")
     private def fields: Parser[List[FieldData]] = log("{" ~> rep(field) <~ "}", "fields")
-    private def array: Parser[List[AnyTypeDef]] = log("[" ~> rep(typeDef <~ opt(",")) <~ "]", "array")
-    private def arrayDef: Parser[ArrayData] = log((typeRefName | idType) ~ array ^^ {
-        case idOrParent ~ elements => idOrParent match
-            case idTypeRef: IdTypeRef => ArrayData(Left(idTypeRef), elements)
-            case parentName: String => ArrayData(Right(parentName), elements)
-    }, "arrayDef")
-    private def objectDef: Parser[SimpleObjectData] = log(opt(typeRefName) ~ fields ^^ {
+    private def array: Parser[List[ReferenceData]] = log("[" ~> rep(typeReference <~ opt(",")) <~ "]", "array")
+//    private def arrayDef: Parser[ArrayData] = log((typeRefName | idType) ~ array ^^ {
+//        case idOrParent ~ elements => idOrParent match
+//            case idTypeRef: IdTypeRef => ArrayData(Left(idTypeRef), elements)
+//            case parentName: String => ArrayData(Right(parentName), elements)
+//    }, "arrayDef")
+    private def simpleObjectType: Parser[SimpleObjectData] = log(opt(typeRefName) ~ fields ^^ {
+        case Some(ObjectTypeDefinition.name) ~ fields => SimpleObjectData(None, fields)
         case parent ~ fields => SimpleObjectData(parent, fields)
-    }, "objectDef")
-    private def objectType: Parser[ObjectTypeData] = log(typeName ~ (typeRefName | (ObjectTypeDefinition.name ~> idType)) ~ fields ^^ {
+    }, "simpleObjectType")
+    private def objectType: Parser[ObjectTypeData] = log(typeName ~ ((opt(ObjectTypeDefinition.name) ~> idType) | typeRefName) ~ fields ^^ {
         case typeName ~ idOrParent ~ fields => idOrParent match
             case idTypeRef: IdTypeRef => ObjectTypeData(typeName.name, ObjectData(Left(idTypeRef), fields), typeName.mandatoryConreteType)
             case parentName: String => ObjectTypeData(typeName.name, ObjectData(Right(parentName), fields), typeName.mandatoryConreteType)
     }, "objectType")
-    private def arrayType: Parser[ArrayTypeData] = log(typeName ~ (typeRefName | (ArrayTypeDefinition.name ~> idType)) ~ array ^^ {
+    private def arrayType: Parser[ArrayTypeData] = log(typeName ~ ((opt(ArrayTypeDefinition.name) ~> idType) | typeRefName) ~ array ^^ {
         case typeName ~ idOrParent ~ elements => idOrParent match
             case idTypeRef: IdTypeRef =>  ArrayTypeData(typeName.name, ArrayData(Left(idTypeRef), elements), typeName.mandatoryConreteType)
             case parentName: String => ArrayTypeData(typeName.name, ArrayData(Right(parentName), elements), typeName.mandatoryConreteType)
