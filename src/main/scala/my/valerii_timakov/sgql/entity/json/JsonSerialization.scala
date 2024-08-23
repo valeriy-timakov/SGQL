@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.entity.json
 
 import akka.parboiled2.util.Base64
 import my.valerii_timakov.sgql.entity
-import my.valerii_timakov.sgql.entity.{AbstractEntityType, AbstractNamedEntityType, AbstractTypeDefinition, ArrayItemEntityType, ArrayType, ArrayTypeDefinition, BinaryType, BinaryTypeDefinition, BooleanType, BooleanTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeType, DateTimeTypeDefinition, DateType, DateTypeDefinition, DoubleType, DoubleTypeDefinition, Entity, EntityFieldType, EntityId, EntityIdTypeDefinition, EntityType, EntityTypeDefinition, FloatType, FloatTypeDefinition, IntId, IntIdTypeDefinition, IntType, IntTypeDefinition, LongId, LongIdTypeDefinition, LongType, LongTypeDefinition, NamedEntitySuperType, ObjectType, ObjectTypeDefinition, PrimitiveFieldTypeDefinition, RootPrimitiveTypeDefinition, SimpleEntityType, SimpleTypeDefinitions, StringId, StringIdTypeDefinition, StringType, StringTypeDefinition, TimeType, TimeTypeDefinition, TypeReferenceDefinition, UUIDId, UUIDIdTypeDefinition}
+import my.valerii_timakov.sgql.entity.{AbstractEntityType, AbstractNamedEntityType, AbstractTypeDefinition, ArrayItemType, ArrayType, ArrayTypeDefinition, BinaryType, BinaryTypeDefinition, BooleanType, BooleanTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeType, DateTimeTypeDefinition, DateType, DateTypeDefinition, DoubleType, DoubleTypeDefinition, Entity, EntityFieldType, EntityId, EntityIdTypeDefinition, EntityType, EntityTypeDefinition, FieldType, FieldTypeDefinitions, FloatType, FloatTypeDefinition, IntId, IntIdTypeDefinition, IntType, IntTypeDefinition, LongId, LongIdTypeDefinition, LongType, LongTypeDefinition, NamedEntitySuperType, ObjectType, ObjectTypeDefinition, PrimitiveFieldTypeDefinition, RootPrimitiveTypeDefinition, StringId, StringIdTypeDefinition, StringType, StringTypeDefinition, TimeType, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDId, UUIDIdTypeDefinition}
 import spray.json.*
 import spray.json.DefaultJsonProtocol.*
 
@@ -156,13 +156,13 @@ implicit val entityFieldTypeDefinitionFormat: RootJsonFormat[AbstractTypeDefinit
 
     private def writeEntityType(entityDef: AbstractEntityType): JsValue = entityDef match
         case namedEntityDef: AbstractNamedEntityType => JsString(namedEntityDef.name)
-        case SimpleEntityType(valueType) => valueType.asInstanceOf[AbstractTypeDefinition].toJson
+        case FieldType(valueType) => valueType.asInstanceOf[AbstractTypeDefinition].toJson
         
-    private def writeArrayItemEntityType(entityDef: ArrayItemEntityType): JsValue = entityDef.valueType match
+    private def writeArrayItemEntityType(entityDef: ArrayItemType): JsValue = entityDef.valueType match
         case ref: TypeReferenceDefinition => write(ref)
         case prim: RootPrimitiveTypeDefinition => write(prim)
         
-    private def writeSimpleEntityType(entityDef: SimpleEntityType): JsValue = entityDef.valueType match
+    private def writeFieldTypeDefinitions(entityDef: FieldType): JsValue = entityDef.valueType match
         case ref: TypeReferenceDefinition => write(ref)
         case prim: RootPrimitiveTypeDefinition => write(prim)
 
@@ -180,13 +180,14 @@ implicit val entityFieldTypeDefinitionFormat: RootJsonFormat[AbstractTypeDefinit
         case ObjectTypeDefinition(fields, parentType) => JsObject(
             "type" -> JsString("Object"),
             "parent" -> parentType.map(p => JsString(p.name)).getOrElse(JsNull),
-            "fields" -> JsObject(fields.map((fieldName, fieldType) => fieldName -> writeSimpleEntityType(fieldType))))
-        case TypeReferenceDefinition(referencedType, refFieldOpt) => JsObject(
+            "fields" -> JsObject(fields.map((fieldName, fieldType) => fieldName -> writeFieldTypeDefinitions(fieldType))))
+        case TypeReferenceDefinition(referencedType) => JsObject(
+            "type" -> JsString("Reference"),
+            "referencedType" -> JsString(referencedType.name))
+        case TypeBackReferenceDefinition(referencedType, refField) => JsObject(
             "type" -> JsString("Reference"),
             "referencedType" -> JsString(referencedType.name),
-            "refField" -> (refFieldOpt match 
-                case Some(refField: String) => JsString(refField)
-                case None => JsNull))
+            "refField" -> JsString(refField))
             
 //    def readPrimitiveType(name: String): Option[PrimitiveFieldTypeDefinition] = name match
 //        case "String" => Some(StringTypeDefinition)
@@ -217,9 +218,9 @@ implicit val entityFieldTypeDefinitionFormat: RootJsonFormat[AbstractTypeDefinit
                 }
                 val fieldsMap = fields.map((fieldName, fieldType) => fieldName -> (fieldType match
                     case JsString(name) => readPrimitiveType(name) match
-                        case Some(primitiveType) => SimpleEntityType(primitiveType)
-                        case None => SimpleEntityType(PreParsedObjectTypeDefinitionHolder(name))
-                    case JsArray(elementTypes) => SimpleEntityType(readArrayType(elementTypes))
+                        case Some(primitiveType) => FieldTypeDefinitions(primitiveType)
+                        case None => FieldTypeDefinitions(PreParsedObjectTypeDefinitionHolder(name))
+                    case JsArray(elementTypes) => FieldTypeDefinitions(readArrayType(elementTypes))
                 ))
                 ObjectTypeDefinition(name, fieldsMap, parent)
             case _ => deserializationError("EntityType expected!")

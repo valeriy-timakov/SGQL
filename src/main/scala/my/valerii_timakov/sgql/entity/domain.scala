@@ -43,13 +43,13 @@ case class ObjectEntitySuperType(
     valueType: ObjectTypeDefinition,
 ) extends NamedEntitySuperType
 
-type SimpleTypeDefinitions = TypeReferenceDefinition | RootPrimitiveTypeDefinition | SimpleObjectTypeDefinition
+type FieldTypeDefinitions = TypeReferenceDefinition | TypeBackReferenceDefinition | RootPrimitiveTypeDefinition | SimpleObjectTypeDefinition
 type ArrayItemTypeDefinitions = TypeReferenceDefinition | RootPrimitiveTypeDefinition
 
 //trait ItemEntityType extends AbstractEntityType//:
     //def valueType: ArrayItemTypeDefinitions
-case class SimpleEntityType(valueType: SimpleTypeDefinitions) //extends AbstractEntityType
-case class ArrayItemEntityType(valueType: ArrayItemTypeDefinitions)// extends AbstractEntityType
+case class FieldType(valueType: FieldTypeDefinitions) //extends AbstractEntityType
+case class ArrayItemType(valueType: ArrayItemTypeDefinitions)// extends AbstractEntityType
 
 sealed trait EntityId:
     def serialize: String
@@ -125,7 +125,17 @@ sealed trait EntityTypeDefinition:
 
 sealed abstract class AbstractTypeDefinition
     
-sealed case class TypeReferenceDefinition(referencedType: AbstractNamedEntityType, refField: Option[String]) extends AbstractTypeDefinition, EntityTypeDefinition:
+sealed case class TypeReferenceDefinition(
+    referencedType: AbstractNamedEntityType, 
+) extends AbstractTypeDefinition, EntityTypeDefinition:
+    lazy val idType: EntityIdTypeDefinition = referencedType.valueType.idType
+    lazy val parent: Option[NamedEntitySuperType] = None
+    override def toString: String = s"TypeReferenceDefinition(ref[${referencedType.name}])"
+
+sealed case class TypeBackReferenceDefinition(
+    referencedType: AbstractNamedEntityType,
+    refField: String
+) extends AbstractTypeDefinition, EntityTypeDefinition:
     lazy val idType: EntityIdTypeDefinition = referencedType.valueType.idType
     lazy val parent: Option[NamedEntitySuperType] = None
     override def toString: String = s"TypeReferenceDefinition(ref[${referencedType.name}], $refField)"
@@ -181,16 +191,16 @@ object ArrayTypeDefinition:
     val name = "Array"
 
     
-final case class ArrayTypeDefinition(private var _elementTypes: Set[ArrayItemEntityType], idOrParent: Either[EntityIdTypeDefinition, ArrayEntitySuperType])
+final case class ArrayTypeDefinition(private var _elementTypes: Set[ArrayItemType], idOrParent: Either[EntityIdTypeDefinition, ArrayEntitySuperType])
 extends AbstractTypeDefinition, EntityTypeDefinition:
     private var initiated = false
-    def elementTypes: Set[ArrayItemEntityType] = _elementTypes
-    def setChildren(elementTypesValues: Set[ArrayItemEntityType]): Unit =
+    def elementTypes: Set[ArrayItemType] = _elementTypes
+    def setChildren(elementTypesValues: Set[ArrayItemType]): Unit =
         if (initiated) throw new TypeReinitializationException
         _elementTypes = elementTypesValues
         initiated = true
-    lazy val allElementTypes: Set[ArrayItemEntityType] =
-        _elementTypes ++ parent.map(_.valueType.allElementTypes).getOrElse(Set.empty[ArrayItemEntityType])
+    lazy val allElementTypes: Set[ArrayItemType] =
+        _elementTypes ++ parent.map(_.valueType.allElementTypes).getOrElse(Set.empty[ArrayItemType])
     lazy val idType: EntityIdTypeDefinition = idOrParent.fold(identity, _.valueType.idType)
     lazy val parent: Option[ArrayEntitySuperType] = idOrParent.toOption
         
@@ -199,32 +209,32 @@ object ObjectTypeDefinition:
 
 
 final case class ObjectTypeDefinition(
-    private var _fields: Map[String, SimpleEntityType],
+    private var _fields: Map[String, FieldType],
     idOrParent: Either[EntityIdTypeDefinition, ObjectEntitySuperType]
 ) extends AbstractTypeDefinition, EntityTypeDefinition:
     private var initiated = false
-    def fields: Map[String, SimpleEntityType] = _fields
-    def setChildren(fieldsValues: Map[String, SimpleEntityType]): Unit =
+    def fields: Map[String, FieldType] = _fields
+    def setChildren(fieldsValues: Map[String, FieldType]): Unit =
         if (initiated) throw new TypeReinitializationException
         _fields = fieldsValues
         initiated = true
-    lazy val allFields: Map[String, SimpleEntityType] = 
-        _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, SimpleEntityType])
+    lazy val allFields: Map[String, FieldType] = 
+        _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldType])
     lazy val idType: EntityIdTypeDefinition = idOrParent.fold(identity, _.valueType.idType)
     lazy val parent: Option[ObjectEntitySuperType] = idOrParent.toOption
 
 final case class SimpleObjectTypeDefinition(
-    private var _fields: Map[String, SimpleEntityType],
+    private var _fields: Map[String, FieldType],
     parent: Option[ObjectEntitySuperType]
 ) extends AbstractTypeDefinition:
     private var initiated = false
-    def fields: Map[String, SimpleEntityType] = _fields
-    def setChildren(fieldsValues: Map[String, SimpleEntityType]): Unit =
+    def fields: Map[String, FieldType] = _fields
+    def setChildren(fieldsValues: Map[String, FieldType]): Unit =
         if (initiated) throw new TypeReinitializationException
         _fields = fieldsValues
         initiated = true
-    lazy val allFields: Map[String, SimpleEntityType] =
-        _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, SimpleEntityType])
+    lazy val allFields: Map[String, FieldType] =
+        _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldType])
 
 sealed trait GetFieldsDescriptor
 case class ObjectGetFieldsDescriptor(fields: Map[String, GetFieldsDescriptor])

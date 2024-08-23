@@ -8,31 +8,31 @@ object ExpandParentMarkerSingle extends ExpandParentMarker
 
 object ExpandParentMarkerTotal extends ExpandParentMarker
 
-sealed abstract class FieldType(val name: String)
+sealed abstract class PersistenceFieldType(val name: String)
 
-object LongFieldType extends FieldType("long")
+object LongFieldType extends PersistenceFieldType("long")
 
-object IntFieldType extends FieldType("integer")
+object IntFieldType extends PersistenceFieldType("integer")
 
-object DoubleFieldType extends FieldType("double")
+object DoubleFieldType extends PersistenceFieldType("double")
 
-object FloatFieldType extends FieldType("float")
+object FloatFieldType extends PersistenceFieldType("float")
 
-object BooleanFieldType extends FieldType("boolean")
+object BooleanFieldType extends PersistenceFieldType("boolean")
 
-object DateFieldType extends FieldType("date")
+object DateFieldType extends PersistenceFieldType("date")
 
-object DateTimeFieldType extends FieldType("datetime")
+object DateTimeFieldType extends PersistenceFieldType("datetime")
 
-object TimeFieldType extends FieldType("time")
+object TimeFieldType extends PersistenceFieldType("time")
 
-object UUIDFieldType extends FieldType("uuid")
+object UUIDFieldType extends PersistenceFieldType("uuid")
 
-object TextFieldType extends FieldType("text")
+object TextFieldType extends PersistenceFieldType("text")
 
-object BLOBFieldType extends FieldType("blob")
+object BLOBFieldType extends PersistenceFieldType("blob")
 
-final case class StringFieldType(maxLength: Int) extends FieldType("string")
+final case class StringFieldType(maxLength: Int) extends PersistenceFieldType("string")
 
 val allEmptyTypes = List(LongFieldType, IntFieldType, DoubleFieldType, FloatFieldType, BooleanFieldType, DateFieldType, 
     DateTimeFieldType, TimeFieldType, UUIDFieldType, TextFieldType, BLOBFieldType)
@@ -46,21 +46,21 @@ case class ColumnPersistenceData(
 
 case class PrimitiveValuePersistenceData(
     columnName: Option[String],
-    columnType: Option[FieldType],
+    columnType: Option[PersistenceFieldType],
 ) extends ValuePersistenceData
+
+case class SimpleObjectValuePersistenceData(
+    parentRelation: Either[ExpandParentMarker, ReferenceValuePersistenceData],
+    fieldsMap: Map[String, ValuePersistenceData],
+) extends ValuePersistenceData:
+    val columnName: Option[String] = None
+
 
 case class ReferenceValuePersistenceData(
     columnName: Option[String],
 ) 
 
 type ArrayValuePersistenceData = PrimitiveValuePersistenceData | ColumnPersistenceData
-
-case class SimpleObjectValuePersistenceData(
-    parentRelation: Either[ExpandParentMarker, ReferenceValuePersistenceData],
-    fieldsMap: Map[String, ValuePersistenceData], 
-) extends ValuePersistenceData:
-    val columnName: Option[String] = None
-
 case class FieldPersistenceData (
     fieldName: String, 
     columnData: ValuePersistenceData
@@ -148,9 +148,9 @@ object PersistenceConfigParser extends DefinitionsParser[RootPackagePersistenceD
         "varchar" ~> "(" ~> """\d+""".r <~ ")" ^^ { maxLength => StringFieldType(maxLength.toInt) },
         "stringType")
     
-    private def simpleFieldType: Parser[FieldType] = log(stringType | allEmptyTypes
+    private def simpleFieldType: Parser[PersistenceFieldType] = log(stringType | allEmptyTypes
         .map(t => t.name ^^^ t)
-        .foldLeft(failure("Not filed type!"): Parser[FieldType])(_ | _) 
+        .foldLeft(failure("Not filed type!"): Parser[PersistenceFieldType])(_ | _) 
         ^^ (t => t), 
         "simpleFieldType")
     

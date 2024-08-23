@@ -184,42 +184,65 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
 
     def parseAnyTypeDef(rowData: AnyTypeDef,
                         typePrefix: Option[String],
-                        typesMap: Map[String, AbstractNamedEntityType]): SimpleEntityType =
+                        typesMap: Map[String, AbstractNamedEntityType]): FieldType =
         rowData match
             case refData: ReferenceData =>
-                SimpleEntityType(parseReferenceType(refData, typePrefix, typesMap))
+                FieldType(parseReferenceType(refData, typePrefix, typesMap))
             case typeDefRaw: SimpleObjectData => 
                 parseObjectSimpleType(typeDefRaw, typePrefix, typesMap)
                 
     def parseArrayItemTypeDef(rowData: ReferenceData,
                               typePrefix: Option[String],
-                              typesMap: Map[String, AbstractNamedEntityType]): ArrayItemEntityType =
-        ArrayItemEntityType(parseReferenceType(rowData, typePrefix, typesMap))
+                              typesMap: Map[String, AbstractNamedEntityType]): ArrayItemType =
+        parseReferenceType(rowData, typePrefix, typesMap) match
+            case refData: TypeReferenceDefinition =>
+                ArrayItemType(refData)
+            case refData: RootPrimitiveTypeDefinition =>
+                ArrayItemType(refData)
+            case _ =>
+                throw new ConsistencyException("Only reference or root primitive types could be array items! " +
+                    s"Type ${rowData.refTypeName} is trying to be array item!")
 
     private def parseReferenceType(refData: ReferenceData,
                                    typePrefix: Option[String],
-                                   typesMap: Map[String, AbstractNamedEntityType]): RootPrimitiveTypeDefinition | TypeReferenceDefinition =
-        typePredefsMap.get(refData.refTypeName)
-            .orElse(typesMap.get(refData.refTypeName))        
-            .orElse(
-                findInPackagesUpstears(refData.refTypeName, typePrefix, typesMap)
-                    .map(_._2)
-            )
-            .getOrElse(throw new NoTypeFound(refData.refTypeName)) match
-                case valueType: RootPrimitiveTypeDefinition =>
-                    valueType
-                case entityType: EntityType =>
-                    TypeReferenceDefinition(entityType, refData.refFieldName)
-                case objectEntitySuperType: ObjectEntitySuperType =>
-                    TypeReferenceDefinition(objectEntitySuperType, refData.refFieldName)
-                case anyTypeDefinition: AbstractNamedEntityType =>
-                    TypeReferenceDefinition(anyTypeDefinition, None)
+                                   typesMap: Map[String, AbstractNamedEntityType]
+                                  ): RootPrimitiveTypeDefinition | TypeReferenceDefinition | TypeBackReferenceDefinition =
+        val referencedTypeOpt: Option[AbstractNamedEntityType] =
+            typesMap.get(refData.refTypeName)
+                .orElse(
+                    findInPackagesUpstears(refData.refTypeName, typePrefix, typesMap)
+                        .map(_._2)
+                )
+        refData.refFieldName match
+            case Some(refFieldName) => 
+                val referencedType: AbstractNamedEntityType = referencedTypeOpt.getOrElse(
+                    if (typePredefsMap.contains(refData.refTypeName))
+                        throw new ConsistencyException("Root primitive type couldnot be referenced by as back " +
+                            s"reference! Type ${refData.refTypeName} is trying to be referenced by ${refData.refFieldName}!")
+                    else
+                        throw new NoTypeFound(refData.refTypeName))
+                referencedType.valueType match
+                    case _: ObjectTypeDefinition =>
+                        TypeBackReferenceDefinition(referencedType, refFieldName)
+                    case anyTypeDefinition: AbstractNamedEntityType =>
+                        throw new ConsistencyException("Only object types could be referenced by back reference! " +
+                            s"Type ${refData.refTypeName} is trying to be referenced by ${refData.refFieldName}!")
+            case None =>
+                referencedTypeOpt match
+                    case Some(anyTypeDefinition) =>
+                        TypeReferenceDefinition(anyTypeDefinition)
+                    case None =>
+                        typePredefsMap.get(refData.refTypeName) match
+                            case Some(valueType) =>
+                                valueType
+                            case None =>
+                                throw new NoTypeFound(refData.refTypeName)
                 
 
     private def parseObjectSimpleType(rawType: SimpleObjectData,
                                       typePrefixOpt: Option[String],
-                                      typesMap: Map[String, AbstractNamedEntityType]): SimpleEntityType =
-        SimpleEntityType(SimpleObjectTypeDefinition(rawType.fields.map(fieldRaw =>
+                                      typesMap: Map[String, AbstractNamedEntityType]): FieldType =
+        FieldType(SimpleObjectTypeDefinition(rawType.fields.map(fieldRaw =>
             fieldRaw.name -> parseAnyTypeDef(fieldRaw.typeDef, typePrefixOpt, typesMap)).toMap,
             rawType.parent.map(parentTypeName =>
                 findOrParseObjectSuperType(parentTypeName, typePrefixOpt)
