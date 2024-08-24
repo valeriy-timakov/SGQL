@@ -37,3 +37,4 @@ build/
 ### Mac OS ###
 .DS_Store
 /.bsp/sbt.json
+/.idea/kotlinc.xml

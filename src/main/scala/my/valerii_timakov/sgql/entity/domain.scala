@@ -206,12 +206,16 @@ extends AbstractTypeDefinition, EntityTypeDefinition:
         
 object ObjectTypeDefinition:
     val name = "Object"
+    
+trait FieldsContainer:
+    def fields: Map[String, FieldType]
+    def allFields: Map[String, FieldType]
 
 
 final case class ObjectTypeDefinition(
     private var _fields: Map[String, FieldType],
     idOrParent: Either[EntityIdTypeDefinition, ObjectEntitySuperType]
-) extends AbstractTypeDefinition, EntityTypeDefinition:
+) extends AbstractTypeDefinition, EntityTypeDefinition, FieldsContainer:
     private var initiated = false
     def fields: Map[String, FieldType] = _fields
     def setChildren(fieldsValues: Map[String, FieldType]): Unit =
@@ -226,7 +230,7 @@ final case class ObjectTypeDefinition(
 final case class SimpleObjectTypeDefinition(
     private var _fields: Map[String, FieldType],
     parent: Option[ObjectEntitySuperType]
-) extends AbstractTypeDefinition:
+) extends AbstractTypeDefinition, FieldsContainer:
     private var initiated = false
     def fields: Map[String, FieldType] = _fields
     def setChildren(fieldsValues: Map[String, FieldType]): Unit =

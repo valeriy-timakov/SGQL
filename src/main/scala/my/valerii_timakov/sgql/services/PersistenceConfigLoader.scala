@@ -169,9 +169,9 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
 
     private def mergeObjectTypePersistenceData(typeName: String,
                                                typeDefinition: ObjectTypeDefinition,
-                                               parsed: Option[AbstractTypePersistenceData]
+                                               persistenceDataOpt: Option[AbstractTypePersistenceData]
                                               ): ObjectTypePersistenceDataFinal =
-        val parsedData = parsed
+        val persistenceData = persistenceDataOpt
             .map(p =>
                 if (!p.isInstanceOf[ObjectTypePersistenceData])
                     throw new ConsistencyException(s"Persistence data for type $typeName is not ObjectTypePersistenceData type!")
@@ -179,17 +179,29 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
             )
             .getOrElse(ObjectTypePersistenceData(typeName, None, None, Map.empty, None))
 
-        val tableName = parsedData.tableName.getOrElse(tableNameFromTypeName(typeName))
-        val idColumn = mergeIdTypeDefinition(typeDefinition.idType, parsedData.idColumn)
+        val tableName = persistenceData.tableName.getOrElse(tableNameFromTypeName(typeName))
+        val idColumn = mergeIdTypeDefinition(typeDefinition.idType, persistenceData.idColumn)
 
-        val parentRelation = getParentPersistenceDataOrDefault(parsedData.parentRelation)
+        val parentRelation = getParentPersistenceDataOrDefault(persistenceData.parentRelation)
         val columnsNamesChecker = ColumnsNamesChecker()
         columnsNamesChecker.addAndCheckUsage(idColumn.columnName, "ID column")
 
-        val fieldsAndParentPersistenceData = mergeFieldsAndParentPersistenceData(
-            typeDefinition.parent, typeDefinition.fields, parentRelation, parsedData.fields, columnsNamesChecker, typeName, "")
+        val parentFieldsOverriden = getOverridenParentsFields(persistenceData.fields, typeDefinition)
+
+        val fieldsAndParentPersistenceData = mergeFieldsAndParentPersistenceData(typeDefinition.parent,
+            typeDefinition.fields ++ parentFieldsOverriden, parentRelation, persistenceData.fields,
+            columnsNamesChecker, typeName, "")
 
         ObjectTypePersistenceDataFinal(tableName, idColumn, fieldsAndParentPersistenceData)
+
+    private def getOverridenParentsFields(fieldsPersistenceData: Map[String, ValuePersistenceData],
+                                          typeDefinition: FieldsContainer
+                                         ): Map[String, FieldType] =
+        fieldsPersistenceData
+            .filter((fieldName, _) => !typeDefinition.fields.contains(fieldName))
+            .map((fieldName, _) =>
+                fieldName -> typeDefinition.allFields(fieldName)
+            )
 
     private def mergeFieldsAndParentPersistenceData(parentType: Option[ObjectEntitySuperType],
                                                     fields: Map[String, FieldType],
@@ -510,6 +522,7 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
                                 s"persistent data for fields not defined in type definition!")
 
                         //TODO: check expand markers logic!!!
+                        val parentFieldsOverriden = getOverridenParentsFields(fieldsPersistenceMap, subObjectType)
                         createSimpleObjectFromParent(subObjectType.fields, fieldsPersistenceMap,
                             subObjectType.parent, fieldName, parentRelation, prefix,
                             s" $fieldName fields of $typeName SimpleObject")
@@ -529,10 +542,15 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
                     case SimpleObjectValuePersistenceData(parentRelation, fieldsPersistenceMap) =>
                         refType.referencedType.valueType match
                             case objectType: ObjectTypeDefinition =>
-                                //TODO: check expand markers logic!!!
-                                createSimpleObjectFromParent(objectType.fields, fieldsPersistenceMap,
-                                    objectType.parent, fieldName, parentRelation, prefix,
-                                    s" $fieldName fields of $typeName SimpleObject")
+                                parentRelation match
+                                    case Left(_ :ExpandParentMarker) =>
+                                        val parentFieldsOverriden = getOverridenParentsFields(fieldsPersistenceMap, objectType)
+                                        createSimpleObjectFromParent(objectType.fields ++ parentFieldsOverriden, fieldsPersistenceMap,
+                                            objectType.parent, fieldName, parentRelation, prefix,
+                                            s" $fieldName fields of $typeName SimpleObject")
+                                    case Right(ReferenceValuePersistenceData(columnName)) =>
+                                        toReferencePersistenceDataFinal(refType, ColumnPersistenceData(columnName),
+                                            fieldName, prefix, () => s"Field $fieldName of type $typeName")
                             case otherType =>
                                 throw new ConsistencyException("Only ObjectTypePersistenceData could be " +
                                     s"saved in denormalized columns! Trying to save $otherType as $otherType.")
