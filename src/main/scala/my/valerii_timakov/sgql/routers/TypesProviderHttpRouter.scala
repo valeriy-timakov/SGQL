@@ -27,7 +27,13 @@ class TypesProviderHttpRouter(
     implicit val timeout: Timeout = Timeout(5.seconds)
 
     val route: Route =
-        pathPrefix("type_definitions") { 
+        path("hello") {
+            get {
+                val result = appActor ? (GetAllPersist.apply)
+                complete(result.toString)
+            }
+        } ~
+        pathPrefix("type") {
             path(Segment) { name =>
                 get {
                     val result: Future[Option[AbstractNamedEntityType]] =

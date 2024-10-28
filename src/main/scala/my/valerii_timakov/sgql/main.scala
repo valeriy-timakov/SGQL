@@ -49,7 +49,7 @@ import scala.language.postfixOps
         Await.ready(terminate(), conf.getDuration("shutdown-timeout").toMillis millis)
     }
 
-    println(s"Server now online. Please navigate to http://localhost:8080/hello\nPress RETURN to stop...")
+    println(s"Server now online. Please navigate to http://localhost:${conf.getConfig("http").getInt("port")}/hello\nPress RETURN to stop...")
     StdIn.readLine()
     terminate()
 

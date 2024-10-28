@@ -7,7 +7,6 @@ import my.valerii_timakov.sgql.exceptions.TypeReinitializationException
 import java.time.{LocalDate, LocalDateTime, LocalTime}
 import java.util.UUID
 import scala.annotation.tailrec
-import scala.util.Try
 
 
 case class Entity(id: EntityId, value: EntityFieldType)
@@ -49,7 +48,12 @@ type ArrayItemTypeDefinitions = TypeReferenceDefinition | RootPrimitiveTypeDefin
 //trait ItemEntityType extends AbstractEntityType//:
     //def valueType: ArrayItemTypeDefinitions
 case class FieldType(valueType: FieldTypeDefinitions) //extends AbstractEntityType
-case class ArrayItemType(valueType: ArrayItemTypeDefinitions)// extends AbstractEntityType
+case class ArrayItemType(valueType: ArrayItemTypeDefinitions):// extends AbstractEntityType
+    def name: String = valueType match
+        case ref: TypeReferenceDefinition => ref.referencedType.name
+        case root: RootPrimitiveTypeDefinition => root.name
+        case _ => throw new RuntimeException("Unexpected ArrayItemType valueType")
+    override def toString: String = name
 
 sealed trait EntityId:
     def serialize: String
@@ -62,7 +66,7 @@ final case class StringId(value: String) extends EntityId:
 final case class UUIDId(value: java.util.UUID) extends EntityId:
     override def serialize: String = value.toString
 
-sealed trait EntityIdTypeDefinition(val name: String):
+sealed abstract class EntityIdTypeDefinition(val name: String):
     def parse(value: String): Either[IdParseError, EntityId] = {
         try {
             Right(parseIner(value))
@@ -191,8 +195,10 @@ object ArrayTypeDefinition:
     val name = "Array"
 
     
-final case class ArrayTypeDefinition(private var _elementTypes: Set[ArrayItemType], idOrParent: Either[EntityIdTypeDefinition, ArrayEntitySuperType])
-extends AbstractTypeDefinition, EntityTypeDefinition:
+final case class ArrayTypeDefinition(
+    private var _elementTypes: Set[ArrayItemType], 
+    idOrParent: Either[EntityIdTypeDefinition, ArrayEntitySuperType]
+) extends AbstractTypeDefinition, EntityTypeDefinition:
     private var initiated = false
     def elementTypes: Set[ArrayItemType] = _elementTypes
     def setChildren(elementTypesValues: Set[ArrayItemType]): Unit =
@@ -239,6 +245,8 @@ final case class SimpleObjectTypeDefinition(
         initiated = true
     lazy val allFields: Map[String, FieldType] =
         _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldType])
+    override def toString: String = parent.map(_.name).getOrElse("") + "{" +
+        fields.map(f => s"${f._1}: ${f._2}").mkString(", ") + "}"
 
 sealed trait GetFieldsDescriptor
 case class ObjectGetFieldsDescriptor(fields: Map[String, GetFieldsDescriptor])

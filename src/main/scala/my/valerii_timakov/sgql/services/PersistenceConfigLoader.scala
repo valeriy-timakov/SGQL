@@ -59,30 +59,32 @@ class TableReferenceFactory:
 
 trait TypePersistenceDataFinal
 
-class PrimitiveTypePersistenceDataFinal(
-    val tableName: String,
-    val idColumn: PrimitiveValuePersistenceDataFinal,
-    val valueColumn: PrimitiveValuePersistenceDataFinal,
+case class PrimitiveTypePersistenceDataFinal(
+    tableName: String,
+    idColumn: PrimitiveValuePersistenceDataFinal,
+    valueColumn: PrimitiveValuePersistenceDataFinal,
 ) extends TypePersistenceDataFinal
 
-class ItemTypePersistenceDataFinal(
-    val tableName: String,
-    val idColumn: PrimitiveValuePersistenceDataFinal,
-    val valueColumn: PrimitiveValuePersistenceDataFinal | ReferenceValuePersistenceDataFinal,
+case class ItemTypePersistenceDataFinal(
+    tableName: String,
+    idColumn: PrimitiveValuePersistenceDataFinal,
+    valueColumn: PrimitiveValuePersistenceDataFinal | ReferenceValuePersistenceDataFinal,
 ) extends TypePersistenceDataFinal
 
-class ArrayTypePersistenceDataFinal(
-    val data: Set[ItemTypePersistenceDataFinal],
+case class ArrayTypePersistenceDataFinal(
+    data: Set[ItemTypePersistenceDataFinal],
 ) extends TypePersistenceDataFinal
 
-class ObjectTypePersistenceDataFinal(
-    val tableName: String,
-    val idColumn: PrimitiveValuePersistenceDataFinal,
-    val fields: Map[String, ValuePersistenceDataFinal],
-    val parent: Option[ReferenceValuePersistenceDataFinal],
-) extends TypePersistenceDataFinal:
-    def this (tableName: String, idColumn: PrimitiveValuePersistenceDataFinal, fieldsAndParend: FieldsAndParentPersistenceData) =
-        this(tableName, idColumn, fieldsAndParend.fields, fieldsAndParend.parent)
+case class ObjectTypePersistenceDataFinal(
+    tableName: String,
+    idColumn: PrimitiveValuePersistenceDataFinal,
+    fields: Map[String, ValuePersistenceDataFinal],
+    parent: Option[ReferenceValuePersistenceDataFinal],
+) extends TypePersistenceDataFinal
+
+object ObjectTypePersistenceDataFinal:
+    def apply (tableName: String, idColumn: PrimitiveValuePersistenceDataFinal, fieldsAndParend: FieldsAndParentPersistenceData) =
+        new ObjectTypePersistenceDataFinal(tableName, idColumn, fieldsAndParend.fields, fieldsAndParend.parent)
 
 private case class FieldsAndParentPersistenceData(
     fields: Map[String, ValuePersistenceDataFinal],
@@ -125,6 +127,21 @@ val consistencePersistenceTypesMap: Map[RootPrimitiveTypeDefinition, Set[Persist
     TimeTypeDefinition -> Set(TimeFieldType),
     UUIDTypeDefinition -> Set(UUIDFieldType),
     BinaryTypeDefinition -> Set(BLOBFieldType)
+)
+
+val consiestenceDefinitionsMap: Map[PersistenceFieldType, RootPrimitiveTypeDefinition] = Map(
+    LongFieldType -> LongTypeDefinition,
+    IntFieldType-> IntTypeDefinition,
+    TextFieldType-> StringTypeDefinition,
+    StringFieldType-> StringTypeDefinition,
+    DoubleFieldType-> DoubleTypeDefinition,
+    FloatFieldType-> FloatTypeDefinition,
+    BooleanFieldType-> BooleanTypeDefinition,
+    DateFieldType-> DateTypeDefinition,
+    DateTimeFieldType-> DateTimeTypeDefinition,
+    TimeFieldType-> TimeTypeDefinition,
+    UUIDFieldType-> UUIDTypeDefinition,
+    BLOBFieldType-> BinaryTypeDefinition
 )
 
 
@@ -237,23 +254,26 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
                 Map.empty
 
     private def mergeArrayTypePersistenceData(typeName: String,
-                                                   valueType: ArrayTypeDefinition,
-                                                   parsed: Option[AbstractTypePersistenceData]): TypePersistenceDataFinal =
-        val parsedData = parsed
-            .map(p =>
-                if (!p.isInstanceOf[ArrayTypePersistenceData])
-                    throw new ConsistencyException(s"Persistence data for type $typeName is not ArrayTypePersistenceData type!")
-                p.asInstanceOf[ArrayTypePersistenceData]
-            )
-            .getOrElse(ArrayTypePersistenceData(typeName, Seq.empty))
+                                              valueType: ArrayTypeDefinition,
+                                              persistenceDataOpt: Option[AbstractTypePersistenceData]
+                                             ): TypePersistenceDataFinal =
+        val parsedData = persistenceDataOpt
+            .map {
+                case arrayTypePersistenceData: ArrayTypePersistenceData => arrayTypePersistenceData
+                case PrimitiveTypePersistenceData(typeName, tableName, idColumn, valueColumn) =>
+                    convertPrimitiveToArrayItemData(valueType, typeName, tableName, idColumn, valueColumn)
+                case p => throw new ConsistencyException(
+                    s"Persistence data for type $typeName is not ArrayTypePersistenceData type $p!")
+            }
+            .getOrElse(ArrayTypePersistenceData(typeName, Map.empty))
 
         ArrayTypePersistenceDataFinal(
             valueType.elementTypes.map(et =>
                 val itemTypeName = et.valueType match
                     case TypeReferenceDefinition(referencedType) => referencedType.name
                     case td: RootPrimitiveTypeDefinition => td.name
-                val parsedElementData = parsedData.data.find(_.typeName == itemTypeName)
-                    .getOrElse(ArrayItemPersistenceData(itemTypeName, None, None, None))
+                val parsedElementData = parsedData.itemsMap.get(itemTypeName)
+                    .getOrElse(ArrayItemPersistenceData(None, None, None))
                 ItemTypePersistenceDataFinal(
                     parsedElementData.tableName.getOrElse(tableNameFromTypeName(itemTypeName)),
                     mergeIdTypeDefinition(valueType.idType, parsedElementData.idColumn),
@@ -265,9 +285,33 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
             )
         )
 
+    private def convertPrimitiveToArrayItemData(valueType: ArrayTypeDefinition, typeName: String, tableName: Option[String], idColumn: Option[PrimitiveValuePersistenceData], valueColumn: Option[PrimitiveValuePersistenceData]) = {
+        val arrayItemType = valueColumn.flatMap(_.columnType)
+        arrayItemType match
+            case None =>
+                if (valueType.elementTypes.size == 1)
+                    val itemTypeName: String = valueType.elementTypes.head.name
+                    ArrayTypePersistenceData(typeName, Map(itemTypeName ->
+                        ArrayItemPersistenceData(tableName, idColumn, valueColumn)))
+                else
+                    throw new ConsistencyException(
+                        s"Primitive persistence data for array type $typeName could not be converted to " +
+                            s"array persitence data, because item persistence type is not defined and " +
+                            s"array value type has more than one item!")
+            case Some(persistenceType) =>
+                val consistentType = consiestenceDefinitionsMap(persistenceType)
+                val typeDefinition = valueType.elementTypes.find(_.valueType == consistentType)
+                    .getOrElse(throw new ConsistencyException(
+                        s"Primitive persistence data for array type $typeName could not be converted to " +
+                            s"array persitence data, because item persistence type $persistenceType has " +
+                            s"no corresponding type definition array value items types!"))
+                ArrayTypePersistenceData(typeName, Map(typeDefinition.name ->
+                    ArrayItemPersistenceData(tableName, idColumn, valueColumn)))
+    }
+
     private def mergePrimitiveTypePersistenceData(typeName: String,
-                                                       valueType: CustomPrimitiveTypeDefinition,
-                                                       parsed: Option[AbstractTypePersistenceData]): TypePersistenceDataFinal =
+                                                  valueType: CustomPrimitiveTypeDefinition,
+                                                  parsed: Option[AbstractTypePersistenceData]): TypePersistenceDataFinal =
 
         val parsedData = parsed
             .map(p =>
@@ -457,15 +501,16 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
                     ColumnPersistenceData(None)
             )
 
-    private def checkRootPrimitivePersistenceData(persistData: ValuePersistenceData,
+    private def checkRootPrimitivePersistenceData(valuePersistenceData: ValuePersistenceData,
                                                   fieldType: RootPrimitiveTypeDefinition,
                                                   itemDescriptionProvider: () => String): Unit =
-        persistData match
-            case fieldPersistType: PrimitiveValuePersistenceData =>
-                checkRootPrimitiveAndPersistenceTypeConsistency(fieldType, fieldPersistType,itemDescriptionProvider)
-            case _ =>
+        valuePersistenceData match
+            case primitivePersistenceData: PrimitiveValuePersistenceData =>
+                checkRootPrimitiveAndPersistenceTypeConsistency(fieldType, primitivePersistenceData,itemDescriptionProvider)
+            case ColumnPersistenceData(_) => // do nothing
+            case otherPersistenceData =>
                 throw new ConsistencyException(itemDescriptionProvider() +
-                    s" with simple type $fieldType defined in persistence as not simpe type!")
+                    s" with simple type $fieldType defined in persistence as not simpe type $otherPersistenceData!")
 
     private def checkSimpleObjectPersistenceData(persistData: ValuePersistenceData, itemDescriptionProvider: () => String): Unit =
         persistData match
@@ -493,13 +538,13 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
             case EntityType(_, valueType: ObjectTypeDefinition) =>
                 persistData match
                     case fieldPersistType: SimpleObjectValuePersistenceData => // do nothing
-                    case fieldPersistType: ReferenceValuePersistenceData => // do nothing
+                    case fieldPersistType: ColumnPersistenceData => // do nothing
                     case _ =>
                         throw new ConsistencyException(itemDescriptionProvider() +
                             s" with object type reference defined in persistence as not object type!")
             case _ =>
                 persistData match
-                    case fieldPersistType: ReferenceValuePersistenceData => // do nothing
+                    case fieldPersistType: ColumnPersistenceData => // do nothing
                     case _ =>
                         throw new ConsistencyException(itemDescriptionProvider() +
                             s" with object type reference defined in persistence as not reference type!")
@@ -520,8 +565,6 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
                         if (fieldsPersistenceMap.keys.exists(!subObjectType.allFields.contains(_)))
                             throw new ConsistencyException(s"Field $fieldName of type $typeName contains " +
                                 s"persistent data for fields not defined in type definition!")
-
-                        //TODO: check expand markers logic!!!
                         val parentFieldsOverriden = getOverridenParentsFields(fieldsPersistenceMap, subObjectType)
                         createSimpleObjectFromParent(subObjectType.fields, fieldsPersistenceMap,
                             subObjectType.parent, fieldName, parentRelation, prefix,
@@ -535,8 +578,7 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
                         refType.referencedType.valueType match
                             case customPrimitiveType: CustomPrimitiveTypeDefinition =>
                                 toPrimitivePersistenceDataFinal(customPrimitiveType.rootType, 
-                                    primitivePersistenceData, fieldName, prefix,
-                                    () => s"Field $fieldName of type $typeName")
+                                    primitivePersistenceData, fieldName, prefix, () => s"Field $fieldName of type $typeName")
                             case otherType => throw new ConsistencyException("Only CustomPrimitiveTypeDefinition could be " +
                                 s"saved in primitive columns! Trying to save $otherType as $primitivePersistenceData.")
                     case SimpleObjectValuePersistenceData(parentRelation, fieldsPersistenceMap) =>
@@ -545,8 +587,8 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
                                 parentRelation match
                                     case Left(_ :ExpandParentMarker) =>
                                         val parentFieldsOverriden = getOverridenParentsFields(fieldsPersistenceMap, objectType)
-                                        createSimpleObjectFromParent(objectType.fields ++ parentFieldsOverriden, fieldsPersistenceMap,
-                                            objectType.parent, fieldName, parentRelation, prefix,
+                                        createSimpleObjectFromParent(objectType.fields ++ parentFieldsOverriden,
+                                            fieldsPersistenceMap, objectType.parent, fieldName, parentRelation, prefix,
                                             s" $fieldName fields of $typeName SimpleObject")
                                     case Right(ReferenceValuePersistenceData(columnName)) =>
                                         toReferencePersistenceDataFinal(refType, ColumnPersistenceData(columnName),
