@@ -35,25 +35,24 @@ import scalikejdbc._
 
 class PostgresCrudRepository(conf: Config) extends CrudRepository:
         
-    val availableTypes: Map[PersistenceFieldType, Array[String]] = Map(
-        StringFieldType -> Array("VARCHAR"),
-        TextFieldType -> Array("TEXT"),
-        IntFieldType -> Array("INTEGER"),
-        LongFieldType -> Array("BIGINT"),
-        FloatFieldType -> Array("FLOAT"),
-        DoubleFieldType -> Array("DOUBLE PRECISION"),
-        BooleanFieldType -> Array("BOOLEAN"),
-        DateFieldType -> Array("DATE"),
-        DateTimeFieldType -> Array("TIMESTAMP"),
-        TimeFieldType -> Array("TIME"),
-        UUIDFieldType -> Array("UUID"),
-        BLOBFieldType -> Array("BYTEA"),
+    val availableTypes: Map[PersistenceFieldType, String] = Map(
+        StringFieldType -> "VARCHAR",
+        TextFieldType -> "TEXT",
+        IntFieldType -> "INTEGER",
+        LongFieldType -> "BIGINT",
+        FloatFieldType -> "FLOAT",
+        DoubleFieldType -> "DOUBLE PRECISION",
+        BooleanFieldType -> "BOOLEAN",
+        DateFieldType -> "DATE",
+        DateTimeFieldType -> "TIMESTAMP",
+        TimeFieldType -> "TIME",
+        UUIDFieldType -> "UUID",
+        BLOBFieldType -> "BYTEA",
     )
     
-    def getFieldType(persistenceFieldType: PersistenceFieldType): String = 
-        val refType = persistenceFieldType match
-            case StringFieldType(size) => availableTypes(StringFieldType).head + s"($size)"
-            case other => availableTypes(other).head
+    def getFieldType(persistenceFieldType: PersistenceFieldType): String = persistenceFieldType match
+        case StringFieldType(size) => availableTypes(StringFieldType) + s"($size)"
+        case other => availableTypes(other)
     
     Class.forName("org.postgresql.Driver")
     ConnectionPool.singleton(s"jdbc:postgresql://${conf.getString("host")}:${conf.getInt("port")}/${conf.getString("database")}", 
@@ -65,25 +64,44 @@ class PostgresCrudRepository(conf: Config) extends CrudRepository:
 
         // Виконання операцій з базою даних
         implicit val session: DBSession = AutoSession
+
+        val existingTableNames = getTableNames().toSet
         
         typesDefinitionsProvider.getAllPersistenceData.foreach {
             case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
-                val createTableSQL = s"CREATE TABLE $tableName (${idColumn.columnName} UUID PRIMARY KEY, ${valueColumn.columnName} TEXT)"
-                SQL(createTableSQL).execute.apply()
+                val createTableSQL = sql"""
+                        CREATE TABLE $tableName (
+                            ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
+                            ${valueColumn.columnName} ${getFieldType(valueColumn.columnType)}
+                        )
+                    """.execute.apply()
+            case ArrayTypePersistenceDataFinal(items) =>
+                items.foreach {
+                    case ItemTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
+                        valueColumn match
+                            case PrimitiveValuePersistenceDataFinal(valueColumnName, valueColunmType) =>
+                                sql"""
+                                    CREATE TABLE $tableName (
+                                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
+                                        $valueColumnName ${getFieldType(valueColunmType)}
+                                    )
+                                """.execute.apply()
+                    case ref: ReferenceValuePersistenceDataFinal =>
+                        val createTableSQL = sql"""
+                            CREATE TABLE ${ref.tableName} (
+                                ${ref.idColumn.columnName} ${getFieldType(ref.idColumn.columnType)} PRIMARY KEY,
+                                ${ref.valueColumn.columnName} ${getFieldType(ref.valueColumn.columnType)}
+                            )
+                        """.execute.apply()
+                }
+            case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) => 
+                val createTableSQL = sql"""
+                    CREATE TABLE $tableName (
+                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
+                        ${fields.map { case (name, field) => s"$name ${getFieldType(field.columnType)}" }.mkString(", ")}
+                    )
+                """.execute.apply()
             case _ =>
-        }
-        
-        typesDefinitionsProvider.getAllPersistenceData.foreach { persistenceData =>
-            persistenceData match {
-                case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
-                    val idType = availableTypes(idColumn.columnType)
-                    val sql = s"CREATE TABLE IF NOT EXISTS $tableName (${idColumn.columnName} UUID PRIMARY KEY, ${valueColumn.columnName} ${availableTypes(persistenceData.entityType)});"
-                    
-                    DB.autoCommit { implicit session =>
-                        SQL(sql).execute().apply()
-                    }
-                case _ =>
-            }
         }
         
     }
@@ -98,3 +116,39 @@ class PostgresCrudRepository(conf: Config) extends CrudRepository:
         Success(Some(Entity(id, StringType("test"))))
 
     override def find(entityType: EntityType, query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity]] = ???
+
+
+    private def getTableNames()(implicit session: DBSession): List[String] = {
+        val conn = session.connection // Отримуємо з'єднання з базою даних
+        val metaData = conn.getMetaData
+
+        // Отримання списку таблиць
+        val rs = metaData.getTables(null, null, "%", Array("TABLE"))
+        var tables = List[String]()
+
+        while (rs.next()) {
+            val tableName = rs.getString("TABLE_NAME")
+            tables = tableName :: tables
+        }
+
+        rs.close()
+        tables.reverse // Повертаємо таблиці у правильному порядку
+    }
+
+    private def getTableColumns(tableName: String)(implicit session: DBSession): List[(String, String)] = {
+        val conn = session.connection
+        val metaData = conn.getMetaData
+
+        // Отримання інформації про колонки таблиці
+        val rs = metaData.getColumns(null, null, tableName, "%")
+        var columns = List[(String, String)]()
+
+        while (rs.next()) {
+            val columnName = rs.getString("COLUMN_NAME")
+            val columnType = rs.getString("TYPE_NAME")
+            columns = (columnName, columnType) :: columns
+        }
+
+        rs.close()
+        columns.reverse // Повертаємо колонки у правильному порядку
+    }

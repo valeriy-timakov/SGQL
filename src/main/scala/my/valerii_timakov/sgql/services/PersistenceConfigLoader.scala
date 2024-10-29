@@ -11,9 +11,9 @@ import scala.util.parsing.input.StreamReader
 sealed trait ValuePersistenceDataFinal:
     def columnNames: Seq[String]
 
-class PrimitiveValuePersistenceDataFinal(
-    val columnName: String,
-    val columnType: PersistenceFieldType,
+case class PrimitiveValuePersistenceDataFinal(
+    columnName: String,
+    columnType: PersistenceFieldType,
 ) extends ValuePersistenceDataFinal:
     override def columnNames: Seq[String] = Seq(columnName)
 
@@ -22,6 +22,7 @@ class ReferenceValuePersistenceDataFinal(
     referenceTable: TableReference,
 ) extends ValuePersistenceDataFinal:
     override def columnNames: Seq[String] = Seq(columnName)
+    val tableName: String = referenceTable.get
 
 class SimpleObjectValuePersistenceDataFinal(
     val parent: Option[ReferenceValuePersistenceDataFinal],
@@ -272,8 +273,7 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
                 val itemTypeName = et.valueType match
                     case TypeReferenceDefinition(referencedType) => referencedType.name
                     case td: RootPrimitiveTypeDefinition => td.name
-                val parsedElementData = parsedData.itemsMap.get(itemTypeName)
-                    .getOrElse(ArrayItemPersistenceData(None, None, None))
+                val parsedElementData = parsedData.itemsMap.getOrElse(itemTypeName, ArrayItemPersistenceData(None, None, None))
                 ItemTypePersistenceDataFinal(
                     parsedElementData.tableName.getOrElse(tableNameFromTypeName(itemTypeName)),
                     mergeIdTypeDefinition(valueType.idType, parsedElementData.idColumn),
