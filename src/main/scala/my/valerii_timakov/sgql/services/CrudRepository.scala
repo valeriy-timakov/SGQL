@@ -35,19 +35,25 @@ import scalikejdbc._
 
 class PostgresCrudRepository(conf: Config) extends CrudRepository:
         
-    val availableTypes: Map[RootPrimitiveTypeDefinition, Array[String]] = Map(
-        StringTypeDefinition -> Array("TEXT"),
-        IntTypeDefinition -> Array("INTEGER"),
-        LongTypeDefinition -> Array("BIGINT"),
-        FloatTypeDefinition -> Array("FLOAT"),
-        DoubleTypeDefinition -> Array("DOUBLE PRECISION"),
-        BooleanTypeDefinition -> Array("BOOLEAN"),
-        DateTypeDefinition -> Array("DATE"),
-        DateTimeTypeDefinition -> Array("TIMESTAMP"),
-        TimeTypeDefinition -> Array("TIME"),
-        UUIDTypeDefinition -> Array("UUID"),
-        BinaryTypeDefinition -> Array("BYTEA"),
+    val availableTypes: Map[PersistenceFieldType, Array[String]] = Map(
+        StringFieldType -> Array("VARCHAR"),
+        TextFieldType -> Array("TEXT"),
+        IntFieldType -> Array("INTEGER"),
+        LongFieldType -> Array("BIGINT"),
+        FloatFieldType -> Array("FLOAT"),
+        DoubleFieldType -> Array("DOUBLE PRECISION"),
+        BooleanFieldType -> Array("BOOLEAN"),
+        DateFieldType -> Array("DATE"),
+        DateTimeFieldType -> Array("TIMESTAMP"),
+        TimeFieldType -> Array("TIME"),
+        UUIDFieldType -> Array("UUID"),
+        BLOBFieldType -> Array("BYTEA"),
     )
+    
+    def getFieldType(persistenceFieldType: PersistenceFieldType): String = 
+        val refType = persistenceFieldType match
+            case StringFieldType(size) => availableTypes(StringFieldType).head + s"($size)"
+            case other => availableTypes(other).head
     
     Class.forName("org.postgresql.Driver")
     ConnectionPool.singleton(s"jdbc:postgresql://${conf.getString("host")}:${conf.getInt("port")}/${conf.getString("database")}", 
@@ -65,6 +71,19 @@ class PostgresCrudRepository(conf: Config) extends CrudRepository:
                 val createTableSQL = s"CREATE TABLE $tableName (${idColumn.columnName} UUID PRIMARY KEY, ${valueColumn.columnName} TEXT)"
                 SQL(createTableSQL).execute.apply()
             case _ =>
+        }
+        
+        typesDefinitionsProvider.getAllPersistenceData.foreach { persistenceData =>
+            persistenceData match {
+                case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
+                    val idType = availableTypes(idColumn.columnType)
+                    val sql = s"CREATE TABLE IF NOT EXISTS $tableName (${idColumn.columnName} UUID PRIMARY KEY, ${valueColumn.columnName} ${availableTypes(persistenceData.entityType)});"
+                    
+                    DB.autoCommit { implicit session =>
+                        SQL(sql).execute().apply()
+                    }
+                case _ =>
+            }
         }
         
     }
