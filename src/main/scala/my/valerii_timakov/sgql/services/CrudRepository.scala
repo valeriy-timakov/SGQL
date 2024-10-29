@@ -79,20 +79,20 @@ class PostgresCrudRepository(conf: Config) extends CrudRepository:
                 items.foreach {
                     case ItemTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
                         valueColumn match
-                            case PrimitiveValuePersistenceDataFinal(valueColumnName, valueColunmType) =>
+                            case PrimitiveValuePersistenceDataFinal(valueColumnName, valueColumnType) =>
                                 sql"""
                                     CREATE TABLE $tableName (
                                         ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
-                                        $valueColumnName ${getFieldType(valueColunmType)}
+                                        $valueColumnName ${getFieldType(valueColumnType)}
                                     )
                                 """.execute.apply()
-                    case ref: ReferenceValuePersistenceDataFinal =>
-                        val createTableSQL = sql"""
-                            CREATE TABLE ${ref.tableName} (
-                                ${ref.idColumn.columnName} ${getFieldType(ref.idColumn.columnType)} PRIMARY KEY,
-                                ${ref.valueColumn.columnName} ${getFieldType(ref.valueColumn.columnType)}
-                            )
-                        """.execute.apply()
+                            case ref: ReferenceValuePersistenceDataFinal =>
+                                val createTableSQL = sql"""
+                                    CREATE TABLE $tableName (
+                                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
+                                        ${ref.columnName} ${getFieldType(ref.valueColumn.columnType)}
+                                    )
+                                """.execute.apply()
                 }
             case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) => 
                 val createTableSQL = sql"""
@@ -101,7 +101,6 @@ class PostgresCrudRepository(conf: Config) extends CrudRepository:
                         ${fields.map { case (name, field) => s"$name ${getFieldType(field.columnType)}" }.mkString(", ")}
                     )
                 """.execute.apply()
-            case _ =>
         }
         
     }
