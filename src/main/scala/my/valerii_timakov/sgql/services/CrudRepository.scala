@@ -56,6 +56,16 @@ class PostgresCrudRepository(conf: Config) extends CrudRepository:
     var typesPersistenceData: Map[AbstractNamedEntityType, TypePersistenceData] = Map()
     
     def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit = {
+
+        // Виконання операцій з базою даних
+        implicit val session: DBSession = AutoSession
+        
+        typesDefinitionsProvider.getAllPersistenceData.foreach {
+            case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
+                val createTableSQL = s"CREATE TABLE $tableName (${idColumn.columnName} UUID PRIMARY KEY, ${valueColumn.columnName} TEXT)"
+                SQL(createTableSQL).execute.apply()
+            case _ =>
+        }
         
     }
 
