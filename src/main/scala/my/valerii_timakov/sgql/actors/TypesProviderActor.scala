@@ -25,7 +25,7 @@ class TypesProviderActor(
             this
         case GetAllPersist(replyTo) =>
             context.log.info(s"Get all types")
-            replyTo ! typesDefinitionProvider.getAllPersistenceData
+            replyTo ! typesDefinitionProvider.getAllPersistenceDataMap
             this
 
 
@@ -35,4 +35,4 @@ object TypesProviderActor:
     sealed trait Command extends MainActor.Message
     final case class Get(name: String, replyTo: ActorRef[Option[AbstractNamedEntityType]]) extends Command
     final case class GetAll(replyTo: ActorRef[Seq[AbstractNamedEntityType]]) extends Command
-    final case class GetAllPersist(replyTo: ActorRef[Seq[TypePersistenceDataFinal]]) extends Command
+    final case class GetAllPersist(replyTo: ActorRef[Map[String, TypePersistenceDataFinal]]) extends Command

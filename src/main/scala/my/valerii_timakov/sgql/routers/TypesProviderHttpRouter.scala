@@ -29,8 +29,10 @@ class TypesProviderHttpRouter(
     val route: Route =
         path("hello") {
             get {
-                val result = appActor ? (GetAllPersist.apply)
-                complete(result.toString)
+                val result = appActor ? GetAllPersist.apply
+                onSuccess(result) { result =>
+                    complete(StatusCodes.OK, result.toString)
+                }
             }
         } ~
         pathPrefix("type") {

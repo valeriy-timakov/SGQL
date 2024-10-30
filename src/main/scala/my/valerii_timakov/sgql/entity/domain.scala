@@ -137,6 +137,7 @@ sealed case class TypeReferenceDefinition(
     override def toString: String = s"TypeReferenceDefinition(ref[${referencedType.name}])"
 
 sealed case class TypeBackReferenceDefinition(
+    //reference to abstract type to make it possible to reference to any concrete nested type
     referencedType: AbstractNamedEntityType,
     refField: String
 ) extends AbstractTypeDefinition, EntityTypeDefinition:

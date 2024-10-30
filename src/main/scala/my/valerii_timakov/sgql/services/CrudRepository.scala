@@ -65,7 +65,7 @@ class PostgresCrudRepository(conf: Config) extends CrudRepository:
         // Виконання операцій з базою даних
         implicit val session: DBSession = AutoSession
 
-        val existingTableNames = getTableNames().toSet
+//        val existingTableNames = getTableNames().toSet
         
         typesDefinitionsProvider.getAllPersistenceData.foreach {
             case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
@@ -86,21 +86,21 @@ class PostgresCrudRepository(conf: Config) extends CrudRepository:
                                         $valueColumnName ${getFieldType(valueColumnType)}
                                     )
                                 """.execute.apply()
-                            case ref: ReferenceValuePersistenceDataFinal =>
-                                val createTableSQL = sql"""
-                                    CREATE TABLE $tableName (
-                                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
-                                        ${ref.columnName} ${getFieldType(ref.valueColumn.columnType)}
-                                    )
-                                """.execute.apply()
+//                            case ref: ReferenceValuePersistenceDataFinal =>
+//                                val createTableSQL = sql"""
+//                                    CREATE TABLE $tableName (
+//                                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
+//                                        ${ref.columnName} ${getFieldType(ref.valueColumn.columnType)}
+//                                    )
+//                                """.execute.apply()
                 }
-            case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) => 
-                val createTableSQL = sql"""
-                    CREATE TABLE $tableName (
-                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
-                        ${fields.map { case (name, field) => s"$name ${getFieldType(field.columnType)}" }.mkString(", ")}
-                    )
-                """.execute.apply()
+//            case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
+//                val createTableSQL = sql"""
+//                    CREATE TABLE $tableName (
+//                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
+//                        ${fields.map { case (name, field) => s"$name ${getFieldType(field.columnType)}" }.mkString(", ")}
+//                    )
+//                """.execute.apply()
         }
         
     }

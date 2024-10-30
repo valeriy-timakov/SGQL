@@ -22,7 +22,8 @@ class ReferenceValuePersistenceDataFinal(
     referenceTable: TableReference,
 ) extends ValuePersistenceDataFinal:
     override def columnNames: Seq[String] = Seq(columnName)
-    val tableName: String = referenceTable.get
+
+    override def toString: String = s"ReferenceValuePersistenceDataFinal(columnName=$columnName, referenceTable=${referenceTable.get})"
 
 class SimpleObjectValuePersistenceDataFinal(
     val parent: Option[ReferenceValuePersistenceDataFinal],
@@ -31,57 +32,76 @@ class SimpleObjectValuePersistenceDataFinal(
     def this(fieldsAndParentPersistenceData: FieldsAndParentPersistenceData) =
         this(fieldsAndParentPersistenceData.parent, fieldsAndParentPersistenceData.fields)
     override def columnNames: Seq[String] = fields.values.flatMap(_.columnNames).toSeq
+    
+case class TableReferenceData(
+    tableName: Option[String],
+    idColumn: Option[PrimitiveValuePersistenceDataFinal],
+    idColumnType: PersistenceFieldType
+)
 
 trait TableReference:
-    def get: String
+    def get: TableReferenceData
 
 class TableReferenceFactory:
-    class TableReferenceProxy(name: Option[String]) extends TableReference:
-        var _name: Option[String] = name
-        def get: String = _name.getOrElse(throw new RuntimeException("Reference table name is not set!"))
+    class TableReferenceProxy(data: Option[TableReferenceData]) extends TableReference:
+        var _data: Option[TableReferenceData] = data
+        def get: TableReferenceData = _data.getOrElse(throw new RuntimeException("Reference table name is not set!"))
     private val instancesMap: mutable.Map[String, TableReferenceProxy] = mutable.Map()
-    private val tableNamesMap: mutable.Map[String, mutable.Set[String]] = mutable.Map()
-    def createForTable(typeName: String, tableName: String): TableReferenceProxy = 
-        tableNamesMap.getOrElseUpdate(typeName, mutable.Set.empty) += tableName
-        TableReferenceProxy(Some(tableName))
+    private val tableNamesMap: mutable.Map[String, mutable.Set[TableReferenceData]] = mutable.Map()
+    def createForTable(typeName: String, data: TableReferenceData): TableReferenceProxy = 
+        tableNamesMap.getOrElseUpdate(typeName, mutable.Set.empty) += data
+        TableReferenceProxy(Some(data))
     def createForType(typeName: String): TableReferenceProxy =
         instancesMap.getOrElseUpdate(typeName, TableReferenceProxy(None))
-    def initForType(typeName: String, tableName: String): Unit =
+    def initForType(typeName: String, data: TableReferenceData): Unit =
         tableNamesMap.get(typeName).foreach(tableNames => 
-            val wrongNames = tableNames.filter(_ != tableName)
+            val wrongNames = tableNames.filter(_ != data)
             if (wrongNames.nonEmpty) 
-                throw new ConsistencyException(s"Table name $tableName of type $typeName has wrong table names for " +
+                throw new ConsistencyException(s"Table name $data of type $typeName has wrong table names for " +
                     s"reference to it! Names: $wrongNames")
             )
         instancesMap.get(typeName).exists( instance =>
-            instance._name = Some(tableName)
+            instance._data = Some(data)
             true
         )
 
-trait TypePersistenceDataFinal
+trait TypePersistenceDataFinal:
+    def getReferenceData: TableReferenceData
 
 case class PrimitiveTypePersistenceDataFinal(
     tableName: String,
     idColumn: PrimitiveValuePersistenceDataFinal,
     valueColumn: PrimitiveValuePersistenceDataFinal,
-) extends TypePersistenceDataFinal
+) extends TypePersistenceDataFinal:
+    override def getReferenceData: TableReferenceData = 
+        TableReferenceData(Some(tableName), Some(idColumn), idColumn.columnType)
 
 case class ItemTypePersistenceDataFinal(
     tableName: String,
     idColumn: PrimitiveValuePersistenceDataFinal,
     valueColumn: PrimitiveValuePersistenceDataFinal | ReferenceValuePersistenceDataFinal,
-) extends TypePersistenceDataFinal
+) extends TypePersistenceDataFinal:
+    override def getReferenceData: TableReferenceData =
+        TableReferenceData(Some(tableName), Some(idColumn), idColumn.columnType)
 
 case class ArrayTypePersistenceDataFinal(
     data: Set[ItemTypePersistenceDataFinal],
-) extends TypePersistenceDataFinal
+) extends TypePersistenceDataFinal:
+    def getTableName: Option[String] = None
+    val idType: PersistenceFieldType = data.map(_.idColumn.columnType).toList.distinct match
+        case singleType :: Nil => singleType
+        case types => throw new ConsistencyException(s"Array ID types has are different! Types: $types")
+    override def getReferenceData: TableReferenceData =
+        TableReferenceData(None, None, idType)
 
 case class ObjectTypePersistenceDataFinal(
     tableName: String,
     idColumn: PrimitiveValuePersistenceDataFinal,
     fields: Map[String, ValuePersistenceDataFinal],
     parent: Option[ReferenceValuePersistenceDataFinal],
-) extends TypePersistenceDataFinal
+) extends TypePersistenceDataFinal:
+    override def getReferenceData: TableReferenceData =
+        TableReferenceData(Some(tableName), Some(idColumn), idColumn.columnType)
 
 object ObjectTypePersistenceDataFinal:
     def apply (tableName: String, idColumn: PrimitiveValuePersistenceDataFinal, fieldsAndParend: FieldsAndParentPersistenceData) =
@@ -166,10 +186,14 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
         PersistenceConfigParser.parse(StreamReader( tdSource.reader() )) match
             case Right(packageData: RootPackagePersistenceData) =>
                 typesDataPersistenceMap = packageData.toMap
-                typesDefinitionsMap
+                val res = typesDefinitionsMap
                     .map ( (typeName, typeDef) =>
                             typeName -> mergeTypePersistenceData(typeDef, typesDataPersistenceMap.get(typeName))
                     )
+                res.foreach((typeName, persistenceData) => {
+                    tableReferenceFactory.initForType(typeName, persistenceData.getReferenceData)
+                })
+                res
             case Left(err: TypesDefinitionsParseError) =>
                 throw new TypesLoadExceptionException(err)
 
