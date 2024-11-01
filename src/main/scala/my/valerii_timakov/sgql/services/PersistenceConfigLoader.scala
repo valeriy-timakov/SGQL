@@ -22,38 +22,51 @@ class ReferenceValuePersistenceDataFinal(
     referenceTable: TableReference,
 ) extends ValuePersistenceDataFinal:
     override def columnNames: Seq[String] = Seq(columnName)
-
+    def refTableData: TableReferenceDataWrapper = referenceTable.get
     override def toString: String = s"ReferenceValuePersistenceDataFinal(columnName=$columnName, referenceTable=${referenceTable.get})"
 
-class SimpleObjectValuePersistenceDataFinal(
-    val parent: Option[ReferenceValuePersistenceDataFinal],
-    val fields: Map[String, ValuePersistenceDataFinal],
+case class SimpleObjectValuePersistenceDataFinal(
+    parent: Option[ReferenceValuePersistenceDataFinal],
+    fields: Map[String, ValuePersistenceDataFinal],
 ) extends ValuePersistenceDataFinal:
     def this(fieldsAndParentPersistenceData: FieldsAndParentPersistenceData) =
         this(fieldsAndParentPersistenceData.parent, fieldsAndParentPersistenceData.fields)
     override def columnNames: Seq[String] = fields.values.flatMap(_.columnNames).toSeq
     
+object SimpleObjectValuePersistenceDataFinal:
+    def apply(fieldsAndParentPersistenceData: FieldsAndParentPersistenceData) =
+        new SimpleObjectValuePersistenceDataFinal(fieldsAndParentPersistenceData.parent, fieldsAndParentPersistenceData.fields)
+
 case class TableReferenceData(
-    tableName: Option[String],
-    idColumn: Option[PrimitiveValuePersistenceDataFinal],
-    idColumnType: PersistenceFieldType
+    tableName: String,
+    idColumn: PrimitiveValuePersistenceDataFinal,
 )
 
+case class TableReferenceDataWrapper(
+    data: Option[TableReferenceData],
+    idColumnType: PersistenceFieldType
+)
+object TableReferenceDataWrapper:
+    def apply(tableName: String, idColumn: PrimitiveValuePersistenceDataFinal, idColumnType: PersistenceFieldType) =
+        new TableReferenceDataWrapper(Some(TableReferenceData(tableName, idColumn)), idColumnType)
+    def apply(idColumnType: PersistenceFieldType) =
+        new TableReferenceDataWrapper(None, idColumnType)
+
 trait TableReference:
-    def get: TableReferenceData
+    def get: TableReferenceDataWrapper
 
 class TableReferenceFactory:
-    class TableReferenceProxy(data: Option[TableReferenceData]) extends TableReference:
-        var _data: Option[TableReferenceData] = data
-        def get: TableReferenceData = _data.getOrElse(throw new RuntimeException("Reference table name is not set!"))
+    class TableReferenceProxy(data: Option[TableReferenceDataWrapper]) extends TableReference:
+        var _data: Option[TableReferenceDataWrapper] = data
+        def get: TableReferenceDataWrapper = _data.getOrElse(throw new RuntimeException("Reference table name is not set!"))
     private val instancesMap: mutable.Map[String, TableReferenceProxy] = mutable.Map()
-    private val tableNamesMap: mutable.Map[String, mutable.Set[TableReferenceData]] = mutable.Map()
-    def createForTable(typeName: String, data: TableReferenceData): TableReferenceProxy = 
+    private val tableNamesMap: mutable.Map[String, mutable.Set[TableReferenceDataWrapper]] = mutable.Map()
+    def createForTable(typeName: String, data: TableReferenceDataWrapper): TableReferenceProxy = 
         tableNamesMap.getOrElseUpdate(typeName, mutable.Set.empty) += data
         TableReferenceProxy(Some(data))
     def createForType(typeName: String): TableReferenceProxy =
         instancesMap.getOrElseUpdate(typeName, TableReferenceProxy(None))
-    def initForType(typeName: String, data: TableReferenceData): Unit =
+    def initForType(typeName: String, data: TableReferenceDataWrapper): Unit =
         tableNamesMap.get(typeName).foreach(tableNames => 
             val wrongNames = tableNames.filter(_ != data)
             if (wrongNames.nonEmpty) 
@@ -66,23 +79,23 @@ class TableReferenceFactory:
         )
 
 trait TypePersistenceDataFinal:
-    def getReferenceData: TableReferenceData
+    def getReferenceData: TableReferenceDataWrapper
 
 case class PrimitiveTypePersistenceDataFinal(
     tableName: String,
     idColumn: PrimitiveValuePersistenceDataFinal,
     valueColumn: PrimitiveValuePersistenceDataFinal,
 ) extends TypePersistenceDataFinal:
-    override def getReferenceData: TableReferenceData = 
-        TableReferenceData(Some(tableName), Some(idColumn), idColumn.columnType)
+    override def getReferenceData: TableReferenceDataWrapper = 
+        TableReferenceDataWrapper(tableName, idColumn, idColumn.columnType)
 
 case class ItemTypePersistenceDataFinal(
     tableName: String,
     idColumn: PrimitiveValuePersistenceDataFinal,
     valueColumn: PrimitiveValuePersistenceDataFinal | ReferenceValuePersistenceDataFinal,
 ) extends TypePersistenceDataFinal:
-    override def getReferenceData: TableReferenceData =
-        TableReferenceData(Some(tableName), Some(idColumn), idColumn.columnType)
+    override def getReferenceData: TableReferenceDataWrapper =
+        TableReferenceDataWrapper(tableName, idColumn, idColumn.columnType)
 
 case class ArrayTypePersistenceDataFinal(
     data: Set[ItemTypePersistenceDataFinal],
@@ -91,8 +104,8 @@ case class ArrayTypePersistenceDataFinal(
     val idType: PersistenceFieldType = data.map(_.idColumn.columnType).toList.distinct match
         case singleType :: Nil => singleType
         case types => throw new ConsistencyException(s"Array ID types has are different! Types: $types")
-    override def getReferenceData: TableReferenceData =
-        TableReferenceData(None, None, idType)
+    override def getReferenceData: TableReferenceDataWrapper =
+        TableReferenceDataWrapper(idType)
 
 case class ObjectTypePersistenceDataFinal(
     tableName: String,
@@ -100,8 +113,8 @@ case class ObjectTypePersistenceDataFinal(
     fields: Map[String, ValuePersistenceDataFinal],
     parent: Option[ReferenceValuePersistenceDataFinal],
 ) extends TypePersistenceDataFinal:
-    override def getReferenceData: TableReferenceData =
-        TableReferenceData(Some(tableName), Some(idColumn), idColumn.columnType)
+    override def getReferenceData: TableReferenceDataWrapper =
+        TableReferenceDataWrapper(tableName, idColumn, idColumn.columnType)
 
 object ObjectTypePersistenceDataFinal:
     def apply (tableName: String, idColumn: PrimitiveValuePersistenceDataFinal, fieldsAndParend: FieldsAndParentPersistenceData) =

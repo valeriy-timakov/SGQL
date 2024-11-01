@@ -59,51 +59,110 @@ class PostgresCrudRepository(conf: Config) extends CrudRepository:
         conf.getString("username"), conf.getString("password"))
     
     var typesPersistenceData: Map[AbstractNamedEntityType, TypePersistenceData] = Map()
+
+    private class RefData(
+        val tableName: String,
+        val columnName: String,
+        val refTableData: TableReferenceData
+    )
     
     def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit = {
 
-        // Виконання операцій з базою даних
         implicit val session: DBSession = AutoSession
 
 //        val existingTableNames = getTableNames().toSet
         
         typesDefinitionsProvider.getAllPersistenceData.foreach {
             case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
-                val createTableSQL = sql"""
-                        CREATE TABLE $tableName (
-                            ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
-                            ${valueColumn.columnName} ${getFieldType(valueColumn.columnType)}
-                        )
-                    """.execute.apply()
+                sql"""
+                    CREATE TABLE $tableName (
+                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
+                        ${valueColumn.columnName} ${getFieldType(valueColumn.columnType)}
+                    )
+                """.execute.apply()
             case ArrayTypePersistenceDataFinal(items) =>
                 items.foreach {
                     case ItemTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
-                        valueColumn match
+                        val (valueColumnName, valueColumnType) = valueColumn match
                             case PrimitiveValuePersistenceDataFinal(valueColumnName, valueColumnType) =>
-                                sql"""
-                                    CREATE TABLE $tableName (
-                                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
-                                        $valueColumnName ${getFieldType(valueColumnType)}
-                                    )
-                                """.execute.apply()
-//                            case ref: ReferenceValuePersistenceDataFinal =>
-//                                val createTableSQL = sql"""
-//                                    CREATE TABLE $tableName (
-//                                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
-//                                        ${ref.columnName} ${getFieldType(ref.valueColumn.columnType)}
-//                                    )
-//                                """.execute.apply()
+                                (valueColumnName, valueColumnType)
+                            case ref: ReferenceValuePersistenceDataFinal =>
+                                (ref.columnName, ref.refTableData.idColumnType)
+                        val sql = s"""
+                            CREATE TABLE $tableName (
+                                ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
+                                $valueColumnName ${getFieldType(valueColumnType)}
+                            )"""
+                        SQL(sql).execute.apply()
                 }
-//            case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
-//                val createTableSQL = sql"""
-//                    CREATE TABLE $tableName (
-//                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
-//                        ${fields.map { case (name, field) => s"$name ${getFieldType(field.columnType)}" }.mkString(", ")}
-//                    )
-//                """.execute.apply()
+            case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
+                def getFieldsSql(fields: Map[String, ValuePersistenceDataFinal]): String = fields.values.map {
+                    case PrimitiveValuePersistenceDataFinal(columnName, columnType) =>
+                        s"$columnName ${getFieldType(columnType)}"
+                    case ref: ReferenceValuePersistenceDataFinal =>
+                        s"${ref.columnName} ${getFieldType(ref.refTableData.idColumnType)}"
+                    case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
+                        val parentSql = parent.map { parentTableRef =>
+                            s"${parentTableRef.columnName} ${getFieldType(parentTableRef.refTableData.idColumnType)}, "
+                        }.getOrElse("")
+                        parentSql + getFieldsSql(fields)
+                }.mkString(", ")
+                        
+                val parentSql = parent.map( parentTableRef =>
+                    s", ${parentTableRef.columnName} ${getFieldType(parentTableRef.refTableData.idColumnType)}"
+                ).getOrElse("")
+                
+                sql"""
+                    CREATE TABLE $tableName (
+                        ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
+                        ${getFieldsSql(fields)} + $parentSql
+                    )
+                """.execute.apply()
+        }
+
+
+        typesDefinitionsProvider.getAllPersistenceData.foreach { typeData =>
+            (typeData match
+                case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) => Nil
+                case ArrayTypePersistenceDataFinal(items) =>
+                    items.view.flatMap {
+                        case ItemTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
+                            valueColumn match
+                                case PrimitiveValuePersistenceDataFinal(valueColumnName, valueColumnType) => Nil
+                                case ref: ReferenceValuePersistenceDataFinal =>
+                                    ref.refTableData.data.map(RefData(tableName, ref.columnName, _)).toList
+                    }.toList
+                case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
+                    def getObjectRefData(
+                            fields: Map[String, ValuePersistenceDataFinal],
+                            parent: Option[ReferenceValuePersistenceDataFinal]
+                        ): List[RefData] =
+                            val parentRef = parent.flatMap(parentTableRef =>
+                                parentTableRef.refTableData.data.map(RefData(tableName, parentTableRef.columnName, _))
+                            ).toList
+                            getAllRefDatas(fields).appendedAll(parentRef)
+                    def getAllRefDatas(fields: Map[String, ValuePersistenceDataFinal]): List[RefData] =
+                        fields.values.view.flatMap {
+                            case PrimitiveValuePersistenceDataFinal(columnName, columnType) => List()
+                            case ref: ReferenceValuePersistenceDataFinal =>
+                                ref.refTableData.data.map(RefData(tableName, ref.columnName, _)).toList
+                            case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
+                                getObjectRefData(fields, parent)
+                        }.toList
+                    getObjectRefData(fields, parent)
+            ).foreach { ref =>
+                sql"""
+                    ALTER TABLE ${ref.tableName} ADD CONSTRAINT ${foreignKeyName(ref.tableName, ref.columnName, ref.refTableData.tableName)}
+                        FOREIGN KEY (${ref.columnName}) REFERENCES ${ref.refTableData.tableName}(${ref.refTableData.idColumn})
+                    )
+                """.execute.apply()
+            }
         }
         
     }
+
+    private def foreignKeyName(tableName: String, columnName: String, refTableName: String): String =
+        s"fk_${tableName}_${columnName}_$refTableName"
 
     override def create(entityType: EntityType, data: EntityFieldType): Try[Entity] = ???
 
