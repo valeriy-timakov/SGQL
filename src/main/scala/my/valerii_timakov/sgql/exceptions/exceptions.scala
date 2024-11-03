@@ -20,3 +20,11 @@ class NoIdTypeFound(typeName: String) extends Exception(s"No ID type found for n
 class WrongTypeNameException(name: String) extends Exception(s"Wrong type name '$name'!")
 class NoIdentityForRootSupetType(typeName: String) extends Exception(s"No identity for root super type! Type: \"$typeName\"")
 class IdentitySetForNonRootType(typeName: String) extends Exception(s"Identity set for type with non root parent type! Type: \"$typeName\"")
+
+class DbTableMigrationException(msg: String, cause: Throwable) extends RuntimeException(msg, cause)
+object DbTableMigrationException:
+    def apply(tableName: String, cause: Throwable) = new DbTableMigrationException(s"Error migrating table \"$tableName\"! " +
+        s"Table migration failed with cause ${cause.getMessage}! Use migration tools or try migrate manually.", cause)
+    def apply(tableName: String) = new DbTableMigrationException(s"Error migrating table \"$tableName\"! " +
+        s"Table could not be migrated automatically - use migration tools or try migrate manually.", null)
+class PersistenceRepositoryTypeNotFoundException extends RuntimeException(s"Repository type not found!")
