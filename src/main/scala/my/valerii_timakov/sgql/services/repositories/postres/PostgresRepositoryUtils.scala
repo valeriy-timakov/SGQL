@@ -125,7 +125,8 @@ class MetadataUtils:
             val metaData = conn.getMetaData
 
             Using.resource(query(metaData)) { rs =>
-                itemProcessor(rs)
+                while (rs.next())
+                    itemProcessor(rs)
             }
         }
 

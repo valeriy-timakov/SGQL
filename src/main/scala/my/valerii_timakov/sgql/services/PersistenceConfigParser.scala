@@ -9,15 +9,19 @@ object ExpandParentMarkerSingle extends ExpandParentMarker
 object ExpandParentMarkerTotal extends ExpandParentMarker
 
 sealed abstract class PersistenceFieldType(val name: String):
-    def getType = this
+    def getType: PersistenceFieldType = this
 
 object LongFieldType extends PersistenceFieldType("long")
 
 object IntFieldType extends PersistenceFieldType("integer")
 
+object ShortIntFieldType extends PersistenceFieldType("short")
+
 object DoubleFieldType extends PersistenceFieldType("double")
 
 object FloatFieldType extends PersistenceFieldType("float")
+
+object DecimalFieldType extends PersistenceFieldType("decimal")
 
 object BooleanFieldType extends PersistenceFieldType("boolean")
 
@@ -25,7 +29,11 @@ object DateFieldType extends PersistenceFieldType("date")
 
 object DateTimeFieldType extends PersistenceFieldType("datetime")
 
+object DateTimeWithTimeZoneFieldType extends PersistenceFieldType("datetime_tz")
+
 object TimeFieldType extends PersistenceFieldType("time")
+
+object TimeWithTimeZoneFieldType extends PersistenceFieldType("time_tx")
 
 object UUIDFieldType extends PersistenceFieldType("uuid")
 
@@ -34,9 +42,14 @@ object TextFieldType extends PersistenceFieldType("text")
 object BLOBFieldType extends PersistenceFieldType("blob")
 
 final case class StringFieldType(maxLength: Int) extends PersistenceFieldType("string"):
-    override def getType = StringFieldType
+    override def getType: PersistenceFieldType = StringFieldType
 
 object StringFieldType extends PersistenceFieldType("string")
+
+final case class FixedStringFieldType(maxLength: Int) extends PersistenceFieldType("fixed_string"):
+    override def getType: PersistenceFieldType = StringFieldType
+
+object FixedStringFieldType extends PersistenceFieldType("string")
 
 val allEmptyTypes = List(LongFieldType, IntFieldType, DoubleFieldType, FloatFieldType, BooleanFieldType, DateFieldType, 
     DateTimeFieldType, TimeFieldType, UUIDFieldType, TextFieldType, BLOBFieldType)
@@ -171,7 +184,7 @@ object PersistenceConfigParser extends DefinitionsParser[RootPackagePersistenceD
             case typeName ~ (simpleValuePersData: PrimitiveTypePersistenceDataPartial) =>
                 new PrimitiveTypePersistenceData(typeName, simpleValuePersData)
             case typeName ~ (simpleValuePersData: PrimitiveValuePersistenceData) =>
-                new PrimitiveTypePersistenceData(typeName, None, None, Some(simpleValuePersData))
+                PrimitiveTypePersistenceData(typeName, None, None, Some(simpleValuePersData))
         },
         "primitiveType")
 

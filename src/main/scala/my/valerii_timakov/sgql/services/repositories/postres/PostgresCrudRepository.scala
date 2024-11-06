@@ -23,46 +23,66 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
 
     def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit =
 
+        val typesSchemaParam = if typesSchemaName != null then s"?currentSchema=$typesSchemaName." else ""
         Class.forName("org.postgresql.Driver")
         ConnectionPool.singleton(s"jdbc:postgresql://${connectionConf.getString("host")}:" +
-            s"${connectionConf.getInt("port")}/${connectionConf.getString("database")}typesSchemaParam",
+            s"${connectionConf.getInt("port")}/${connectionConf.getString("database")}$typesSchemaParam",
             connectionConf.getString("username"), connectionConf.getString("password"))
         DB.localTx(implicit session =>
             val allTypesData = typesDefinitionsProvider.getAllPersistenceData
             createOrMigrateTables(allTypesData)
         )
 
-
-    private val availableTypes: Map[PersistenceFieldType, String] = Map(
-        StringFieldType -> "VARCHAR",
-        TextFieldType -> "TEXT",
-        IntFieldType -> "INTEGER",
-        LongFieldType -> "BIGINT",
-        FloatFieldType -> "FLOAT",
-        DoubleFieldType -> "DOUBLE PRECISION",
-        BooleanFieldType -> "BOOLEAN",
-        DateFieldType -> "DATE",
-        DateTimeFieldType -> "TIMESTAMP",
-        TimeFieldType -> "TIME",
-        UUIDFieldType -> "UUID",
-        BLOBFieldType -> "BYTEA",
+    private val specificIdTypes: Map[PersistenceFieldType, Set[String]] = Map(
+        LongFieldType -> Set("BIGSERIAL", "SERIAL8"),
+        IntFieldType -> Set("SERIAL", "SERIAL4"),
+        ShortIntFieldType -> Set("SMALLSERIAL", "SERIAL2"),
     )
+
+    private val availableTypes: Map[PersistenceFieldType, Set[String]] = Map(
+        BLOBFieldType -> Set("BYTEA"),
+        DoubleFieldType -> Set("DOUBLE PRECISION", "FLOAT8"),
+        FloatFieldType -> Set("REAL", "FLOAT4"),
+        DecimalFieldType -> Set("NUMERIC", "DECIMAL"),
+        LongFieldType -> Set("BIGINT", "INT8"),
+        IntFieldType -> Set("INTEGER", "INT", "INT4"),
+        ShortIntFieldType -> Set("SMALLINT", "INT2"),
+        BooleanFieldType -> Set("BOOLEAN", "BOOL"),
+        FixedStringFieldType -> Set("CHARACTER", "CHAR"),
+        StringFieldType -> Set("CHARACTER VARYING", "VARCHAR"),
+        DateFieldType -> Set("DATE"),
+        TextFieldType -> Set("TEXT"),
+        TimeFieldType -> Set("TIME"),
+        TimeWithTimeZoneFieldType -> Set("TIME WITH TIME ZONE", "TIMETZ"),
+        DateTimeFieldType -> Set("TIMESTAMP"),
+        DateTimeWithTimeZoneFieldType -> Set("TIMESTAMP WITH TIME ZONE", "TIMESTAMPTZ"),
+        UUIDFieldType -> Set("UUID"),
+    )
+
 
     private val dbUtils = PostgresDBInitUtils(utilsConf)
     private val metadataUtils = MetadataUtils()
 
     private def getFieldType(persistenceFieldType: PersistenceFieldType): String = persistenceFieldType match
-        case StringFieldType(size) => availableTypes(StringFieldType) + s"($size)"
-        case other => availableTypes(other)
+        case StringFieldType(size) => availableTypes(StringFieldType).head + s"($size)"
+        case other => availableTypes(other).head
+
+    private def getIdFieldType(persistenceFieldType: PersistenceFieldType): String =
+        specificIdTypes.get(persistenceFieldType).map(_.head)
+            .getOrElse(getFieldType(persistenceFieldType))
+
+    private def isSameType(persistenceType: PersistenceFieldType, dbTypeName: String): Boolean =
+        availableTypes.get(persistenceType).exists(_.contains(dbTypeName))
+
+    private def isSameIdType(persistenceType: PersistenceFieldType, dbTypeName: String): Boolean =
+        specificIdTypes.get(persistenceType)
+            .orElse(availableTypes.get(persistenceType))
+            .exists(_.contains(dbTypeName))
 
     private val typesSchemaName = connectionConf.getString("schema")
     private val primaryKeySuffix = connectionConf.getString("primary-key-suffix")
     private val foreignKeySuffix = connectionConf.getString("foreign-key-suffix")
     private val archivedColumnNameSuffix = connectionConf.getString("archived-column-name-suffix")
-
-
-
-    private val typesSchemaParam = if typesSchemaName != null then s"?currentSchema=$typesSchemaName." else ""
 
     private var typesPersistenceData: Map[AbstractNamedEntityType, TypePersistenceData] = Map()
 
@@ -115,7 +135,7 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
         ): Unit =
             SQL(s"""
                 CREATE TABLE $tableName (
-                    ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
+                    ${idColumn.columnName} ${getIdFieldType(idColumn.columnType)} PRIMARY KEY,
                     $valueColumnName ${getFieldType(valueColumnType)}, 
                     CONSTRAINT $tableName$primaryKeySuffix PRIMARY KEY (${idColumn.columnName})
                 )
@@ -175,13 +195,13 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
                             val pkData = pkDataOption.get
                             val pkColumn = pkData.columnNames.head
                             if pkColumn == idColumn.columnName then
-                                if existingColumns(pkColumn).columnType != getFieldType(idColumn.columnType) then
+                                if isSameIdType(idColumn.columnType, existingColumns(pkColumn).columnType) then
                                     //ignoring else - ID column with PK of same type already exists - no actions
                                     dropPrimaryKey(pkData)
                                     renameColumn(tableName, pkColumn, getRenamedArchivedColumnName(pkColumn,
                                         existingColumns))
                                     addPrimaryKeyColumn(tableName, idColumn.columnName,
-                                        getFieldType(idColumn.columnType))
+                                        getIdFieldType(idColumn.columnType))
                                     dbUtils.addPrimaryKeyAlteringData(tableName, pkColumn, idColumn.columnName)
                             else
                                 dropPrimaryKey(pkData)
@@ -191,16 +211,16 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
                             createPrimaryKey(tableName, idColumn.columnName)
                             dbUtils.addPrimaryKeyAlteringData(tableName, null, idColumn.columnName)
                     else if pkDataOption.isEmpty then
-                        addPrimaryKeyColumn(tableName, idColumn.columnName, getFieldType(idColumn.columnType))
+                        addPrimaryKeyColumn(tableName, idColumn.columnName, getIdFieldType(idColumn.columnType))
                         dbUtils.addPrimaryKeyAlteringData(tableName, null, idColumn.columnName)
                     else
                         val pkData = pkDataOption.get
                         val pkColumn = pkData.columnNames.head
-                        if existingColumns(pkColumn).columnType == getFieldType(idColumn.columnType) then
+                        if isSameIdType(idColumn.columnType, existingColumns(pkColumn).columnType) then
                             renameColumn(tableName, pkColumn, idColumn.columnName)
                         else
                             dropPrimaryKey(pkData)
-                            addPrimaryKeyColumn(tableName, idColumn.columnName, getFieldType(idColumn.columnType))
+                            addPrimaryKeyColumn(tableName, idColumn.columnName, getIdFieldType(idColumn.columnType))
                             dbUtils.addPrimaryKeyAlteringData(tableName, pkColumn, idColumn.columnName)
                 catch
                     case e: Exception => throw DbTableMigrationException(tableName, e)
@@ -214,7 +234,7 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
             existingColumns: Map[String, ColumnData],
         ): Unit =
             if existingColumns.contains(valueColumnName) then
-                if existingColumns(valueColumnName).columnType != getFieldType(valueColumnType) then
+                if isSameType(valueColumnType, existingColumns(valueColumnName).columnType) then
                     //ignoring else - Value column of same type already exists - no actions
                     renameColumn(tableName, valueColumnName, getRenamedArchivedColumnName(valueColumnName,
                         existingColumns))
@@ -280,7 +300,7 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
 
             SQL(s"""
                 CREATE TABLE $tableName (
-                    ${idColumn.columnName} ${getFieldType(idColumn.columnType)} PRIMARY KEY,
+                    ${idColumn.columnName} ${getIdFieldType(idColumn.columnType)} PRIMARY KEY,
                     ${getFieldsSql(fields)} + $parentSql
                 )
             """).execute.apply()
