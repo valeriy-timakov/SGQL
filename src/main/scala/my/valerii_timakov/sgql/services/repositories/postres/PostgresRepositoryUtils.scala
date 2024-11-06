@@ -27,12 +27,16 @@ case class PrimaryKeyData(
     columnNames: Set[String]
 )
 
+case class FKLinkPair(
+    columnName: String,
+    refColumnName: String
+)
+
 case class ForeignKeyData(
     keyName: String,
     tableName: String,
-    columnName: String,
     refTableName: String,
-    refColumnName: String
+    links: Set[FKLinkPair]
 )
 
 class MetadataUtils:
@@ -85,26 +89,44 @@ class MetadataUtils:
             else None
 
     def getForeignKeys(tableName: String): Set[ForeignKeyData] =
-        getMetadata(
+        val resMap = mutable.Map[(String, String, String), mutable.Set[FKLinkPair]]()
+        readDB(
             metaData => metaData.getImportedKeys(null, null, tableName),
-            rs => ForeignKeyData(rs.getString("FK_NAME"), rs.getString("FKTABLE_NAME"), rs.getString("FKCOLUMN_NAME"),
-                rs.getString("PKTABLE_NAME"), rs.getString("PKCOLUMN_NAME")),
-            Set.newBuilder[ForeignKeyData])
+            rs => {
+                val fkName = rs.getString("FK_NAME")
+                val fkTableName = rs.getString("FKTABLE_NAME")
+                val fkColumnName = rs.getString("FKCOLUMN_NAME")
+                val pkTableName = rs.getString("PKTABLE_NAME")
+                val pkColumnName = rs.getString("PKCOLUMN_NAME")
+                val key = (fkName, fkTableName, pkTableName)
+                val links = resMap.getOrElseUpdate(key, mutable.Set())
+                links += FKLinkPair(fkColumnName, pkColumnName)
+            }
+        )
+        resMap.map { case ((fkName, fkTableName, pkTableName), links) =>
+            ForeignKeyData(fkName, fkTableName, pkTableName, links.toSet)
+        }.toSet
+
 
     private def getMetadata[R, CC](
         query: DatabaseMetaData => ResultSet,
         extractor: ResultSet => R,
         builder: mutable.Builder[R, CC]
     ): CC =
+        readDB(query, rs => builder += extractor(rs))
+        builder.result()
+
+    private def readDB[R](
+        query: DatabaseMetaData => ResultSet,
+        itemProcessor: ResultSet => Unit
+    ): Unit =
         DB.readOnly { implicit session =>
             val conn = session.connection
             val metaData = conn.getMetaData
 
             Using.resource(query(metaData)) { rs =>
-                builder += extractor(rs)
+                itemProcessor(rs)
             }
-
-            builder.result()
         }
 
 

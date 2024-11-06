@@ -24,8 +24,8 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
     def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit =
 
         Class.forName("org.postgresql.Driver")
-        ConnectionPool.singleton(s"jdbc:postgresql://${connectionConf.getString("host")}:${connectionConf.getInt("port")}/" +
-            s"${connectionConf.getString("database")}typesSchemaParam",
+        ConnectionPool.singleton(s"jdbc:postgresql://${connectionConf.getString("host")}:" +
+            s"${connectionConf.getInt("port")}/${connectionConf.getString("database")}typesSchemaParam",
             connectionConf.getString("username"), connectionConf.getString("password"))
         DB.localTx(implicit session =>
             val allTypesData = typesDefinitionsProvider.getAllPersistenceData
@@ -72,19 +72,10 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
         val refTableData: TableReferenceData
     )
 
-        
-    private def createOrUpdateForeignKeys(
-        allTypesData: Seq[TypePersistenceDataFinal]
+
+    private def createOrMigrateTables(
+        typesPersistenceData: Seq[TypePersistenceDataFinal],
     )(implicit session: DBSession): Unit =
-
-        val foreignKeysCache = mutable.Map[String, Map[String, ForeignKeyData]]()
-
-        def getForeignKeysMap(tableName: String): Map[String, ForeignKeyData] =
-            foreignKeysCache.getOrElseUpdate(tableName, metadataUtils.getForeignKeys(tableName)
-                .map(fk => (fk.columnName, fk)).toMap)
-
-        def getForeignKey(tableName: String, columnName: String): Option[ForeignKeyData] =
-            getForeignKeysMap(tableName).get(columnName)
 
         def foreignKeyName(tableName: String, columnName: String, refTableName: String): String =
             s"fk_${tableName}_${columnName}_$refTableName"
@@ -116,42 +107,6 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
                     FOREIGN KEY ($columnName) REFERENCES $refTableName($refColumnName)
             """).execute.apply()
 
-        def dropForeignKey(tableName: String, keyName: String): Unit =
-            SQL(s"""
-                ALTER TABLE $tableName DROP CONSTRAINT $keyName
-            """).execute.apply()
-
-        allTypesData.foreach { typeData =>
-            (typeData match
-                case PrimitiveTypePersistenceDataFinal(_, _, _) => Nil
-                case ArrayTypePersistenceDataFinal(items) =>
-                    items.view.flatMap {
-                        case ItemTypePersistenceDataFinal(tableName, _, valueColumn) =>
-                            valueColumn match
-                                case PrimitiveValuePersistenceDataFinal(valueColumnName, valueColumnType) => Nil
-                                case ref: ReferenceValuePersistenceDataFinal =>
-                                    ref.refTableData.data.map(RefData(tableName, ref.columnName, _)).toList
-                    }.toList
-                case ObjectTypePersistenceDataFinal(tableName, _, fields, parent) =>
-                    getObjectRefData(tableName, fields, parent)
-                ).foreach { ref =>
-                //TODO check not actual foreing keys and investigate if FK should be dropped on tables altering
-                    getForeignKey(ref.tableName, ref.columnName) match
-                        case Some(fk) =>
-                            if fk.refTableName != ref.refTableData.tableName || fk.refColumnName != ref.refTableData.idColumn.columnName then
-                                dropForeignKey(ref.tableName, fk.keyName)
-                                createForeignKey(ref.tableName, ref.columnName, ref.refTableData.tableName,
-                                    ref.refTableData.idColumn.columnName)
-                        case None =>
-                            createForeignKey(ref.tableName, ref.columnName, ref.refTableData.tableName,
-                                ref.refTableData.idColumn.columnName)
-                }
-        }
-
-    private def createOrMigrateTables(
-        typesPersistenceData: Seq[TypePersistenceDataFinal],
-    )(implicit session: DBSession): Unit =
-
         def createSingleValueTable(
             tableName: String,
             idColumn: PrimitiveValuePersistenceDataFinal,
@@ -172,9 +127,16 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
             """).execute.apply()
             dbUtils.addTableRenamingData(tableName, prevColumnName, newColumnName)
 
-        def dropConstraint(tableName: String, constraintName: String): Unit =
+        def dropPrimaryKey(pk: PrimaryKeyData): Unit =
+            dropConstraint(pk.tableName, pk.keyName, true)
+
+        def dropForeignKey(fk: ForeignKeyData): Unit =
+            dropConstraint(fk.tableName, fk.keyName, false)
+
+        def dropConstraint(tableName: String, keyName: String, cascade: Boolean): Unit =
+            val cascadeSql = if cascade then " CASCADE" else ""
             SQL(s"""
-                ALTER TABLE $tableName DROP CONSTRAINT $constraintName
+                ALTER TABLE $tableName DROP CONSTRAINT $keyName $cascadeSql
             """).execute.apply()
 
         def createPrimaryKey(tableName: String, columnName: String): Unit =
@@ -215,12 +177,14 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
                             if pkColumn == idColumn.columnName then
                                 if existingColumns(pkColumn).columnType != getFieldType(idColumn.columnType) then
                                     //ignoring else - ID column with PK of same type already exists - no actions
-                                    dropConstraint(tableName, pkData.keyName)
-                                    renameColumn(tableName, pkColumn, getRenamedArchivedColumnName(pkColumn, existingColumns))
-                                    addPrimaryKeyColumn(tableName, idColumn.columnName, getFieldType(idColumn.columnType))
+                                    dropPrimaryKey(pkData)
+                                    renameColumn(tableName, pkColumn, getRenamedArchivedColumnName(pkColumn,
+                                        existingColumns))
+                                    addPrimaryKeyColumn(tableName, idColumn.columnName,
+                                        getFieldType(idColumn.columnType))
                                     dbUtils.addPrimaryKeyAlteringData(tableName, pkColumn, idColumn.columnName)
                             else
-                                dropConstraint(tableName, pkData.keyName)
+                                dropPrimaryKey(pkData)
                                 createPrimaryKey(tableName, idColumn.columnName)
                                 dbUtils.addPrimaryKeyAlteringData(tableName, pkColumn, idColumn.columnName)
                         else
@@ -235,7 +199,7 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
                         if existingColumns(pkColumn).columnType == getFieldType(idColumn.columnType) then
                             renameColumn(tableName, pkColumn, idColumn.columnName)
                         else
-                            dropConstraint(tableName, pkData.keyName)
+                            dropPrimaryKey(pkData)
                             addPrimaryKeyColumn(tableName, idColumn.columnName, getFieldType(idColumn.columnType))
                             dbUtils.addPrimaryKeyAlteringData(tableName, pkColumn, idColumn.columnName)
                 catch
@@ -252,7 +216,8 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
             if existingColumns.contains(valueColumnName) then
                 if existingColumns(valueColumnName).columnType != getFieldType(valueColumnType) then
                     //ignoring else - Value column of same type already exists - no actions
-                    renameColumn(tableName, valueColumnName, getRenamedArchivedColumnName(valueColumnName, existingColumns))
+                    renameColumn(tableName, valueColumnName, getRenamedArchivedColumnName(valueColumnName,
+                        existingColumns))
                     addColumn(tableName, valueColumnName, getFieldType(valueColumnType))
                     dbUtils.addTableRenamingData(tableName, null, valueColumnName)
             else
@@ -335,27 +300,64 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
 
         val existingTableNames = metadataUtils.getTableNames
 
-        typesPersistenceData.foreach {
-            case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
-                if !existingTableNames.contains(tableName)
-                    then createSingleValueTable(tableName, idColumn, valueColumn.columnName, valueColumn.columnType)
-                    else checkAndFixExistingSingleValueTable(tableName, idColumn, valueColumn.columnName, valueColumn.columnType)
-            case ArrayTypePersistenceDataFinal(items) =>
-                items.foreach {
-                    case ItemTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
-                        val (valueColumnName, valueColumnType) = valueColumn match
-                            case PrimitiveValuePersistenceDataFinal(valueColumnName, valueColumnType) =>
-                                (valueColumnName, valueColumnType)
-                            case ref: ReferenceValuePersistenceDataFinal =>
-                                (ref.columnName, ref.refTableData.idColumnType)
-                        if !existingTableNames.contains(tableName)
-                            then createSingleValueTable(tableName, idColumn, valueColumnName, valueColumnType)
-                            else checkAndFixExistingSingleValueTable(tableName, idColumn, valueColumnName, valueColumnType)
-                }
-            case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
-                if !existingTableNames.contains(tableName)
-                    then createObjectValueTable(tableName, idColumn, fields, parent)
-                    else checkAndFixExistingObjectValueTable(tableName, idColumn, fields, parent)
+        val refData =
+            typesPersistenceData.flatMap {
+                case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
+                    if !existingTableNames.contains(tableName)
+                        then createSingleValueTable(tableName, idColumn, valueColumn.columnName, valueColumn.columnType)
+                        else checkAndFixExistingSingleValueTable(tableName, idColumn, valueColumn.columnName,
+                            valueColumn.columnType)
+                    Nil
+                case ArrayTypePersistenceDataFinal(items) =>
+                    items.view.flatMap {
+                        case ItemTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
+                            val (valueColumnName, valueColumnType, refData) = valueColumn match
+                                case PrimitiveValuePersistenceDataFinal(valueColumnName, valueColumnType) =>
+                                    (valueColumnName, valueColumnType, Nil)
+                                case ref: ReferenceValuePersistenceDataFinal =>
+                                    (ref.columnName, ref.refTableData.idColumnType,
+                                        ref.refTableData.data.map(RefData(tableName, ref.columnName, _)).toList)
+                            if !existingTableNames.contains(tableName)
+                                then createSingleValueTable(tableName, idColumn, valueColumnName, valueColumnType)
+                                else checkAndFixExistingSingleValueTable(tableName, idColumn, valueColumnName,
+                                    valueColumnType)
+                            refData
+                    }
+                case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
+                    if !existingTableNames.contains(tableName)
+                        then createObjectValueTable(tableName, idColumn, fields, parent)
+                        else checkAndFixExistingObjectValueTable(tableName, idColumn, fields, parent)
+                    getObjectRefData(tableName, fields, parent)
+            }
+
+        val refDataByTable = refData.groupBy(_.tableName)
+        metadataUtils.getForeignKeys(null).foreach (  fk =>
+            val notFoundRelation =
+                if fk.links.size != 1 then
+                    true
+                else
+                    val fkLink = fk.links.head
+                    val refData = refDataByTable.getOrElse(fk.tableName, Nil)
+                    !refData.exists(ref =>
+                        ref.tableName == fk.tableName &&
+                            ref.columnName == fkLink.columnName &&
+                            ref.refTableData.tableName == fk.refTableName &&
+                            ref.refTableData.idColumn.columnName == fkLink.refColumnName
+                    )
+
+            if notFoundRelation then
+                dropForeignKey(fk)
+        )
+
+        val foreignKeysCacheByTable = mutable.Map[String, mutable.Map[String, ForeignKeyData]]()
+        metadataUtils.getForeignKeys(null).foreach(fk =>
+            foreignKeysCacheByTable.getOrElseUpdate(fk.tableName, mutable.Map()).put(
+                fk.links.map(_.columnName).mkString(","), fk)
+        )
+        refData.foreach { ref =>
+            if foreignKeysCacheByTable.get(ref.tableName).flatMap(_.get(ref.columnName)).isEmpty then
+                createForeignKey(ref.tableName, ref.columnName, ref.refTableData.tableName,
+                    ref.refTableData.idColumn.columnName)
         }
 
 
