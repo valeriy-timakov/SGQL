@@ -41,17 +41,16 @@ case class ForeignKeyData(
 
 class MetadataUtils:
 
-    def getTableNames: Set[String] =
+    def getTableNames(schemaPattern: String): Set[String] =
         DB.readOnly { implicit session =>
             val conn = session.connection
             val metaData = conn.getMetaData
 
-            Using.resource(metaData.getTables(null, null, "%", Array("TABLE"))) { rs =>
+            Using.resource(metaData.getTables(null, schemaPattern, "%", Array("TABLE"))) { rs =>
                 var tables = Set[String]()
 
                 while (rs.next()) 
                     tables += rs.getString("TABLE_NAME")
-                
 
                 tables
             }

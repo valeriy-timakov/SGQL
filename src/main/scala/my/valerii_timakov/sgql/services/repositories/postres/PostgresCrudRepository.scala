@@ -8,7 +8,7 @@ import scala.util.Try
 import scalikejdbc._
 import scala.collection.mutable
 
-class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends CrudRepository:
+class PostgresCrudRepository(connectionConf: Config, persistenceConf: Config) extends CrudRepository:
 
     override def create(entityType: EntityType, data: EntityFieldType): Try[Entity] = ???
 
@@ -23,11 +23,18 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
 
     def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit =
 
-        val typesSchemaParam = if typesSchemaName != null then s"?currentSchema=$typesSchemaName." else ""
+        val typesSchemaParam = if typesSchemaName != null then s"?currentSchema=$typesSchemaName" else ""
         Class.forName("org.postgresql.Driver")
         ConnectionPool.singleton(s"jdbc:postgresql://${connectionConf.getString("host")}:" +
             s"${connectionConf.getInt("port")}/${connectionConf.getString("database")}$typesSchemaParam",
             connectionConf.getString("username"), connectionConf.getString("password"))
+
+        DB.autoCommit { implicit session =>
+            SQL(
+                s"""CREATE SCHEMA IF NOT EXISTS $typesSchemaName"""
+            ).execute.apply()
+        }
+
         DB.localTx(implicit session =>
             val allTypesData = typesDefinitionsProvider.getAllPersistenceData
             createOrMigrateTables(allTypesData)
@@ -60,7 +67,7 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
     )
 
 
-    private val dbUtils = PostgresDBInitUtils(utilsConf)
+    private val dbUtils = PostgresDBInitUtils(persistenceConf.getConfig("utils"))
     private val metadataUtils = MetadataUtils()
 
     private def getFieldType(persistenceFieldType: PersistenceFieldType): String = persistenceFieldType match
@@ -80,9 +87,9 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
             .exists(_.contains(dbTypeName))
 
     private val typesSchemaName = connectionConf.getString("schema")
-    private val primaryKeySuffix = connectionConf.getString("primary-key-suffix")
-    private val foreignKeySuffix = connectionConf.getString("foreign-key-suffix")
-    private val archivedColumnNameSuffix = connectionConf.getString("archived-column-name-suffix")
+    private val primaryKeySuffix = persistenceConf.getString("primary-key-suffix")
+    private val foreignKeySuffix = persistenceConf.getString("foreign-key-suffix")
+    private val archivedColumnNameSuffix = persistenceConf.getString("archived-column-name-suffix")
 
     private var typesPersistenceData: Map[AbstractNamedEntityType, TypePersistenceData] = Map()
 
@@ -135,7 +142,7 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
         ): Unit =
             SQL(s"""
                 CREATE TABLE $tableName (
-                    ${idColumn.columnName} ${getIdFieldType(idColumn.columnType)} PRIMARY KEY,
+                    ${idColumn.columnName} ${getIdFieldType(idColumn.columnType)},
                     $valueColumnName ${getFieldType(valueColumnType)}, 
                     CONSTRAINT $tableName$primaryKeySuffix PRIMARY KEY (${idColumn.columnName})
                 )
@@ -161,15 +168,12 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
 
         def createPrimaryKey(tableName: String, columnName: String): Unit =
             SQL(s"""
-                ALTER TABLE $tableName ADD CONSTRAINT $tableName$primaryKeySuffix
-                    PRIMARY KEY ($columnName);
+                ALTER TABLE $tableName ADD CONSTRAINT $tableName$primaryKeySuffix PRIMARY KEY ($columnName)
             """).execute.apply()
 
         def addPrimaryKeyColumn(tableName: String, columnName: String, columnType: String): Unit =
             addColumn(tableName, columnName, columnType)
-            SQL(s"""
-                ALTER TABLE $tableName ADD CONSTRAINT $tableName$primaryKeySuffix PRIMARY KEY ($columnName)
-            """).execute.apply()
+            createPrimaryKey(tableName, columnName)
 
         def addColumn(tableName: String, columnName: String, columnType: String): Unit =
             SQL(s"""
@@ -300,8 +304,9 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
 
             SQL(s"""
                 CREATE TABLE $tableName (
-                    ${idColumn.columnName} ${getIdFieldType(idColumn.columnType)} PRIMARY KEY,
-                    ${getFieldsSql(fields)} + $parentSql
+                    ${idColumn.columnName} ${getIdFieldType(idColumn.columnType)},
+                    ${getFieldsSql(fields)} $parentSql,
+                    CONSTRAINT $tableName$primaryKeySuffix PRIMARY KEY (${idColumn.columnName})
                 )
             """).execute.apply()
 
@@ -318,7 +323,7 @@ class PostgresCrudRepository(connectionConf: Config, utilsConf: Config) extends 
         }.mkString(", ")
 
 
-        val existingTableNames = metadataUtils.getTableNames
+        val existingTableNames = metadataUtils.getTableNames(typesSchemaName)
 
         val refData =
             typesPersistenceData.flatMap {

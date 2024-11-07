@@ -28,7 +28,7 @@ i.valerii_timakov.home_finances {
                     field9: String
                 }
                 field11: U3 {
-                    field8: inner.sdf.MyArray2
+                    field8_test: inner.sdf.MyArray2
                     field9: String
                 }
                 user: User

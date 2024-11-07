@@ -19,7 +19,7 @@ import scala.language.postfixOps
         .withFallback(ConfigFactory.load("default.application.config.conf"))
 
     implicit lazy val typesDefinitionsLoader: TypesDefinitionsLoader = TypesDefinitionsLoader
-    implicit lazy val typesPersistenceConfigLoader: PersistenceConfigLoader = PersistenceConfigLoader
+    implicit lazy val typesPersistenceConfigLoader: PersistenceConfigLoader = PersistenceConfigLoaderImpl(conf.getConfig("persistence"))
     lazy val typesDefinitionProvider: TypesDefinitionProvider = TypesDefinitionProvider.create
     lazy val crudRepository = CrudRepositoriesFactory.createRopository(conf.getConfig("persistence"))
     crudRepository.init(typesDefinitionProvider)

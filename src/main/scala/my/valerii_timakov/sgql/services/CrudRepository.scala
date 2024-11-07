@@ -11,7 +11,7 @@ import scala.util.Try
 object CrudRepositoriesFactory:
     def createRopository(conf: Config): CrudRepository =
         if conf.hasPath("postgres") then
-            new PostgresCrudRepository(conf.getConfig("postgres"), conf.getConfig("utils"))
+            new PostgresCrudRepository(conf.getConfig("postgres"), conf)
         else
             throw new PersistenceRepositoryTypeNotFoundException
 

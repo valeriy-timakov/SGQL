@@ -1,5 +1,6 @@
 package my.valerii_timakov.sgql.services
 
+import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.*
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, NoTypeFound, TypesLoadExceptionException}
 
@@ -179,11 +180,13 @@ val consiestenceDefinitionsMap: Map[PersistenceFieldType, RootPrimitiveTypeDefin
 )
 
 
-object PersistenceConfigLoader extends PersistenceConfigLoader:
+class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
 
-    var generatedSimpleObjects: Map[String, ObjectTypePersistenceDataFinal] = Map.empty
-    val tableReferenceFactory = new TableReferenceFactory()
-    var typesDataPersistenceMap: Map[String, AbstractTypePersistenceData] = Map.empty
+    private val tableReferenceFactory = new TableReferenceFactory()
+    private var typesDataPersistenceMap: Map[String, AbstractTypePersistenceData] = Map.empty
+    private val columnNameParentPrefix = conf.getString("column-name-parent-prefix")
+    private val columnNameSuperParentPrefix = conf.getString("column-name-super-parent-prefix")
+    private val columnNameSubnamesDelimiter = conf.getString("column-name-subnames-delimiter")
 
     private class ColumnsNamesChecker:
         val columnsUsages: mutable.Map[String, String] = mutable.Map()
@@ -383,7 +386,8 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
                 parentPersistenceData match
                     case Right(ReferenceValuePersistenceData(columnName)) =>
                         Some(ReferenceValuePersistenceDataFinal(
-                            columnName.getOrElse(columnNameFromFieldName("parent__" + parentDef.name)),
+                            columnName.getOrElse(columnNameFromFieldName(
+                                columnNameParentPrefix + getTypeSimpleName(parentDef.name))),
                             tableReferenceFactory.createForType(parentDef.name)
                         ))
                     case Left(ExpandParentMarkerSingle) =>
@@ -399,8 +403,8 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
                                 )
                                 .getOrElse(ReferenceValuePersistenceData(None))
                             ReferenceValuePersistenceDataFinal(
-                                fieldsParsedData.columnName.getOrElse(columnNameFromFieldName("super_parent__" +
-                                    superParentDef.name)),
+                                fieldsParsedData.columnName.getOrElse(columnNameFromFieldName(
+                                    columnNameSuperParentPrefix + getTypeSimpleName(superParentDef.name))),
                                 tableReferenceFactory.createForType(superParentDef.name)
                             ))
                     case Left(ExpandParentMarkerTotal) =>
@@ -437,10 +441,14 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
             idColumnSrc.columnType.getOrElse(idTypeDefinitionToFieldType.getOrElse(idType, throw new NoTypeFound(idType.name)))
         )
 
+    private def getTypeSimpleName(typeName: String): String =
+        typeName.substring(typeName.lastIndexOf('.') + 1)
+
     private def copyParentFieldsPersitenceData(prefix: String,
                                                typeDef: ObjectEntitySuperType,
                                                copySuperParents: Boolean): Map[String, ValuePersistenceDataFinal] =
-        val prefix_ = prefix + s"parent__${typeDef.name}__"
+        val prefix_ = prefix + columnNameParentPrefix + getTypeSimpleName(typeDef.name).toLowerCase +
+            columnNameSubnamesDelimiter
 
         val fieldsParsedData = typesDataPersistenceMap.get(typeDef.name)
             .map(p =>
@@ -661,7 +669,8 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
                                              typeName: String): SimpleObjectValuePersistenceDataFinal =
 
         val fieldsAndParentPersistenceData = mergeFieldsAndParentPersistenceData(parent, fields, parentPersistenceData,
-            subFieldsPersistenceDataMap, ColumnsNamesChecker(), typeName, s"$prefix${fieldName}__")
+            subFieldsPersistenceDataMap, ColumnsNamesChecker(), typeName,
+                prefix + fieldName + columnNameSubnamesDelimiter)
 
         SimpleObjectValuePersistenceDataFinal(fieldsAndParentPersistenceData)
 
@@ -669,8 +678,8 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
 
     private def toReferencePersistenceDataFinal(fieldType: TypeReferenceDefinition,
                                                 persistenceData: ValuePersistenceData,
-                                                prefix: String,
                                                 defaultColumnName: String,
+                                                prefix: String,
                                                 itemDescriptionProvider: () => String) =
 
         persistenceData match
@@ -686,8 +695,8 @@ object PersistenceConfigLoader extends PersistenceConfigLoader:
 
     private def toPrimitivePersistenceDataFinal(fieldType: RootPrimitiveTypeDefinition,
                                                 persistenceData: ValuePersistenceData,
-                                                prefix: String, 
                                                 defaultColumnName: String,
+                                                prefix: String,
                                                 itemDescriptionProvider: () => String) =
 
         val persisTypeOpt = persistenceData match
