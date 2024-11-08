@@ -48,21 +48,21 @@ class PostgresCrudRepository(connectionConf: Config, persistenceConf: Config) ex
 
     private val availableTypes: Map[PersistenceFieldType, Set[String]] = Map(
         BLOBFieldType -> Set("BYTEA"),
-        DoubleFieldType -> Set("DOUBLE PRECISION", "FLOAT8"),
-        FloatFieldType -> Set("REAL", "FLOAT4"),
+        DoubleFieldType -> Set("FLOAT8", "DOUBLE PRECISION"),
+        FloatFieldType -> Set("FLOAT4", "REAL"),
         DecimalFieldType -> Set("NUMERIC", "DECIMAL"),
         LongFieldType -> Set("BIGINT", "INT8"),
         IntFieldType -> Set("INTEGER", "INT", "INT4"),
         ShortIntFieldType -> Set("SMALLINT", "INT2"),
         BooleanFieldType -> Set("BOOLEAN", "BOOL"),
         FixedStringFieldType -> Set("CHARACTER", "CHAR"),
-        StringFieldType -> Set("CHARACTER VARYING", "VARCHAR"),
+        StringFieldType -> Set("VARCHAR", "CHARACTER VARYING"),
         DateFieldType -> Set("DATE"),
         TextFieldType -> Set("TEXT"),
         TimeFieldType -> Set("TIME"),
-        TimeWithTimeZoneFieldType -> Set("TIME WITH TIME ZONE", "TIMETZ"),
+        TimeWithTimeZoneFieldType -> Set("TIMETZ", "TIME WITH TIME ZONE"),
         DateTimeFieldType -> Set("TIMESTAMP"),
-        DateTimeWithTimeZoneFieldType -> Set("TIMESTAMP WITH TIME ZONE", "TIMESTAMPTZ"),
+        DateTimeWithTimeZoneFieldType -> Set("TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"),
         UUIDFieldType -> Set("UUID"),
     )
 
@@ -299,13 +299,13 @@ class PostgresCrudRepository(connectionConf: Config, persistenceConf: Config) ex
             parent: Option[ReferenceValuePersistenceDataFinal],
         ): Unit =
             val parentSql = parent.map( parentTableRef =>
-                s", ${parentTableRef.columnName} ${getFieldType(parentTableRef.refTableData.idColumnType)}"
+                s"${parentTableRef.columnName} ${getFieldType(parentTableRef.refTableData.idColumnType)}, "
             ).getOrElse("")
 
             SQL(s"""
                 CREATE TABLE $tableName (
                     ${idColumn.columnName} ${getIdFieldType(idColumn.columnType)},
-                    ${getFieldsSql(fields)} $parentSql,
+                    $parentSql ${getFieldsSql(fields)}
                     CONSTRAINT $tableName$primaryKeySuffix PRIMARY KEY (${idColumn.columnName})
                 )
             """).execute.apply()

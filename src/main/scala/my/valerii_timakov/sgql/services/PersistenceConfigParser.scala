@@ -17,6 +17,8 @@ object IntFieldType extends PersistenceFieldType("integer")
 
 object ShortIntFieldType extends PersistenceFieldType("short")
 
+object ByteFieldType extends PersistenceFieldType("byte")
+
 object DoubleFieldType extends PersistenceFieldType("double")
 
 object FloatFieldType extends PersistenceFieldType("float")

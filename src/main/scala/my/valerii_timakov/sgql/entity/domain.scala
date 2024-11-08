@@ -57,11 +57,19 @@ case class ArrayItemType(valueType: ArrayItemTypeDefinitions):// extends Abstrac
 
 sealed trait EntityId:
     def serialize: String
+final case class ByteId(value: Byte) extends EntityId:
+    override def serialize: String = value.toString
+final case class ShortIntId(value: Short) extends EntityId:
+    override def serialize: String = value.toString
 final case class IntId(value: Int) extends EntityId:
     override def serialize: String = value.toString
 final case class LongId(value: Long) extends EntityId:
     override def serialize: String = value.toString
 final case class StringId(value: String) extends EntityId:
+    override def serialize: String = value
+final case class FixedStringId(value: String, typeRef: FixedStringIdTypeDefinition) extends EntityId:
+    if value == null || typeRef == null || value.length != typeRef.length then throw new IllegalArgumentException(
+        s"FixedStringId value must be of length ${typeRef.length}! Got: $value")
     override def serialize: String = value
 final case class UUIDId(value: java.util.UUID) extends EntityId:
     override def serialize: String = value.toString
@@ -75,27 +83,40 @@ sealed abstract class EntityIdTypeDefinition(val name: String):
         }
     }
     protected def parseIner(value: String): EntityId
-    
+
+case object ByteIdTypeDefinition extends EntityIdTypeDefinition("Byte"):
+    protected override def parseIner(value: String): EntityId = ByteId(value.toByte)
+case object ShortIdTypeDefinition extends EntityIdTypeDefinition("Short"):
+    protected override def parseIner(value: String): EntityId = ShortIntId(value.toShort)
 case object IntIdTypeDefinition extends EntityIdTypeDefinition("Integer"):
     protected override def parseIner(value: String): EntityId = IntId(value.toInt)
 case object LongIdTypeDefinition extends EntityIdTypeDefinition("Long"):
     protected override def parseIner(value: String): EntityId = LongId(value.toLong)
-case object StringIdTypeDefinition extends EntityIdTypeDefinition("String"):
-    protected override def parseIner(value: String): EntityId = StringId(value)
 case object UUIDIdTypeDefinition extends EntityIdTypeDefinition("UUID"):
     protected override def parseIner(value: String): EntityId = UUIDId(java.util.UUID.fromString(value))
+case object StringIdTypeDefinition extends EntityIdTypeDefinition("String"):
+    protected override def parseIner(value: String): EntityId = StringId(value)
+case class FixedStringIdTypeDefinition(length: Int) extends EntityIdTypeDefinition("String"):
+    protected override def parseIner(value: String): EntityId = StringId(value)
+case object FixedStringIdTypeDefinition extends EntityIdTypeDefinition("String"):
+    protected override def parseIner(value: String): EntityId = StringId(value)
 
 
 val idTypesMap = Map(
+    ByteIdTypeDefinition.name -> ByteIdTypeDefinition,
+    ShortIdTypeDefinition.name -> ShortIdTypeDefinition,
     IntIdTypeDefinition.name -> IntIdTypeDefinition,
     LongIdTypeDefinition.name -> LongIdTypeDefinition,
     StringIdTypeDefinition.name -> StringIdTypeDefinition,
+    FixedStringIdTypeDefinition.name -> FixedStringIdTypeDefinition,
     UUIDIdTypeDefinition.name -> UUIDIdTypeDefinition,
 )
 
 sealed abstract class EntityFieldType
 sealed abstract class PrimitiveFieldType extends EntityFieldType
 final case class StringType(value: String) extends PrimitiveFieldType
+final case class ByteType(value: Byte) extends PrimitiveFieldType
+final case class ShortIntType(value: Short) extends PrimitiveFieldType
 final case class IntType(value: Int) extends PrimitiveFieldType
 final case class LongType(value: Long) extends PrimitiveFieldType
 final case class DoubleType(value: Double) extends PrimitiveFieldType
@@ -105,12 +126,13 @@ final case class DateType(value: LocalDate) extends PrimitiveFieldType
 final case class DateTimeType(value: LocalTime) extends PrimitiveFieldType
 final case class TimeType(value: LocalDateTime) extends PrimitiveFieldType
 final case class UUIDType(value: UUID) extends PrimitiveFieldType
+final case class DecimalType(value: BigDecimal) extends PrimitiveFieldType
 final case class BinaryType(value: Array[Byte]) extends PrimitiveFieldType
 final case class ArrayType[T <: EntityFieldType](value: List[T]) extends EntityFieldType
 final case class ObjectType(value: Map[String, EntityFieldType]) extends EntityFieldType
 
 val primitiveFieldTypesMap = Map(
-    StringTypeDefinition.name -> StringTypeDefinition,
+    StringIdTypeDefinition.name -> StringTypeDefinition,
     LongIdTypeDefinition.name -> LongTypeDefinition,
     IntTypeDefinition.name -> IntTypeDefinition,
     DoubleTypeDefinition.name -> DoubleTypeDefinition,
@@ -168,9 +190,11 @@ sealed abstract case class RootPrimitiveTypeDefinition(name: String) extends Pri
             case _: Throwable => Left(new IdParseError(this.getClass.getSimpleName, value))
         }
     protected def parseIner(value: String): EntityFieldType
-    
-object StringTypeDefinition extends RootPrimitiveTypeDefinition("String"):
-    protected override def parseIner(value: String): StringType = StringType(value)
+
+object ByteTypeDefinition extends RootPrimitiveTypeDefinition("Byte"):
+    protected override def parseIner(value: String): ByteType = ByteType(value.toByte)
+object ShortIntTypeDefinition extends RootPrimitiveTypeDefinition("Short"):
+    protected override def parseIner(value: String): ShortIntType = ShortIntType(value.toShort)
 object IntTypeDefinition extends RootPrimitiveTypeDefinition("Integer"):
     protected override def parseIner(value: String): IntType = IntType(value.toInt)
 object LongTypeDefinition extends RootPrimitiveTypeDefinition("Long"):
@@ -191,10 +215,17 @@ object UUIDTypeDefinition extends RootPrimitiveTypeDefinition("UUID"):
     protected override def parseIner(value: String): UUIDType = UUIDType(java.util.UUID.fromString(value))
 object BinaryTypeDefinition extends RootPrimitiveTypeDefinition("Binary"):
     protected override def parseIner(value: String): BinaryType = BinaryType(Base64.rfc2045().decode(value))
+object DecimalTypeDefinition extends RootPrimitiveTypeDefinition("Decimal"):
+    protected override def parseIner(value: String): DecimalType = DecimalType(BigDecimal(value))
+object StringTypeDefinition extends RootPrimitiveTypeDefinition("String"):
+    protected override def parseIner(value: String): StringType = StringType(value)
+class FixedStringTypeDefinition(val length: Int) extends RootPrimitiveTypeDefinition("FixedString"):
+    protected override def parseIner(value: String): StringType = StringType(value)
+object FixedStringTypeDefinition extends RootPrimitiveTypeDefinition("FixedString"):
+    protected override def parseIner(value: String): StringType = StringType(value)
     
 object ArrayTypeDefinition:
     val name = "Array"
-
     
 final case class ArrayTypeDefinition(
     private var _elementTypes: Set[ArrayItemType], 

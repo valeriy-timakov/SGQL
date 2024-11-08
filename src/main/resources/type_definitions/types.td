@@ -12,7 +12,8 @@ i.valerii_timakov.home_finances {
         }
         U2: (Long) {
             abc: String
-            dcf: MyArray
+            dcVf: MyArray
+            dcVfGb: MyArray
             fakeObj: {
                 fakeField: String
                 field2: MyArray
