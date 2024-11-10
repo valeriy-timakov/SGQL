@@ -144,7 +144,7 @@ class RootPackageData[ItemDataType <: ItemData](val packages: List[PackageData[I
 
 case class PackageData[ItemDataType <: ItemData](name: String, override val packages: List[PackageData[ItemDataType]], override val items: List[ItemDataType]) extends RootPackageData[ItemDataType](packages, items):
     def toPairsStream(parentPrefix: String): LazyList[(String, ItemDataType)] =
-        val currentPrefix = parentPrefix + name + "."
+        val currentPrefix = parentPrefix + name + TypesDefinitionsParser.NAMESPACES_DILIMITER
         items.map(_.pair(currentPrefix)).to(LazyList) ++ packages.flatMap(_.toPairsStream(currentPrefix)).to(LazyList)
 
 

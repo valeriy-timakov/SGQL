@@ -49,7 +49,7 @@ class TypesRootPackageData(val packages: List[TypesPackageData], val types: List
 
 case class TypesPackageData(name: String, override val packages: List[TypesPackageData], override val types: List[TypeData]) extends TypesRootPackageData(packages, types):
     def toPairsStream(parentPrefix: String): LazyList[(String, TypeData)] =
-        val currentPrefix = parentPrefix + name + "."
+        val currentPrefix = parentPrefix + name + TypesDefinitionsParser.NAMESPACES_DILIMITER
         types.map(_.pair(currentPrefix)).to(LazyList) ++ packages.flatMap(_.toPairsStream(currentPrefix)).to(LazyList)
 
 abstract class DefinitionsParser[Result] extends RegexParsers with LazyLogging:
@@ -75,6 +75,7 @@ object TypesDefinitionsParser extends DefinitionsParser[TypesRootPackageData]:
 
     var logId: Int = 0
     val debugLogEnabled: Boolean = false
+    final val NAMESPACES_DILIMITER = '.'
 
     private def log[I](p: Parser[I], name: String): Parser[I] = Parser { in =>
         logId += 1

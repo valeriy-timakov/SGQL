@@ -21,7 +21,8 @@ import scala.language.postfixOps
     implicit lazy val typesDefinitionsLoader: TypesDefinitionsLoader = TypesDefinitionsLoader
     implicit lazy val typesPersistenceConfigLoader: PersistenceConfigLoader = PersistenceConfigLoaderImpl(conf.getConfig("persistence"))
     lazy val typesDefinitionProvider: TypesDefinitionProvider = TypesDefinitionProvider.create
-    lazy val crudRepository = CrudRepositoriesFactory.createRopository(conf.getConfig("persistence"))
+    val typeNameMaxLength: Int = conf.getInt("type-definitions.type-name-max-length")
+    lazy val crudRepository = CrudRepositoriesFactory.createRopository(conf.getConfig("persistence"), typeNameMaxLength)
     crudRepository.init(typesDefinitionProvider)
     lazy val messageSource: MessageSource =  MessageSourceImpl()
 

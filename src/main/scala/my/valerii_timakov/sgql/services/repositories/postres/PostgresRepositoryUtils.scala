@@ -39,6 +39,12 @@ case class ForeignKeyData(
     links: Set[FKLinkPair]
 )
 
+case class Version (
+    id: Long,
+    version: String,
+    creationDate: LocalDateTime
+)
+
 class MetadataUtils:
 
     def getTableNames(schemaPattern: String): Set[String] =
@@ -130,63 +136,200 @@ class MetadataUtils:
         }
 
 
-class PostgresDBInitUtils(conf: Config):
+class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Int):
+    private final val ID_COLUMN_NAME = "id-column"
+    private final val RENAMING_TABLES_TABLE_NAME = "renaming-tables-table-name"
+    private final val RENAMING_COLUMNS_TABLE_NAME = "renaming-columns-table-name"
+    private final val PRIMARY_KEY_ALTERING_TABLE_NAME = "primary-key-altering-table-name"
+    private final val VERSIONS_TABLE_NAME = "versions-table-name"
+    private final val TYPES_TO_TABLES_MAP_TABLE_NAME = "types-to-tables-map-table-name"
+    private final val ALTERING_TABLE_COLUMN = "altering-table-column"
+    private final val PREVIOUS_NAME_COLUMN = "previous-name-column"
+    private final val NEW_NAME_COLUMN = "new-name-column"
+    private final val VERSION_REF_COLUMN = "version-ref-column"
+    private final val VERSION_NAME_COLUMN = "version-column"
+    private final val CREATION_DATE_COLUMN = "creation-date-column"
+    private final val TYPE_NAME_COLUMN = "type-name-column"
+    private final val TABLE_NAME_COLUMN = "table-name-column"
+    private final val TABLE_COLUNS_TABLE_NAME = "table-columns-table-name"
+    private final val COLUMN_NAME_COLUMN = "column-name-column"
+    private final val COLUMN_TYPE_COLUMN = "column-type-column"
+    private final val TABLE_REF_COLUMN = "table-ref-column"
+
+    private val nameLength = persistenceConf.getInt("db-name-length")
+    private val dbTypeNameMaxLength = persistenceConf.getInt("db-type-name-max-length")
+    private val versionNameMaxLength = persistenceConf.getInt("version-name-max-length")
+    private val utilsConf = persistenceConf.getConfig("utils")
+    private val utilsSchemaName = utilsConf.getString("schema")
+    private val trc = utilsConf.getConfig("versioning")
+    private val idColumnName = trc.getString(ID_COLUMN_NAME)
     def init(): Unit =
-        val utilsSchemaName = conf.getString("utils-schema")
-        val trc = conf.getConfig("tables-altering")
         DB.autoCommit { implicit session =>
             SQL(
                 s"""CREATE SCHEMA IF NOT EXISTS $utilsSchemaName"""
             ).execute.apply()
 
             SQL(
-                s"""CREATE TABLE IF NOT EXISTS $utilsSchemaName.${trc.getString("renaming-columns-table-name")} (
-                    ${trc.getString("id-column")} SERIAL PRIMARY KEY,
-                    ${trc.getString("altering-table-column")} ${trc.getString("db-names-column-type")} NOT NULL,
-                    ${trc.getString("previous-name-column")} ${trc.getString("db-names-column-type")},
-                    ${trc.getString("new-name-column")} ${trc.getString("db-names-column-type")},
-                    ${trc.getString("operation-date-column")} ${trc.getString("operation-date-column-type")} NOT NULL,
+                s"""CREATE TABLE IF NOT EXISTS $utilsSchemaName.${trc.getString(VERSIONS_TABLE_NAME)} (
+                    $idColumnName BIGSERIAL PRIMARY KEY,
+                    ${trc.getString(VERSION_NAME_COLUMN)} VARCHAR($versionNameMaxLength) NOT NULL,
+                    ${trc.getString(CREATION_DATE_COLUMN)} TIMESTAMP NOT NULL
                 )"""
             ).execute.apply()
 
             SQL(
-                s"""CREATE TABLE IF NOT EXISTS $utilsSchemaName.${trc.getString("primary-key-altering-table-name")} (
-                    ${trc.getString("id-column")} SERIAL PRIMARY KEY,
-                    ${trc.getString("altering-table-column")} ${trc.getString("db-names-column-type")} NOT NULL,
-                    ${trc.getString("previous_primary_key_column")} ${trc.getString("db-names-column-type")},
-                    ${trc.getString("new_primary_key_column")} ${trc.getString("db-names-column-type")},
-                    ${trc.getString("operation-date-column")} ${trc.getString("operation-date-column-type")} NOT NULL,
+                s"""CREATE TABLE IF NOT EXISTS $utilsSchemaName.${trc.getString(RENAMING_TABLES_TABLE_NAME)} (
+                    $idColumnName BIGSERIAL PRIMARY KEY,
+                    ${trc.getString(PREVIOUS_NAME_COLUMN)} VARCHAR($nameLength),
+                    ${trc.getString(NEW_NAME_COLUMN)} VARCHAR($nameLength) NOT NULL,
+                    ${trc.getString(VERSION_REF_COLUMN)} BIGINT NOT NULL,
+                    CONSTRAINT ${trc.getString(RENAMING_TABLES_TABLE_NAME)}_${trc.getString(VERSIONS_TABLE_NAME)}_fk FOREIGN KEY
+                        (${trc.getString(VERSION_REF_COLUMN)}) REFERENCES $utilsSchemaName.${trc.getString(VERSIONS_TABLE_NAME)}($idColumnName)
                 )"""
             ).execute.apply()
+
+            SQL(
+                s"""CREATE TABLE IF NOT EXISTS $utilsSchemaName.${trc.getString(RENAMING_COLUMNS_TABLE_NAME)} (
+                    $idColumnName BIGSERIAL PRIMARY KEY,
+                    ${trc.getString(ALTERING_TABLE_COLUMN)} VARCHAR($nameLength) NOT NULL,
+                    ${trc.getString(PREVIOUS_NAME_COLUMN)} VARCHAR($nameLength),
+                    ${trc.getString(NEW_NAME_COLUMN)} VARCHAR($nameLength) NOT NULL,
+                    ${trc.getString(VERSION_REF_COLUMN)} BIGINT NOT NULL,
+                    CONSTRAINT ${trc.getString(RENAMING_COLUMNS_TABLE_NAME)}_${trc.getString(VERSIONS_TABLE_NAME)}_fk FOREIGN KEY
+                        (${trc.getString(VERSION_REF_COLUMN)}) REFERENCES $utilsSchemaName.${trc.getString(VERSIONS_TABLE_NAME)}($idColumnName)
+                )"""
+            ).execute.apply()
+
+            SQL(
+                s"""CREATE TABLE IF NOT EXISTS $utilsSchemaName.${trc.getString(PRIMARY_KEY_ALTERING_TABLE_NAME)} (
+                    $idColumnName BIGSERIAL PRIMARY KEY,
+                    ${trc.getString(ALTERING_TABLE_COLUMN)} VARCHAR($nameLength) NOT NULL,
+                    ${trc.getString(PREVIOUS_NAME_COLUMN)} VARCHAR($nameLength),
+                    ${trc.getString(NEW_NAME_COLUMN)} VARCHAR($nameLength),
+                    ${trc.getString(VERSION_REF_COLUMN)} BIGINT NOT NULL,
+                    CONSTRAINT ${trc.getString(PRIMARY_KEY_ALTERING_TABLE_NAME)}_${trc.getString(VERSIONS_TABLE_NAME)}_fk FOREIGN KEY
+                        (${trc.getString(VERSION_REF_COLUMN)}) REFERENCES $utilsSchemaName.${trc.getString(VERSIONS_TABLE_NAME)}($idColumnName)
+                )"""
+            ).execute.apply()
+
+            SQL(
+                s"""CREATE TABLE IF NOT EXISTS $utilsSchemaName.${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)} (
+                    $idColumnName BIGSERIAL PRIMARY KEY,
+                    ${trc.getString(TYPE_NAME_COLUMN)} VARCHAR($typeNameMaxLength) NOT NULL,
+                    ${trc.getString(TABLE_NAME_COLUMN)} VARCHAR($nameLength) NOT NULL,
+                    ${trc.getString(VERSION_REF_COLUMN)} BIGINT NOT NULL,
+                    CONSTRAINT ${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)}_${trc.getString(VERSIONS_TABLE_NAME)}_fk FOREIGN KEY
+                        (${trc.getString(VERSION_REF_COLUMN)}) REFERENCES $utilsSchemaName.${trc.getString(VERSIONS_TABLE_NAME)}($idColumnName)
+                )"""
+            ).execute.apply()
+
+            SQL(
+                s"""CREATE TABLE IF NOT EXISTS $utilsSchemaName.${trc.getString(TABLE_COLUNS_TABLE_NAME)} (
+                    ${trc.getString(TABLE_REF_COLUMN)} BIGINT NOT NULL,
+                    ${trc.getString(COLUMN_NAME_COLUMN)} VARCHAR($nameLength) NOT NULL,
+                    ${trc.getString(COLUMN_TYPE_COLUMN)} VARCHAR($dbTypeNameMaxLength) NOT NULL,
+                    CONSTRAINT ${trc.getString(TABLE_COLUNS_TABLE_NAME)}_pk PRIMARY KEY
+                        (${trc.getString(TABLE_REF_COLUMN)}, ${trc.getString(COLUMN_NAME_COLUMN)}),
+                    CONSTRAINT ${trc.getString(TABLE_COLUNS_TABLE_NAME)}_${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)}_fk FOREIGN KEY
+                        (${trc.getString(TABLE_REF_COLUMN)}) REFERENCES $utilsSchemaName.${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)}($idColumnName)
+                )"""
+            ).execute.apply()
+
         }
 
-    def addTableRenamingData(alteringTableName: String, prevColumnName: String, newColumnName: String): Unit =
-        addItemChangeData(alteringTableName, prevColumnName, newColumnName, "previous-name-column", "new-name-column")
+    def addTableRenamingData(
+        prevName: String,
+        newName: String,
+        versionId: Long,
+    ): Unit =
+        DB.autoCommit { implicit session =>
+            SQL(s"""
+                INSERT INTO $utilsSchemaName.${trc.getString(RENAMING_TABLES_TABLE_NAME)} (
+                    ${trc.getString(PREVIOUS_NAME_COLUMN)},
+                    ${trc.getString(NEW_NAME_COLUMN)},
+                    ${trc.getString(VERSION_REF_COLUMN)}
+                ) VALUES (?, ?, ?)
+            """)
+                .bind(prevName, newName, versionId)
+                .update.apply()
+        }
 
-    def addPrimaryKeyAlteringData(alteringTableName: String, prevColumnName: String, newColumnName: String): Unit =
-        addItemChangeData(alteringTableName, prevColumnName, newColumnName, "previous_primary_key_column", "new_primary_key_column")
+    def addTableRenamingData(alteringTableName: String, prevColumnName: String, newColumnName: String, versionId: Long): Unit =
+        addItemChangeData(alteringTableName, prevColumnName, newColumnName, versionId)
+
+    def addPrimaryKeyAlteringData(alteringTableName: String, prevColumnName: String, newColumnName: String, versionId: Long): Unit =
+        addItemChangeData(alteringTableName, prevColumnName, newColumnName, versionId)
+
+    def addVersion(version: String): Version =
+        val creationDate = LocalDateTime.now()
+        val id = DB.autoCommit { implicit session =>
+            SQL(
+                s"""INSERT INTO $utilsSchemaName.${trc.getString(VERSIONS_TABLE_NAME)} (
+                    ${trc.getString(VERSION_NAME_COLUMN)},
+                    ${trc.getString(CREATION_DATE_COLUMN)}
+                ) VALUES (?, ?)"""
+            )
+            .bind(version, creationDate)
+            .updateAndReturnGeneratedKey(trc.getString(ID_COLUMN_NAME)).apply()
+        }
+        Version(id, version, creationDate)
+        
+    def addTypeToTableMapEntry(typeName: String, tableName: String, versionId: Long): Unit =
+        DB.autoCommit { implicit session =>
+            SQL(
+                s"""INSERT INTO $utilsSchemaName.${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)} (
+                    ${trc.getString(TYPE_NAME_COLUMN)},
+                    ${trc.getString(TABLE_NAME_COLUMN)},
+                    ${trc.getString(VERSION_REF_COLUMN)}
+                ) VALUES (?, ?, ?)"""
+            )
+            .bind(typeName, tableName, versionId)
+            .update.apply()
+        }
+
+    def getTypesToTablesMap(versionId: Long): Map[String, String] =
+        DB.readOnly { implicit session =>
+            SQL(
+                s"""SELECT * FROM $utilsSchemaName.${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)} WHERE ${trc.getString(VERSION_REF_COLUMN)} = ?"""
+            )
+            .bind(versionId)
+            .map(rs => (rs.string(trc.getString(TYPE_NAME_COLUMN)), rs.string(trc.getString(TABLE_NAME_COLUMN))))
+            .list.apply()
+            .toMap
+        }
+
+    def getLatestVersion: Option[Version] =
+        DB.readOnly { implicit session =>
+            SQL(
+                s"""SELECT * FROM $utilsSchemaName.${trc.getString(VERSIONS_TABLE_NAME)} ORDER BY $idColumnName DESC LIMIT 1"""
+            )
+            .map(rs => Version(rs.long(trc.getString(ID_COLUMN_NAME)), rs.string(trc.getString(VERSION_NAME_COLUMN)), rs.localDateTime(trc.getString(CREATION_DATE_COLUMN))))
+            .single.apply()
+        }
 
     private def addItemChangeData(
         alteringTableName: String,
         prevValue: String,
         newValue: String,
-        prevValueColConfigName: String,
-        newValueColConfigName: String
+        versionId: Long,
     ): Unit =
-        val utilsSchemaName = conf.getString("utils-schema")
-        val trc = conf.getConfig("tables-altering")
         DB.autoCommit { implicit session =>
             SQL(
-                s"""INSERT INTO $utilsSchemaName.${trc.getString("renaming-columns-table-name")} (
-                        ${trc.getString("altering-table-column")},
-                        ${trc.getString(prevValueColConfigName)},
-                        ${trc.getString(newValueColConfigName)},
-                        ${trc.getString("operation-date-column")}
-                    ) VALUES ($$1, $$2, $$3, $$4)"""
+                s"""INSERT INTO $utilsSchemaName.${trc.getString(RENAMING_COLUMNS_TABLE_NAME)} (
+                        ${trc.getString(ALTERING_TABLE_COLUMN)},
+                        ${trc.getString(PREVIOUS_NAME_COLUMN)},
+                        ${trc.getString(NEW_NAME_COLUMN)},
+                        ${trc.getString(VERSION_REF_COLUMN)}
+                    ) VALUES (?, ?, ?, ?)"""
             )
-                .bind(alteringTableName, prevValue, newValue, LocalDateTime.now())
+                .bind(alteringTableName, prevValue, newValue, versionId)
                 .update.apply()
         }
+        
+        
+        
+
+
 
 
 

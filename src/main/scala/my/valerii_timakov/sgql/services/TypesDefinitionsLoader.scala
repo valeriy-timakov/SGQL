@@ -96,7 +96,7 @@ def typeNamespace(typeName: String): Option[String] =
     val prefix = typeName.replaceFirst("\\w+$", "")
     if (prefix.isEmpty)
         None
-    else if (prefix.endsWith("."))
+    else if (prefix.endsWith(TypesDefinitionsParser.NAMESPACES_DILIMITER.toString))
         Some(prefix)
     else
         throw new WrongTypeNameException(typeName)

@@ -9,6 +9,7 @@ trait TypesDefinitionProvider:
     def getAllTypes: Seq[AbstractNamedEntityType]
     def getPersistenceData(name: String): Option[TypePersistenceDataFinal]
     def getAllPersistenceData: Seq[TypePersistenceDataFinal]
+    def getTypesToTalesMap: Map[String, String]
     def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal]
     def parseGetFieldsDescriptor(descriptor: Option[String], entityType: AbstractNamedEntityType): 
         Try[Either[GetFieldsParseError, GetFieldsDescriptor]]
@@ -40,6 +41,7 @@ class TypesDefinitionProviderImpl(
     def getAllTypes: Seq[AbstractNamedEntityType] = typesDefinitionsMap.values.toSeq
     def getPersistenceData(name: String): Option[TypePersistenceDataFinal] = typesPersistenceData.get(name)
     def getAllPersistenceData: Seq[TypePersistenceDataFinal] = typesPersistenceData.values.toSeq
+    def getTypesToTalesMap: Map[String, String] = persistenceConfigLoader.getTypeToTableMap
     def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal] = typesPersistenceData
     def parseGetFieldsDescriptor(descriptor: Option[String], entityType: AbstractNamedEntityType): Try[Either[GetFieldsParseError, GetFieldsDescriptor]] = Success(Right(AllGetFieldsDescriptor))
     def parseSearchCondition(condition: Option[String], entityType: AbstractNamedEntityType): Try[Either[SearchConditionParseError, SearchCondition]] = ???
