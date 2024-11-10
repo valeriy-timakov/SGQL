@@ -26,26 +26,32 @@ object TypesDefinitionsLoader extends TypesDefinitionsLoader:
                 rawTypesDataMap.foreach((name, definition) =>
                     val typePrefix = typeNamespace(name)
                     definition match
-                        case PrimitiveTypeData(typeName, idTypeOpt, parentTypeName, mandatoryConrete) =>
+                        case PrimitiveTypeData(_, idTypeOpt, parentTypeName, mandatoryConrete) =>
                             val parent = parser.parsePrimitiveSupertypesChain(name, idTypeOpt, parentTypeName, typePrefix)
                             if (mandatoryConrete) {
-                                typesMapBuilder += (name + specialConcreteSuffix) -> 
-                                    EntityType(name, CustomPrimitiveTypeDefinition(Right(parent)))
-                                generatedConcreteTypes += (name + specialConcreteSuffix -> definition)
+                                val concreteName = name + specialConcreteSuffix
+                                typesMapBuilder += concreteName -> 
+                                    EntityType(concreteName, CustomPrimitiveTypeDefinition(Right(parent)))
+                                generatedConcreteTypes += concreteName -> 
+                                    PrimitiveTypeData(concreteName, None, name, mandatoryConrete)
                             }
-                        case ArrayTypeData(typeName, ArrayData(idOrParent, elementTypesNames), mandatoryConrete) =>
+                        case ArrayTypeData(_, ArrayData(idOrParent, elementTypesNames), mandatoryConrete) =>
                             val parent = parser.parseArraySupertypesChain(name, idOrParent, typePrefix)
                             if (mandatoryConrete) {
-                                typesMapBuilder += (name + specialConcreteSuffix) -> 
-                                    EntityType(name, ArrayTypeDefinition(Set.empty, Right(parent)))
-                                generatedConcreteTypes += (name + specialConcreteSuffix -> definition)
+                                val concreteName = name + specialConcreteSuffix
+                                typesMapBuilder += concreteName -> 
+                                    EntityType(concreteName, ArrayTypeDefinition(Set.empty, Right(parent)))
+                                generatedConcreteTypes += concreteName -> 
+                                    ArrayTypeData(concreteName, ArrayData(Right(name), List()), mandatoryConrete)
                             }
-                        case ObjectTypeData(typeName, ObjectData(idOrParent, _), mandatoryConrete) =>
+                        case ObjectTypeData(_, ObjectData(idOrParent, _), mandatoryConrete) =>
                             val parent = parser.parseObjectSupertypeChain(name, idOrParent, typePrefix)
                             if (mandatoryConrete) {
-                                typesMapBuilder += (name + specialConcreteSuffix) -> 
-                                    EntityType(name, ObjectTypeDefinition(Map.empty, Right(parent)))
-                                generatedConcreteTypes += (name + specialConcreteSuffix -> definition)
+                                val concreteName = name + specialConcreteSuffix
+                                typesMapBuilder += concreteName -> 
+                                    EntityType(concreteName, ObjectTypeDefinition(Map.empty, Right(parent)))
+                                generatedConcreteTypes += concreteName -> 
+                                    ObjectTypeData(concreteName, ObjectData(Right(name), List()), mandatoryConrete)
                             }
                 )
                 rawTypesDataMap ++= generatedConcreteTypes

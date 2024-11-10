@@ -101,11 +101,11 @@ case class ItemTypePersistenceDataFinal(
 
 case class ArrayTypePersistenceDataFinal(
     data: Set[ItemTypePersistenceDataFinal],
+    idType: PersistenceFieldType,
 ) extends TypePersistenceDataFinal:
+    if data.map(_.idColumn.columnType).exists(_ != idType)
+        then throw new ConsistencyException(s"Array ID types has are different! Types: $idType")
     def getTableName: Option[String] = None
-    val idType: PersistenceFieldType = data.map(_.idColumn.columnType).toList.distinct match
-        case singleType :: Nil => singleType
-        case types => throw new ConsistencyException(s"Array ID types has are different! Types: $types")
     override def getReferenceData: TableReferenceDataWrapper =
         TableReferenceDataWrapper(idType)
 
@@ -532,6 +532,9 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                     case TypeReferenceDefinition(referencedType) => referencedType.name
                     case td: RootPrimitiveTypeDefinition => td.name
                 val parsedElementData = parsedData.itemsMap.getOrElse(itemTypeName, ArrayItemPersistenceData(None, None, None))
+                parsedElementData.idColumn.foreach(idColumn =>
+                    checkEntityIdAndPersistenceTypeConsistency(valueType.idType, idColumn, () =>
+                        s"Array item ID column for type $typeName and item type $itemTypeName"))
                 ItemTypePersistenceDataFinal(
                     parsedElementData.tableName.getOrElse(sqlTableNamesMap(typeName + typeItemNameDelimiter + itemTypeName)),
                     mergeIdTypeDefinition(valueType.idType, parsedElementData.idColumn),
@@ -540,7 +543,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                         et.valueType, 
                         typeName)
                 )
-            )
+            ), idTypeDefinitionToFieldType.getOrElse(valueType.idType, throw new NoTypeFound(valueType.idType.name))
         )
 
     private def convertPrimitiveToArrayItemData(valueType: ArrayTypeDefinition, typeName: String, tableName: Option[String], idColumn: Option[PrimitiveValuePersistenceData], valueColumn: Option[PrimitiveValuePersistenceData]) = {
@@ -586,7 +589,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
             parsedData.tableName.getOrElse( sqlTableNamesMap(typeName) ),
             mergeIdTypeDefinition(valueType.idType, parsedData.idColumn),
             PrimitiveValuePersistenceDataFinal(
-                valueColumnData.columnName.getOrElse("value"),
+                valueColumnData.columnName.getOrElse("value").toLowerCase,
                 valueColumnData.columnType.getOrElse( getValueFieldType(valueType.rootType) )
             ))
 
@@ -605,7 +608,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                     case Right(ReferenceValuePersistenceData(columnName)) =>
                         Some(ReferenceValuePersistenceDataFinal(
                             columnName.getOrElse(columnNameParentPrefix +
-                                columnNameFromFieldName(getTypeSimpleName(parentDef.name))),
+                                columnNameFromFieldName(getTypeSimpleName(parentDef.name))).toLowerCase,
                             tableReferenceFactory.createForType(parentDef.name)
                         ))
                     case Left(ExpandParentMarkerSingle) =>
@@ -622,7 +625,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                                 .getOrElse(ReferenceValuePersistenceData(None))
                             ReferenceValuePersistenceDataFinal(
                                 fieldsParsedData.columnName.getOrElse(columnNameSuperParentPrefix +
-                                    columnNameFromFieldName(getTypeSimpleName(superParentDef.name))),
+                                    columnNameFromFieldName(getTypeSimpleName(superParentDef.name))).toLowerCase,
                                 tableReferenceFactory.createForType(superParentDef.name)
                             ))
                     case Left(ExpandParentMarkerTotal) =>
@@ -650,12 +653,20 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
         )
             throw new ConsistencyException(itemDescriptionProvider() + " defined with inconsistent persistence " +
                 s"type ${fieldPersistType.columnType} where field type is ${fieldType.name}!")
+            
+    private def checkEntityIdAndPersistenceTypeConsistency(idType: EntityIdTypeDefinition,
+                                                           idPersistType: PrimitiveValuePersistenceData,
+                                                           itemDescriptionProvider: () => String): Unit =
+        val consistentPersistType = idTypeDefinitionToFieldType.getOrElse(idType, throw new NoTypeFound(idType.name))
+        if (idPersistType.columnType.isDefined && !idPersistType.columnType.contains(consistentPersistType))
+            throw new ConsistencyException(itemDescriptionProvider() + " defined with inconsistent persistence " +
+                s"type ${idPersistType.columnType} where field type is ${idType.name}!")
 
     private def mergeIdTypeDefinition(idType: EntityIdTypeDefinition,
                                       parsed: Option[PrimitiveValuePersistenceData]): PrimitiveValuePersistenceDataFinal =
         val idColumnSrc = parsed.getOrElse(PrimitiveValuePersistenceData(None, None))
         PrimitiveValuePersistenceDataFinal(
-            idColumnSrc.columnName.getOrElse("id"),
+            idColumnSrc.columnName.getOrElse("id").toLowerCase,
             idColumnSrc.columnType.getOrElse( getIdFieldType(idType) )
         )
 
@@ -905,7 +916,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
 
         persistenceData match
             case ColumnPersistenceData(columnName) =>
-                val columnNameFinal = prefix + columnName.getOrElse(defaultColumnName)
+                val columnNameFinal = prefix + columnName.getOrElse(defaultColumnName.toLowerCase)
                 ReferenceValuePersistenceDataFinal(
                     columnNameFinal,
                     tableReferenceFactory.createForType(fieldType.referencedType.name)
@@ -932,7 +943,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
         val rootFieldType = fieldType.rootType
         val persisType = persisTypeOpt.getOrElse( getValueFieldType(rootFieldType))
 
-        PrimitiveValuePersistenceDataFinal(columnNameFinal, persisType)
+        PrimitiveValuePersistenceDataFinal(columnNameFinal.toLowerCase, persisType)
                     
     private def tableNameFromTypeName(typeName: String): String = typeName.toLowerCase().replace(TypesDefinitionsParser.NAMESPACES_DILIMITER.toString, "_")
     private def columnNameFromFieldName(fieldName: String): String = camelCaseToSnakeCase(fieldName)

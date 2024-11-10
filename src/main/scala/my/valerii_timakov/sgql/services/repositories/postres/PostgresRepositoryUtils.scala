@@ -93,10 +93,10 @@ class MetadataUtils:
             then Some(PrimaryKeyData(res.head._1, tableName, res.map(_._2)))
             else None
 
-    def getForeignKeys(tableName: String): Set[ForeignKeyData] =
+    def getForeignKeys(schemaName: String, tableName: String): Set[ForeignKeyData] =
         val resMap = mutable.Map[(String, String, String), mutable.Set[FKLinkPair]]()
         readDB(
-            metaData => metaData.getImportedKeys(null, null, tableName),
+            metaData => metaData.getImportedKeys(null, schemaName, tableName),
             rs => {
                 val fkName = rs.getString("FK_NAME")
                 val fkTableName = rs.getString("FKTABLE_NAME")
