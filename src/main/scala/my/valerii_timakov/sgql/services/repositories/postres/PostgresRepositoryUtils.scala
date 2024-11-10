@@ -136,7 +136,7 @@ class MetadataUtils:
         }
 
 
-class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Int):
+class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Short, fieldMaxLength: Short):
     private final val ID_COLUMN_NAME = "id-column"
     private final val RENAMING_TABLES_TABLE_NAME = "renaming-tables-table-name"
     private final val RENAMING_COLUMNS_TABLE_NAME = "renaming-columns-table-name"
@@ -153,6 +153,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Int):
     private final val TABLE_NAME_COLUMN = "table-name-column"
     private final val TABLE_COLUNS_TABLE_NAME = "table-columns-table-name"
     private final val COLUMN_NAME_COLUMN = "column-name-column"
+    private final val FIELD_NAME_COLUMN = "field-name-column"
     private final val COLUMN_TYPE_COLUMN = "column-type-column"
     private final val TABLE_REF_COLUMN = "table-ref-column"
 
@@ -228,6 +229,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Int):
                     ${trc.getString(TABLE_REF_COLUMN)} BIGINT NOT NULL,
                     ${trc.getString(COLUMN_NAME_COLUMN)} VARCHAR($nameLength) NOT NULL,
                     ${trc.getString(COLUMN_TYPE_COLUMN)} VARCHAR($dbTypeNameMaxLength) NOT NULL,
+                    ${trc.getString(FIELD_NAME_COLUMN)} VARCHAR($fieldMaxLength) NOT NULL,
                     CONSTRAINT ${trc.getString(TABLE_COLUNS_TABLE_NAME)}_pk PRIMARY KEY
                         (${trc.getString(TABLE_REF_COLUMN)}, ${trc.getString(COLUMN_NAME_COLUMN)}),
                     CONSTRAINT ${trc.getString(TABLE_COLUNS_TABLE_NAME)}_${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)}_fk FOREIGN KEY
@@ -274,7 +276,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Int):
         }
         Version(id, version, creationDate)
         
-    def addTypeToTableMapEntry(typeName: String, tableName: String, versionId: Long): Unit =
+    def addTypeToTableMapEntry(typeName: String, tableName: String, versionId: Long): Long =
         DB.autoCommit { implicit session =>
             SQL(
                 s"""INSERT INTO $utilsSchemaName.${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)} (
@@ -284,7 +286,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Int):
                 ) VALUES (?, ?, ?)"""
             )
             .bind(typeName, tableName, versionId)
-            .update.apply()
+            .updateAndReturnGeneratedKey(trc.getString(ID_COLUMN_NAME)).apply()
         }
 
     def getTypesToTablesMap(versionId: Long): Map[String, String] =
@@ -305,6 +307,20 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Int):
             )
             .map(rs => Version(rs.long(trc.getString(ID_COLUMN_NAME)), rs.string(trc.getString(VERSION_NAME_COLUMN)), rs.localDateTime(trc.getString(CREATION_DATE_COLUMN))))
             .single.apply()
+        }
+        
+    def addTableColumn(tableItemId: Long, fieldName: String, columnName: String, columnType: String): Unit =
+        DB.autoCommit { implicit session =>
+            SQL(
+                s"""INSERT INTO $utilsSchemaName.${trc.getString(TABLE_COLUNS_TABLE_NAME)} (
+                    ${trc.getString(TABLE_REF_COLUMN)},
+                    ${trc.getString(COLUMN_NAME_COLUMN)},
+                    ${trc.getString(COLUMN_TYPE_COLUMN)}, 
+                    ${trc.getString(FIELD_NAME_COLUMN)}
+                ) VALUES (?, ?, ?, ?)"""
+            )
+            .bind(tableItemId, fieldName, columnName, columnType)
+            .update.apply()
         }
 
     private def addItemChangeData(
