@@ -145,6 +145,9 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
     private val nameSubnamesDelimiter = conf.getString("column-name-subnames-delimiter")
     private val defaultValueColumnName = conf.getString("column-name-value-default")
     private val defalutStringMaxLength = conf.getInt("string-max-length-default")
+    private val archivedEntityColumnName = conf.getString("archived-entity-column")
+    private val idColumnNameDefault = conf.getString("id-column")
+    private val valueColumnNameDefault = conf.getString("value-column")
 
     private val typeItemNameDelimiter = '/'
 
@@ -589,9 +592,14 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
             parsedData.tableName.getOrElse( sqlTableNamesMap(typeName) ),
             mergeIdTypeDefinition(valueType.idType, parsedData.idColumn),
             PrimitiveValuePersistenceDataFinal(
-                valueColumnData.columnName.getOrElse("value").toLowerCase,
+                colName(valueColumnData.columnName.getOrElse(valueColumnNameDefault)),
                 valueColumnData.columnType.getOrElse( getValueFieldType(valueType.rootType) )
             ))
+        
+    private def colName(nameRaw: String): String = 
+        val res = nameRaw.toLowerCase
+        if (res == archivedEntityColumnName) throw new ConsistencyException(s"Column name $res is reserved!")
+        res
 
     private def getParentPersistenceDataOrDefault(
                                               parentRelationOpt: Option[Either[ExpandParentMarker, ReferenceValuePersistenceData]]
@@ -607,8 +615,8 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                 parentPersistenceData match
                     case Right(ReferenceValuePersistenceData(columnName)) =>
                         Some(ReferenceValuePersistenceDataFinal(
-                            columnName.getOrElse(columnNameParentPrefix +
-                                columnNameFromFieldName(getTypeSimpleName(parentDef.name))).toLowerCase,
+                            colName(columnName.getOrElse(columnNameParentPrefix +
+                                columnNameFromFieldName(getTypeSimpleName(parentDef.name)))),
                             tableReferenceFactory.createForType(parentDef.name)
                         ))
                     case Left(ExpandParentMarkerSingle) =>
@@ -624,8 +632,8 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                                 )
                                 .getOrElse(ReferenceValuePersistenceData(None))
                             ReferenceValuePersistenceDataFinal(
-                                fieldsParsedData.columnName.getOrElse(columnNameSuperParentPrefix +
-                                    columnNameFromFieldName(getTypeSimpleName(superParentDef.name))).toLowerCase,
+                                colName(fieldsParsedData.columnName.getOrElse(columnNameSuperParentPrefix +
+                                    columnNameFromFieldName(getTypeSimpleName(superParentDef.name)))),
                                 tableReferenceFactory.createForType(superParentDef.name)
                             ))
                     case Left(ExpandParentMarkerTotal) =>
@@ -666,7 +674,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                                       parsed: Option[PrimitiveValuePersistenceData]): PrimitiveValuePersistenceDataFinal =
         val idColumnSrc = parsed.getOrElse(PrimitiveValuePersistenceData(None, None))
         PrimitiveValuePersistenceDataFinal(
-            idColumnSrc.columnName.getOrElse("id").toLowerCase,
+            colName(idColumnSrc.columnName.getOrElse(idColumnNameDefault)),
             idColumnSrc.columnType.getOrElse( getIdFieldType(idType) )
         )
 
@@ -916,7 +924,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
 
         persistenceData match
             case ColumnPersistenceData(columnName) =>
-                val columnNameFinal = prefix + columnName.getOrElse(defaultColumnName.toLowerCase)
+                val columnNameFinal = colName(prefix + columnName.getOrElse(defaultColumnName))
                 ReferenceValuePersistenceDataFinal(
                     columnNameFinal,
                     tableReferenceFactory.createForType(fieldType.referencedType.name)
@@ -943,7 +951,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
         val rootFieldType = fieldType.rootType
         val persisType = persisTypeOpt.getOrElse( getValueFieldType(rootFieldType))
 
-        PrimitiveValuePersistenceDataFinal(columnNameFinal.toLowerCase, persisType)
+        PrimitiveValuePersistenceDataFinal(colName(columnNameFinal), persisType)
                     
     private def tableNameFromTypeName(typeName: String): String = typeName.toLowerCase().replace(TypesDefinitionsParser.NAMESPACES_DILIMITER.toString, "_")
     private def columnNameFromFieldName(fieldName: String): String = camelCaseToSnakeCase(fieldName)

@@ -151,6 +151,7 @@ class PostgresCrudRepository(
     private val primaryKeySuffix = persistenceConf.getString("primary-key-suffix")
     private val foreignKeySuffix = persistenceConf.getString("foreign-key-suffix")
     private val archivedColumnNameSuffix = persistenceConf.getString("archived-column-name-suffix")
+    private val archivedEntityColumnName = persistenceConf.getString("archived-entity-column")
 
     private var typesPersistenceData: Map[AbstractNamedEntityType, TypePersistenceData] = Map()
 
@@ -209,7 +210,8 @@ class PostgresCrudRepository(
             SQL(s"""
                 CREATE TABLE ${esc(tableName)} (
                     ${esc(idColumn.columnName)} $idType NOT NULL,
-                    ${esc(valueColumnName)} $valueType
+                    ${esc(valueColumnName)} $valueType,
+                    $archivedEntityColumnName ${getIdFieldType(BooleanFieldType)} NOT NULL DEFAULT FALSE
                     $pkSql
                 )
             """).execute.apply()
@@ -243,12 +245,13 @@ class PostgresCrudRepository(
             """).execute.apply()
 
         def addPrimaryKeyColumn(tableName: String, columnName: String, columnType: String): Unit =
-            addColumn(tableName, columnName, columnType)
+            addColumn(tableName, columnName, columnType, true)
             createPrimaryKey(tableName, columnName)
 
-        def addColumn(tableName: String, columnName: String, columnType: String): Unit =
+        def addColumn(tableName: String, columnName: String, columnType: String, notNull: Boolean, default: String = ""): Unit =
+            val defaultSql = if default.isEmpty then "" else s" DEFAULT $default"
             SQL(s"""
-                ALTER TABLE ${esc(tableName)} ADD COLUMN ${esc(columnName)} $columnType
+                ALTER TABLE ${esc(tableName)} ADD COLUMN ${esc(columnName)} $columnType ${if notNull then "NOT NULL " else ""}$defaultSql
             """).execute.apply()
 
         def createObjectValueTable(
@@ -270,6 +273,7 @@ class PostgresCrudRepository(
                 CREATE TABLE ${esc(tableName)} (
                     ${esc(idColumn.columnName)} ${getIdFieldType(idColumn.columnType)} NOT NULL,
                     $parentSql $fieldsSql,
+                    $archivedEntityColumnName ${getIdFieldType(BooleanFieldType)} NOT NULL DEFAULT FALSE,
                     CONSTRAINT ${esc(tableName + primaryKeySuffix)} PRIMARY KEY (${esc(idColumn.columnName)})
                 )
             """).execute.apply()
@@ -344,19 +348,21 @@ class PostgresCrudRepository(
             valueColumnName: String,
             valueColumnType: PersistenceFieldType,
             existingColumns: Map[String, ColumnData],
-            fieldName: String,
+            fieldName: Option[String],
         ): Unit =
             if existingColumns.contains(valueColumnName) then
                 if isSameType(valueColumnType, existingColumns(valueColumnName).columnType) then
                     //ignoring else - Value column of same type already exists - no actions
                     renameColumn(tableName, valueColumnName, getRenamedArchivedColumnName(valueColumnName,
                         existingColumns))
-                    addColumn(tableName, valueColumnName, getFieldType(valueColumnType))
+                    addColumn(tableName, valueColumnName, getFieldType(valueColumnType), false)
                     dbUtils.addTableRenamingData(tableName, null, valueColumnName, version.id)
             else
-                addColumn(tableName, valueColumnName, getFieldType(valueColumnType))
+                addColumn(tableName, valueColumnName, getFieldType(valueColumnType), false)
                 dbUtils.addTableRenamingData(tableName, null, valueColumnName, version.id)
-            dbUtils.addTableColumn(savedTablesIdsMap(tableName), valueColumnName, getIdFieldType(valueColumnType), fieldName)
+            fieldName.foreach(fieldName =>
+                dbUtils.addTableColumn(savedTablesIdsMap(tableName), valueColumnName, getIdFieldType(valueColumnType), fieldName)
+            )
 
         def checkAndFixExistingSingleValueTable(
             tableName: String,
@@ -367,7 +373,8 @@ class PostgresCrudRepository(
                                                ): Unit =
             val existingColumns: Map[String, ColumnData] =  metadataUtils.getTableColumnsDataMap(tableName)
             checkAndFixExistingTableIdColumn(tableName, idColumn, existingColumns, isArray)
-            checkAndFixExistingTableValueColumn(tableName, valueColumnName, valueColumnType, existingColumns, "value")
+            checkAndFixExistingTableValueColumn(tableName, valueColumnName, valueColumnType, existingColumns, Some("value"))
+            checkAndFixExistingTableValueColumn(tableName, archivedEntityColumnName, BooleanFieldType, existingColumns, None)
 
 
         def checkAndFixExistingSimpleObjectValueTable(
@@ -379,20 +386,21 @@ class PostgresCrudRepository(
         ): Unit =
             parent.foreach(parentTableRef =>
                 checkAndFixExistingTableValueColumn(tableName, parentTableRef.columnName, 
-                    parentTableRef.refTableData.idColumnType, existingColumns, fieldsPrefix + "parent")
+                    parentTableRef.refTableData.idColumnType, existingColumns, Some(fieldsPrefix + "parent"))
             )
             fields.foreach((fieldName, fieldData) =>
                 fieldData match
                     case PrimitiveValuePersistenceDataFinal(columnName, columnType) =>
                         checkAndFixExistingTableValueColumn(tableName, columnName, columnType, existingColumns,
-                            fieldsPrefix + fieldName)
+                            Some(fieldsPrefix + fieldName))
                     case ref: ReferenceValuePersistenceDataFinal =>
                         checkAndFixExistingTableValueColumn(tableName, ref.columnName, ref.refTableData.idColumnType, 
-                            existingColumns, fieldsPrefix + fieldName)
+                            existingColumns, Some(fieldsPrefix + fieldName))
                     case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
                         checkAndFixExistingSimpleObjectValueTable(tableName, fields, parent, existingColumns,
                             fieldsPrefix + fieldName + ".")
             )
+            checkAndFixExistingTableValueColumn(tableName, archivedEntityColumnName, BooleanFieldType, existingColumns, None)
 
         def checkAndFixExistingObjectValueTable(
             tableName: String,

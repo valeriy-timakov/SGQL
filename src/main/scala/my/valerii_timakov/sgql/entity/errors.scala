@@ -12,4 +12,3 @@ final class TypeNotFountError(typeName: String) extends NotFountError("{Error.pa
 final class AbstractTypeError(typeName: String) extends Error("{Error.type.abstract}" + typeName)
 final class TypesDefinitionsParseError(message: String) extends Error("{Error.parsing.type_definition}" + message)
 
-
