@@ -2,10 +2,12 @@ package my.valerii_timakov.sgql.services.repositories.postres
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.*
-import my.valerii_timakov.sgql.exceptions.DbTableMigrationException
+import my.valerii_timakov.sgql.exceptions.{ConsistencyException, DbTableMigrationException, NotInitializedException}
 import my.valerii_timakov.sgql.services.*
-import scala.util.Try
-import scalikejdbc._
+
+import scala.util.{Failure, Success, Try}
+import scalikejdbc.*
+
 import scala.collection.mutable
 
 class PostgresCrudRepository(
@@ -19,19 +21,192 @@ class PostgresCrudRepository(
     private var currentTypesToTablesMap: Map[String, String] = Map()
     private var previousTypesToTablesMap: Map[String, String] = Map()
     private var savedTablesIdsMap: Map[String, Long] = Map()
+    private var typesDefinitionsProviderContainer: Option[TypesDefinitionProvider] = None
 
-    override def create(entityType: EntityType, data: EntityFieldType): Try[Entity] = ???
+    private def typesDefinitionsProvider: TypesDefinitionProvider =
+        if typesDefinitionsProviderContainer.isEmpty then throw NotInitializedException("PostgresCrudRepository", "typesDefinitionsProvider")
+        typesDefinitionsProviderContainer.get
 
-    override def update(entityType: EntityType, entity: Entity): Try[Option[Entity]] = ???
+    override def create(entityType: EntityType[?], data: EntityFieldType): Try[Entity] = ???
+//        val persistenceData = typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
+//            throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
+//        persistenceData match
+//            case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
+//                val id = DB.autoCommit { implicit session =>
+//                    SQL(
+//                        s"""INSERT INTO $typesSchemaName.$tableName (
+//                            ${esc(idColumn.columnName)},
+//                            ${esc(valueColumn.columnName)}
+//                        ) VALUES (?, ?)"""
+//                    )
+//                    .bind(data.id, data.value)
+//                    .updateAndReturnGeneratedKey(esc(idColumn.columnName)).apply()
+//                }
+//                Success(Entity(entityType, id, data))
+//        DB.autoCommit { implicit session =>
+//            SQL(
+//                s"""INSERT INTO $utilsSchemaName.${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)} (
+//                        ${trc.getString(TYPE_NAME_COLUMN)},
+//                        ${trc.getString(TABLE_NAME_COLUMN)},
+//                        ${trc.getString(VERSION_REF_COLUMN)}
+//                    ) VALUES (?, ?, ?)"""
+//            )
+//            .bind(typeName, tableName, versionId)
+//            .updateAndReturnGeneratedKey(trc.getString(ID_COLUMN_NAME)).apply()
+//        }
 
-    override def delete(entityType: EntityType, id: EntityId): Try[Option[EntityId]] = ???
+    override def update(entityType: EntityType[?], entity: Entity): Try[Option[Unit]] = ???//Try {
+//        entity.value match
+//            case CustomPrimitiveType(rootValue, definition) =>
+//                getEntityPersistendeData(definition) match
+//                    case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
+//                        mapColColuntResult( DB.autoCommit { implicit session =>
+//                            SQL(
+//                                s"""UPDATE $typesSchemaName.$tableName
+//                                    SET ${esc(valueColumn.columnName)} = ?
+//                                    WHERE ${esc(idColumn.columnName)} = ?"""
+//                            )
+//                                .bind(rootValue.value, entity.id)
+//                                .update.apply()
+//                        },  s"Multiple entities updated for id: ${entity.id}!")
+//                    case persData => throw new ConsistencyException(
+//                        s"Entity value is Primitive, but found persistence data is not Primitive! $persData")
+//            case ObjectType(filedValuesMap, definition) =>
+//                getEntityPersistendeData(definition) match
+//                    case ObjectTypePersistenceDataFinal(tableName, idColumn, fieldsPersistenceData, parent) =>
+//                        val fieldsData = filedValuesMap.map { case (fieldName, fieldValue) =>
+//                            fieldsPersistenceData(fieldName) match
+//                                case PrimitiveValuePersistenceDataFinal(columnName, columnType) =>
+//                                    (columnName, getAsConcreteValue[PrimitiveFieldType[?]](fieldValue, "").value)
+//                                case ref: ReferenceValuePersistenceDataFinal =>
+//                                    (ref.columnName, getAsConcreteValue[ReferenceFieldType](fieldValue, "").id)
+//                                case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
+//                                    val parentData = parent.map(parent =>
+//                                        (parent.columnName, fieldValue.asInstanceOf[ObjectFieldType].fields(parent.columnName).asInstanceOf[ReferenceFieldType].id)
+//                                    ).toList
+//                                    val fieldsData = fields.map { case (fieldName, field) =>
+//                                        fields(fieldName) match
+//                                            case PrimitiveValuePersistenceDataFinal(columnName, columnType) =>
+//                                                (columnName, field.asInstanceOf[PrimitiveFieldType[?]].value)
+//                                            case ref: ReferenceValuePersistenceDataFinal =>
+//                                                (ref.columnName, field.asInstanceOf[ReferenceFieldType].id)
+//                                            case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
+//                                                throw new ConsistencyException("Nested objects are not supported!")
+//                                    }
+//                                    parentData ++ fieldsData
+//                        }
+//                        mapColColuntResult( DB.autoCommit { implicit session =>
+//                            SQL(
+//                                s"""UPDATE $typesSchemaName.$tableName
+//                                    SET ${fieldsData.map { case (columnName, _) => s"${esc(columnName)} = ?" }.mkString(", ")}
+//                                    WHERE ${esc(idColumn.columnName)} = ?"""
+//                            )
+//                                .bind(fieldsData.map(_._2) :+ entity.id: _*)
+//                                .update.apply()
+//                        },  s"Multiple entities updated for id: ${entity.id}!")
+//                value
+//            case ArrayType(value, definition) => 
+//                value
+//            case _ => throw new ConsistencyException(s"Entity value is not known! $entity")
+//
+//        entity.value.typeDefinition
+//        val persistenceData = getEntityPersistendeData(entityType)
+//        persistenceData match
+//            case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
+//                val value = entity.value match
+//                    case primitive: PrimitiveFieldType[?] => primitive.value
+//                    case _ => throw new ConsistencyException("Entity value is not Primitive!")
+//                DB.autoCommit { implicit session =>
+//                    SQL(
+//                        s"""UPDATE $typesSchemaName.$tableName
+//                            SET ${esc(valueColumn.columnName)} = ?
+//                            WHERE ${esc(idColumn.columnName)} = ?"""
+//                    )
+//                        .bind(value, entity.id)
+//                        .update.apply()
+//                }
+//                Some(())
+//            //TODO: fix id & parent to it | parent in persistenceData
+//            case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
+//                val fieldsData = entity.value match
+//                    case ObjectType(fieldsValuesMap) =>
+//                        fieldsValuesMap.map { case (fieldName, field) =>
+//                            fields(fieldName) match
+//                                case PrimitiveValuePersistenceDataFinal(columnName, columnType) =>
+//                                    (columnName, field.asInstanceOf[PrimitiveFieldType[?]].value)
+//                                case ref: ReferenceValuePersistenceDataFinal =>
+//                                    (ref.columnName, field.asInstanceOf[ReferenceFieldType].id)
+//                                case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
+//                                    val parentData = parent.map(parent =>
+//                                        (parent.columnName, field.asInstanceOf[ObjectFieldType].fields(parent.columnName).asInstanceOf[ReferenceFieldType].id)
+//                                    ).toList
+//                                    val fieldsData = fields.map { case (fieldName, field) =>
+//                                        fields(fieldName) match
+//                                            case PrimitiveValuePersistenceDataFinal(columnName, columnType) =>
+//                                                (columnName, field.asInstanceOf[PrimitiveFieldType[?]].value)
+//                                            case ref: ReferenceValuePersistenceDataFinal =>
+//                                                (ref.columnName, field.asInstanceOf[ReferenceFieldType].id)
+//                                            case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
+//                                                throw new ConsistencyException("Nested objects are not supported!")
+//                                    }
+//                                    parentData ++ fieldsData
+//                        }
+//                    case _ => throw new ConsistencyException("Entity value is not Object!")
+//                DB.autoCommit { implicit session =>
+//                    SQL(
+//                        s"""UPDATE $typesSchemaName.$tableName
+//                            SET ${fieldsData.map { case (columnName, _) => s"${esc(columnName)} = ?" }.mkString(", ")}
+//                            WHERE ${esc(idColumn.columnName)} = ?"""
+//                    )
+//                        .bind(fieldsData.map(_._2) :+ entity.id: _*)
+//                        .update.apply()
+//                }
+//                Some(())
+//                
+//    }
+    
+    private def getAsConcreteValue[T <: EntityFieldType](entityValue: EntityFieldType, errorMessage: String): T =
+        entityValue match
+            case value: T => value
+            case _ => throw new ConsistencyException(errorMessage)
 
-    override def get(entityType: EntityType, id: EntityId, getFields: GetFieldsDescriptor): Try[Option[Entity]] = ???
+    override def delete(entityType: EntityType[?], id: EntityId): Try[Option[Unit]] = 
+        Try {
+            val persistenceData = getEntityPersistendeData(entityType)
+            val tableData = persistenceData match
+                case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
+                    (tableName, idColumn.columnName)
+                case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
+                    (tableName, idColumn.columnName)
+            mapColColuntResult( DB.autoCommit { implicit session =>
+                SQL(
+                    s"""UPDATE $typesSchemaName.${tableData._1} SET $archivedEntityColumnName = ?
+                        WHERE ${esc(tableData._2)} = ?"""
+                )
+                    .bind(true, id)
+                    .update.apply()
+            },  s"Multiple entities archived for id: $id!")
+        }
+        
+    private def mapColColuntResult(count: Int, nonUniqueErrorMessage: String): Option[Unit] =
+        if count == 0 then None
+        else if count == 1 then Some(())
+        else throw new ConsistencyException(nonUniqueErrorMessage)
 
-    override def find(entityType: EntityType, query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity]] = ???
+
+    private def getEntityPersistendeData(entityType: EntityType[?]) = {
+        typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
+            throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
+    }
+
+    override def get(entityType: EntityType[?], id: EntityId, getFields: GetFieldsDescriptor): Try[Option[Entity]] = ???
+
+    override def find(entityType: EntityType[?], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity]] = ???
 
 
     def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit =
+
+        this.typesDefinitionsProviderContainer = Some(typesDefinitionsProvider)
 
         initConnectionPoolAndTypesSchema()
 
@@ -382,8 +557,9 @@ class PostgresCrudRepository(
             fields: Map[String, ValuePersistenceDataFinal],
             parent: Option[ReferenceValuePersistenceDataFinal],
             existingColumns: Map[String, ColumnData],
-            fieldsPrefix: String,
+            fieldsPrefixOpt: Option[String],
         ): Unit =
+            val fieldsPrefix = fieldsPrefixOpt.getOrElse("")
             parent.foreach(parentTableRef =>
                 checkAndFixExistingTableValueColumn(tableName, parentTableRef.columnName, 
                     parentTableRef.refTableData.idColumnType, existingColumns, Some(fieldsPrefix + "parent"))
@@ -398,9 +574,10 @@ class PostgresCrudRepository(
                             existingColumns, Some(fieldsPrefix + fieldName))
                     case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
                         checkAndFixExistingSimpleObjectValueTable(tableName, fields, parent, existingColumns,
-                            fieldsPrefix + fieldName + ".")
+                            Some(fieldsPrefix + fieldName + "."))
             )
-            checkAndFixExistingTableValueColumn(tableName, archivedEntityColumnName, BooleanFieldType, existingColumns, None)
+            if fields.isEmpty then
+                checkAndFixExistingTableValueColumn(tableName, archivedEntityColumnName, BooleanFieldType, existingColumns, None)
 
         def checkAndFixExistingObjectValueTable(
             tableName: String,
@@ -412,7 +589,7 @@ class PostgresCrudRepository(
             val existingColumns: Map[String, ColumnData] = existingColumnsOption.getOrElse( 
                 metadataUtils.getTableColumnsDataMap(tableName) )
             checkAndFixExistingTableIdColumn(tableName, idColumn, existingColumns, false)
-            checkAndFixExistingSimpleObjectValueTable(tableName, fields, parent, existingColumns, "")
+            checkAndFixExistingSimpleObjectValueTable(tableName, fields, parent, existingColumns, None)
 
         def getFieldsColumsData(fields: Map[String, ValuePersistenceDataFinal], prefixField: Option[String]): List[(String, String, String)] =
             val fieldsPrefix = prefixField.map(_ + ".").getOrElse("")

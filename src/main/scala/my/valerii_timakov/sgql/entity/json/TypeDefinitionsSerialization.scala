@@ -7,7 +7,7 @@ import spray.json.{JsArray, JsNull, JsObject, JsString, JsValue, RootJsonFormat,
 implicit val entityTypeFormat: RootJsonFormat[AbstractNamedEntityType] = new RootJsonFormat[AbstractNamedEntityType]:
     override def write(typeDef: AbstractNamedEntityType): JsValue =
         val kind = typeDef match
-            case value: EntityType => "EntityType"
+            case value: EntityType[?] => "EntityType"
             case value: ArrayEntitySuperType => "ArrayEntitySuperType"
             case value: ObjectEntitySuperType => "ObjectEntitySuperType"
             case value: PrimitiveEntitySuperType[?] => "PrimitiveEntitySuperType"
@@ -18,7 +18,7 @@ implicit val entityTypeFormat: RootJsonFormat[AbstractNamedEntityType] = new Roo
             "valueType" -> typeDef.valueType.toJson
         )
 
-    override def read(json: JsValue): EntityType = ??? /* json match
+    override def read(json: JsValue): EntityType[?] = ??? /* json match
             case JsObject(fields) =>
                 (fields("name"), fields("idType"), fields("valueType")) match
                     case Seq(Some(JsString(name)), Some(JsString(idTypeName)), Some(fieldsType)) =>

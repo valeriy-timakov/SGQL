@@ -28,3 +28,6 @@ object DbTableMigrationException:
     def apply(tableName: String) = new DbTableMigrationException(s"Error migrating table \"$tableName\"! " +
         s"Table could not be migrated automatically - use migration tools or try migrate manually.", null)
 class PersistenceRepositoryTypeNotFoundException extends RuntimeException(s"Repository type not found!")
+
+
+final class NotInitializedException(serviceName: String, depencyName: String) extends Exception(s"Depency $depencyName of $serviceName not initialized!")

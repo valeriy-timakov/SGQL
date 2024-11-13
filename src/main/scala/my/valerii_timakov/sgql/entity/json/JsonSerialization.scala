@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.entity.json
 
 import akka.parboiled2.util.Base64
 import my.valerii_timakov.sgql.entity
-import my.valerii_timakov.sgql.entity.{AbstractEntityType, AbstractNamedEntityType, AbstractTypeDefinition, ArrayItemType, ArrayType, ArrayTypeDefinition, BinaryType, BinaryTypeDefinition, BooleanType, BooleanTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeType, DateTimeTypeDefinition, DateType, DateTypeDefinition, DoubleType, DoubleTypeDefinition, Entity, EntityFieldType, EntityId, EntityIdTypeDefinition, EntityType, EntityTypeDefinition, FieldType, FieldTypeDefinitions, FloatType, FloatTypeDefinition, IntId, IntIdTypeDefinition, IntType, IntTypeDefinition, LongId, LongIdTypeDefinition, LongType, LongTypeDefinition, NamedEntitySuperType, ObjectType, ObjectTypeDefinition, PrimitiveEntitySuperType, PrimitiveFieldTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringId, StringIdTypeDefinition, StringType, StringTypeDefinition, TimeType, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDId, UUIDIdTypeDefinition}
+import my.valerii_timakov.sgql.entity.{AbstractEntityType, AbstractNamedEntityType, AbstractTypeDefinition, ArrayItemTypeDefinition, ArrayType, ArrayTypeDefinition, BinaryType, BinaryTypeDefinition, BooleanType, BooleanTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeType, DateTimeTypeDefinition, DateType, DateTypeDefinition, DoubleType, DoubleTypeDefinition, Entity, EntityFieldType, EntityId, EntityIdTypeDefinition, EntityType, EntityTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinitions, FloatType, FloatTypeDefinition, IntId, IntIdTypeDefinition, IntType, IntTypeDefinition, LongId, LongIdTypeDefinition, LongType, LongTypeDefinition, NamedEntitySuperType, ObjectType, ObjectTypeDefinition, PrimitiveEntitySuperType, PrimitiveFieldTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringId, StringIdTypeDefinition, StringType, StringTypeDefinition, TimeType, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDId, UUIDIdTypeDefinition}
 import spray.json.*
 import spray.json.DefaultJsonProtocol.*
 
@@ -76,8 +76,8 @@ def field2json(field: EntityFieldType): JsValue = field match
     case DateTimeType(value) => JsString(value.toString)
     case TimeType(value) => JsString(value.toString)
     case BinaryType(value) => JsString(Base64.rfc2045().encodeToString(value, false))
-    case ArrayType(value) => JsArray(value.map(field2json).toVector)
-    case ObjectType(value) => JsObject(value.map((fieldName, fieldValue) => fieldName -> field2json(fieldValue)))
+    case ArrayType(value, _) => JsArray(value.map(field2json).toVector)
+    case ObjectType(value, _) => JsObject(value.map((fieldName, fieldValue) => fieldName -> field2json(fieldValue)))
     case _ => serializationError("Unknown EntityFieldType")
 
 
@@ -87,8 +87,8 @@ def json2field(json: JsValue): EntityFieldType = json match
         if (value.isValidLong) LongType(value.toLong)
         else DoubleType(value.toDouble)
     case JsBoolean(value) => BooleanType(value)
-    case JsArray(value) => ArrayType(value.map(json2field).toList)
-    case JsObject(value) => ObjectType(value.map((fieldName, fieldValue) => fieldName -> json2field(fieldValue)))
+    case JsArray(value) => ??? //ArrayType(value.map(json2field).toList)
+    case JsObject(value) => ??? //ObjectType(value.map((fieldName, fieldValue) => fieldName -> json2field(fieldValue)))
     case _ => deserializationError("Unknown EntityFieldType")
 
 

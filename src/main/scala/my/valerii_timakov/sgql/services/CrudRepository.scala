@@ -17,15 +17,15 @@ object CrudRepositoriesFactory:
 
 
 trait CrudRepository:
-    def create(entityType: EntityType, data: EntityFieldType): Try[Entity]
+    def create(entityType: EntityType[?], data: EntityFieldType): Try[Entity]
 
-    def update(entityType: EntityType, entity: Entity): Try[Option[Entity]]
+    def update(entityType: EntityType[?], entity: Entity): Try[Option[Unit]]
 
-    def delete(entityType: EntityType, id: EntityId): Try[Option[EntityId]]
+    def delete(entityType: EntityType[?], id: EntityId): Try[Option[Unit]]
 
-    def get(entityType: EntityType, id: EntityId, getFields: GetFieldsDescriptor): Try[Option[Entity]]
+    def get(entityType: EntityType[?], id: EntityId, getFields: GetFieldsDescriptor): Try[Option[Entity]]
 
-    def find(entityType: EntityType, query: SearchCondition, getFields: GetFieldsDescriptor): Try[Seq[Entity]]
+    def find(entityType: EntityType[?], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Seq[Entity]]
 
     def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit
 

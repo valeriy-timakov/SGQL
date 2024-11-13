@@ -190,21 +190,21 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
 
     def parseAnyTypeDef(rowData: AnyTypeDef,
                         typePrefix: Option[String],
-                        typesMap: Map[String, AbstractNamedEntityType]): FieldType =
+                        typesMap: Map[String, AbstractNamedEntityType]): FieldTypeDefinition =
         rowData match
             case refData: ReferenceData =>
-                FieldType(parseReferenceType(refData, typePrefix, typesMap))
+                FieldTypeDefinition(parseReferenceType(refData, typePrefix, typesMap))
             case typeDefRaw: SimpleObjectData => 
                 parseObjectSimpleType(typeDefRaw, typePrefix, typesMap)
                 
     def parseArrayItemTypeDef(rowData: ReferenceData,
                               typePrefix: Option[String],
-                              typesMap: Map[String, AbstractNamedEntityType]): ArrayItemType =
+                              typesMap: Map[String, AbstractNamedEntityType]): ArrayItemTypeDefinition =
         parseReferenceType(rowData, typePrefix, typesMap) match
             case refData: TypeReferenceDefinition =>
-                ArrayItemType(refData)
+                ArrayItemTypeDefinition(refData)
             case refData: RootPrimitiveTypeDefinition =>
-                ArrayItemType(refData)
+                ArrayItemTypeDefinition(refData)
             case _ =>
                 throw new ConsistencyException("Only reference or root primitive types could be array items! " +
                     s"Type ${rowData.refTypeName} is trying to be array item!")
@@ -247,8 +247,8 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
 
     private def parseObjectSimpleType(rawType: SimpleObjectData,
                                       typePrefixOpt: Option[String],
-                                      typesMap: Map[String, AbstractNamedEntityType]): FieldType =
-        FieldType(SimpleObjectTypeDefinition(rawType.fields.map(fieldRaw =>
+                                      typesMap: Map[String, AbstractNamedEntityType]): FieldTypeDefinition =
+        FieldTypeDefinition(SimpleObjectTypeDefinition(rawType.fields.map(fieldRaw =>
             fieldRaw.name -> parseAnyTypeDef(fieldRaw.typeDef, typePrefixOpt, typesMap)).toMap,
             rawType.parent.map(parentTypeName =>
                 findOrParseObjectSuperType(parentTypeName, typePrefixOpt)

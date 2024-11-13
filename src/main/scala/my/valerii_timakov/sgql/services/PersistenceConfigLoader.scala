@@ -475,7 +475,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
 
     private def getOverridenParentsFields(fieldsPersistenceData: Map[String, ValuePersistenceData],
                                           typeDefinition: FieldsContainer
-                                         ): Map[String, FieldType] =
+                                         ): Map[String, FieldTypeDefinition] =
         fieldsPersistenceData
             .filter((fieldName, _) => !typeDefinition.fields.contains(fieldName))
             .map((fieldName, _) =>
@@ -483,7 +483,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
             )
 
     private def mergeFieldsAndParentPersistenceData(parentType: Option[ObjectEntitySuperType],
-                                                    fields: Map[String, FieldType],
+                                                    fields: Map[String, FieldTypeDefinition],
                                                     parentPersistenceData: Either[ExpandParentMarker, ReferenceValuePersistenceData],
                                                     fieldsPersistenceData: Map[String, ValuePersistenceData],
                                                     columnsNamesChecker: ColumnsNamesChecker,
@@ -710,7 +710,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
 
         parentFieldsData ++ superParentFieldsData
 
-    private def mergeFieldsPersistenceData(fields: Map[String, FieldType],
+    private def mergeFieldsPersistenceData(fields: Map[String, FieldTypeDefinition],
                                            fieldsPersistenceDataMap: Map[String, ValuePersistenceData],
                                            typeName: String,
                                            prefix: String): Map[String, ValuePersistenceDataFinal] =
@@ -726,7 +726,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
 
     private def checkAndBypassDefaultsObjectFieldPersistenceData(
                                                                     fieldName: String,
-                                                                    fieldType: FieldType,
+                                                                    fieldType: FieldTypeDefinition,
                                                                     fieldsPersistenceDataMap: Map[String, ValuePersistenceData],
                                                                     typeName: String ): Option[ValuePersistenceData] =
         val itemDescriptionProvider = () => s"Field $fieldName of type $typeName"
@@ -759,7 +759,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
             )
 
     private def checkAndBypassDefaultsArrayItemPersistenceData(
-                                                                  itemType: ArrayItemType,
+                                                                  itemType: ArrayItemTypeDefinition,
                                                                   fieldsPersistenceData: Option[ArrayValuePersistenceData],
                                                                   typeName: String ): ArrayValuePersistenceData =
         val itemDescriptionProvider = () => s"Item $itemType of type $typeName"
@@ -834,7 +834,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
 
     private def toFieldPersistenceDataFinal(fieldPersitenceData: ValuePersistenceData,
                                             fieldName: String,
-                                            fieldType: FieldType,
+                                            fieldType: FieldTypeDefinition,
                                             typeName: String,
                                             prefix: String = ""): ValuePersistenceDataFinal =
         fieldType.valueType match
@@ -887,7 +887,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                 throw new ConsistencyException(s"Type definition is not found! ${fieldType.valueType}")
 
     private def toArrayItemValuePersistenceDataFinal(persistenceData: ArrayValuePersistenceData,
-                                                     itemType: ArrayItemTypeDefinitions,
+                                                     itemType: ArrayItemValueTypeDefinitions,
                                                      typeName: String
                                                     ): PrimitiveValuePersistenceDataFinal | ReferenceValuePersistenceDataFinal =
         itemType match
@@ -900,7 +900,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
 
 
 
-    private def createSimpleObjectFromParent(fields: Map[String, FieldType],
+    private def createSimpleObjectFromParent(fields: Map[String, FieldTypeDefinition],
                                              subFieldsPersistenceDataMap: Map[String, ValuePersistenceData],
                                              parent: Option[ObjectEntitySuperType],
                                              fieldName: String,

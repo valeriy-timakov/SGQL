@@ -47,7 +47,7 @@ class CrudHttpRouter(
                 } ~
                     put {
                         entity(as [EntityFieldType]) { requestEntity =>
-                            val result: Future[Either[Error, Try[Option[Entity]]]] =
+                            val result: Future[Either[Error, Try[Option[Unit]]]] =
                                 appActor ? (UpdateMessage(objectType, objectId, requestEntity, _))
                             onSuccess(result) {
                                 case Left(error) =>
@@ -56,14 +56,14 @@ class CrudHttpRouter(
                                     complete(StatusCodes.InternalServerError, exception.getMessage)
                                 case Right(Success(None)) =>
                                     complete(StatusCodes.NotFound)
-                                case Right(Success(Some(entity))) =>
-                                    complete(StatusCodes.OK, entity)
+                                case Right(Success(Some(_))) =>
+                                    complete(StatusCodes.NoContent)
                             }
                         }
                     } ~
                     delete {
                         extractRequestEntity { requestEntity =>
-                            val result: Future[Either[Error, Try[Option[String]]]] =
+                            val result: Future[Either[Error, Try[Option[Unit]]]] =
                                 appActor ? (DeleteMessage(objectType, objectId, _))
                             onSuccess(result) {
                                 case Left(error) =>
@@ -73,7 +73,7 @@ class CrudHttpRouter(
                                 case Right(Success(None)) =>
                                     complete(StatusCodes.NotFound)
                                 case Right(Success(Some(entity))) =>
-                                    complete(StatusCodes.OK, entity)
+                                    complete(StatusCodes.NoContent)
                             }
                         }
                     }
