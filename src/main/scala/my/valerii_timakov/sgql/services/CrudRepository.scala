@@ -2,7 +2,9 @@ package my.valerii_timakov.sgql.services
 
 
 import com.typesafe.config.Config
-import my.valerii_timakov.sgql.entity.*
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{Entity, EntityType}
+import my.valerii_timakov.sgql.entity.domain.type_values.{EntityFieldType, EntityId}
+import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.exceptions.PersistenceRepositoryTypeNotFoundException
 import my.valerii_timakov.sgql.services.repositories.postres.PostgresCrudRepository
 

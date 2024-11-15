@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.actors
 
 import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import my.valerii_timakov.sgql.entity.{AbstractNamedEntityType, EntityType}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, EntityType}
 import my.valerii_timakov.sgql.services.{TypePersistenceDataFinal, TypesDefinitionProvider}
 
 import scala.util.Try

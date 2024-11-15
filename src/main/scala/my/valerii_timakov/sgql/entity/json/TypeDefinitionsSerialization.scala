@@ -1,6 +1,6 @@
 package my.valerii_timakov.sgql.entity.json
 
-import my.valerii_timakov.sgql.entity.{AbstractNamedEntityType, AbstractTypeDefinition, ArrayEntitySuperType, ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, EntityType, EntityTypeDefinition, IntIdTypeDefinition, LongIdTypeDefinition, NamedEntitySuperType, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{EntityTypeDefinition, IntIdTypeDefinition, LongIdTypeDefinition, NamedEntitySuperType, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, EntityType, EntityIdTypeDefinition, CustomPrimitiveTypeDefinition, ArrayTypeDefinition, ArrayEntitySuperType, AbstractTypeDefinition, AbstractNamedEntityType}
 import spray.json.{JsArray, JsNull, JsObject, JsString, JsValue, RootJsonFormat, deserializationError, enrichAny}
 
 

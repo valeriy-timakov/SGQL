@@ -9,7 +9,7 @@ import akka.http.scaladsl.server.{Directives, Route}
 import akka.util.Timeout
 import my.valerii_timakov.sgql.actors.TypesProviderActor
 import my.valerii_timakov.sgql.actors.TypesProviderActor.*
-import my.valerii_timakov.sgql.entity.{AbstractNamedEntityType, EntityType}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{EntityType, AbstractNamedEntityType}
 import my.valerii_timakov.sgql.services.MessageSource
 
 import scala.concurrent.Future

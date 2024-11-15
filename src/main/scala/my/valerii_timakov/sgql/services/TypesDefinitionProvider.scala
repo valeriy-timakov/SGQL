@@ -1,6 +1,8 @@
 package my.valerii_timakov.sgql.services
 
-import my.valerii_timakov.sgql.entity.*
+import my.valerii_timakov.sgql.entity.{GetFieldsParseError, SearchConditionParseError}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.AbstractNamedEntityType
+import my.valerii_timakov.sgql.entity.read_modiriers.{AllGetFieldsDescriptor, GetFieldsDescriptor, SearchCondition}
 
 import scala.util.{Success, Try}
 

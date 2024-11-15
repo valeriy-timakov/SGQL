@@ -2,7 +2,8 @@ package my.valerii_timakov.sgql.services
 
 
 import com.typesafe.scalalogging.LazyLogging
-import my.valerii_timakov.sgql.entity.{ArrayTypeDefinition, Error, ObjectTypeDefinition, TypesDefinitionsParseError}
+import my.valerii_timakov.sgql.entity.{Error, TypesDefinitionsParseError}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{ArrayTypeDefinition, ObjectTypeDefinition}
 import my.valerii_timakov.sgql.services.TypesDefinitionsParser.IdTypeRef
 
 import scala.collection.mutable.ArrayBuffer

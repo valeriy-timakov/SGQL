@@ -9,7 +9,9 @@ import akka.http.scaladsl.server.{Directives, Route}
 import akka.util.Timeout
 import my.valerii_timakov.sgql.actors.CrudActor
 import my.valerii_timakov.sgql.actors.CrudActor.*
-import my.valerii_timakov.sgql.entity.{Entity, EntityFieldType, Error}
+import my.valerii_timakov.sgql.entity.Error
+import my.valerii_timakov.sgql.entity.domain.type_values.EntityFieldType
+import my.valerii_timakov.sgql.entity.domain.type_definitions.Entity
 import my.valerii_timakov.sgql.services.MessageSource
 
 import scala.concurrent.Future
