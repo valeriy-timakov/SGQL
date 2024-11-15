@@ -195,40 +195,15 @@ final case class ReferenceType(value: EntityId, definition: EntityType[TypeRefer
         checkReferenceValue(value, definition.valueType.referencedType, this.value)
         Some(value)
 
-
-    sealed trait SuperType[D <: AbstractTypeDefinition] extends EntityFieldType:
-        def valueItem: EntityFieldType
-
-        def definition: AbstractNamedEntityType
-
-        val typeDefinition: D = definition.valueType match
-            case customDef: D => customDef
-            case _ => throw new ConsistencyException(s"Unexpected $typeName definition! $definition")
-
-        protected def typeName: String
-
-    final case class CustomPrimitiveSuperType[T](valueItem: RootPrimitiveFieldType[T], definition: AbstractNamedEntityType)
-        extends PrimitiveFieldType[T], SuperType[CustomPrimitiveTypeDefinition]:
-        def value: T = valueItem.value
-
-        protected val typeName: String = "CustomPrimitiveType"
-
-    final case class ArraySuperType[T <: EntityFieldType](valueItem: List[T], definition: AbstractNamedEntityType)
-        extends EntityFieldType, SuperType[ArrayTypeDefinition]:
-        protected val typeName: String = "ArrayType"
-
-    final case class ObjectSuperType(valueItem: Map[String, EntityFieldType], definition: AbstractNamedEntityType)
-        extends EntityFieldType, SuperType[ObjectTypeDefinition]:
-        protected val typeName: String = "ObjectType"
-    
 final case class BackReferenceType(value: EntityId, definition: EntityType[TypeBackReferenceDefinition]) extends EntityFieldType:
     checkReferenceId(value, definition.valueType)
     val typeDefinition: TypeBackReferenceDefinition = definition.valueType
     protected var _refValue: Option[Seq[Entity]] = None
     def refValue: Seq[Entity] = _refValue.getOrElse(throw new ConsistencyException("Reference value is not set!"))
-    def setRefValue(value: Seq[Entity]): Unit = 
+    def setRefValue(value: Seq[Entity]): Unit =
         value.foreach(entity => checkReferenceValue(entity, definition.valueType.referencedType, this.value))
         _refValue = Some(value)
+
         
 private def checkObjectTypeData(
                                    value: Map[String, FieldType],
@@ -260,6 +235,16 @@ private def checkReferenceValue(entity: Entity, refTypeDef: AbstractNamedEntityT
             s"provided type ${refTypeDef.valueType}!")
     if entity.id != idValue then
         throw new ConsistencyException(s"Reference value id ${entity.id} does not match provided id $idValue!")
+
+//private def isParentOf(parent: AbstractNamedEntityType, child: AbstractTypeDefinition): Boolean =
+//    parent match
+//        case EntityType(name, _) => name == child.name
+//        case superType: NamedEntitySuperType =>
+//            child match
+//                case childEntityType: EntityTypeDefinition => childEntityType.parent.exists(_parent => _parent == parent || isParentOf(parent, _parent))
+//                    isParentOf(parent, childEntityType)
+
+
     
 
 val primitiveFieldTypesMap = Map(
