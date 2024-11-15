@@ -39,3 +39,4 @@ build/
 /.bsp/sbt.json
 /.idea/kotlinc.xml
 /.idea/sonarlint.xml
+/.idea/play2_compiler_settings.xml
