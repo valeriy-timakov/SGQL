@@ -3,7 +3,7 @@ package my.valerii_timakov.sgql.services
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.domain.type_definitions.EntityType
-import my.valerii_timakov.sgql.entity.domain.type_values.{EntityValue, Entity, EntityId}
+import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId, EntityValue, FilledEntityValue}
 import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.exceptions.PersistenceRepositoryTypeNotFoundException
 import my.valerii_timakov.sgql.services.repositories.postres.PostgresCrudRepository
@@ -19,7 +19,7 @@ object CrudRepositoriesFactory:
 
 
 trait CrudRepository:
-    def create(entityType: EntityType[?], data: EntityValue): Try[Entity]
+    def create(entityType: EntityType[?], data: FilledEntityValue): Try[Entity]
 
     def update(entityType: EntityType[?], entity: Entity): Try[Option[Unit]]
 

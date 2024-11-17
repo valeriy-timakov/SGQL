@@ -7,7 +7,7 @@ import java.time.{LocalDate, LocalDateTime, LocalTime}
 import java.util.UUID
 
 
-case class Entity(id: EntityId, value: EntityValue)
+case class Entity(id: EntityId, value: FilledEntityValue)
 
 sealed trait EntityId:
     def serialize: String

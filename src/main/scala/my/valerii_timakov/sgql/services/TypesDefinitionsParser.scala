@@ -15,7 +15,7 @@ import scala.util.parsing.input.{Reader, StreamReader}
 type AnyTypeDef = ReferenceData | SimpleObjectData
 
 case class ReferenceData(refTypeName: String, refFieldName: Option[String], unique: Boolean = false)
-case class FieldData(name: String, typeDef: AnyTypeDef)
+case class FieldData(name: String, typeDef: AnyTypeDef, isNullable: Boolean)
 case class ObjectData(idOrParent: Either[IdTypeRef, String], fields: List[FieldData])
 case class ArrayData(idOrParent: Either[IdTypeRef, String], elementTypesNames: List[ReferenceData])
 
@@ -109,8 +109,8 @@ object TypesDefinitionsParser extends DefinitionsParser[TypesRootPackageData]:
     }, "typeName")
     private def idType: Parser[IdTypeRef] = log(("(" ~> itemName <~ ")") ^^ { name => IdTypeRef(name) }, "idType")
 //    private def typeDef: Parser[AnyTypeDef] = log(simpleObjectType | typeReference, "typeDef")
-    private def field: Parser[FieldData] = log((itemName <~ ":") ~ (simpleObjectType | typeReference) <~ opt(",") ^^ {
-        case name ~ typeName => FieldData(name, typeName)
+    private def field: Parser[FieldData] = log((itemName <~ ":") ~ (simpleObjectType | typeReference) ~ opt("!") <~ opt(",") ^^ {
+        case name ~ typeName ~ notNullableMarker => FieldData(name, typeName, notNullableMarker.isDefined)
     }, "field")
     private def fields: Parser[List[FieldData]] = log("{" ~> rep(field) <~ "}", "fields")
     private def array: Parser[List[ReferenceData]] = log("[" ~> rep(typeReference <~ opt(",")) <~ "]", "array")

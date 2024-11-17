@@ -46,10 +46,10 @@ i.valerii_timakov.home_finances {
             fakeObj3: User {
                 fakeField: String
                 field2: MyArray
-                field3: MyInt
+                field3: MyInt!
             }
             fakeObj4: User {
-                fakeField: String
+                fakeField: String!
                 field2: MyArray
                 field3: MyInt
             }
@@ -67,7 +67,7 @@ i.valerii_timakov.home_finances {
             MyArray2: sdf.MyArray1 [Date]
         }
         U4: U3 {
-            yhn: inner.MyArray2,
+            yhn: inner.MyArray2!,
             acc: i.valerii_timakov.home_finances.finances.Account,
         }
         U5: U3 {

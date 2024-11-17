@@ -81,7 +81,7 @@ object TypesDefinitionsLoader extends TypesDefinitionsLoader:
                             rawTypesDataMap.get(typeFullName) match
                                 case Some(ObjectTypeData(_, ObjectData(_, fields), _)) =>
                                     val fieldsMap = fields.map(fieldRaw =>
-                                        fieldRaw.name -> parser.parseAnyTypeDef(fieldRaw.typeDef, typePrefix, typesMap)).toMap
+                                        fieldRaw.name -> parser.parseAnyTypeDef(fieldRaw, typePrefix, typesMap)).toMap
                                     objDef.setChildren(fieldsMap)
                                 case _ => throw new NoTypeFound(typeFullName)
                         case _ => // do nothing
@@ -189,14 +189,16 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
             )
             .getOrElse(throw new NoTypeFound(typeName))
 
-    def parseAnyTypeDef(rowData: AnyTypeDef,
-                        typePrefix: Option[String],
-                        typesMap: Map[String, AbstractNamedEntityType]): FieldTypeDefinition =
-        rowData match
+    def parseAnyTypeDef(
+        fieldData: FieldData,
+        typePrefix: Option[String],
+        typesMap: Map[String, AbstractNamedEntityType],
+    ): FieldTypeDefinition =
+        fieldData.typeDef match
             case refData: ReferenceData =>
-                FieldTypeDefinition(parseReferenceType(refData, typePrefix, typesMap))
+                FieldTypeDefinition(parseReferenceType(refData, typePrefix, typesMap), fieldData.isNullable)
             case typeDefRaw: SimpleObjectData => 
-                parseObjectSimpleType(typeDefRaw, typePrefix, typesMap)
+                parseObjectSimpleType(typeDefRaw, typePrefix, typesMap, fieldData.isNullable)
                 
     def parseArrayItemTypeDef(rowData: ReferenceData,
                               typePrefix: Option[String],
@@ -246,15 +248,18 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
                                 throw new NoTypeFound(refData.refTypeName)
                 
 
-    private def parseObjectSimpleType(rawType: SimpleObjectData,
-                                      typePrefixOpt: Option[String],
-                                      typesMap: Map[String, AbstractNamedEntityType]): FieldTypeDefinition =
+    private def parseObjectSimpleType(
+        rawType: SimpleObjectData,
+        typePrefixOpt: Option[String],
+        typesMap: Map[String, AbstractNamedEntityType],
+        isNullable: Boolean, 
+    ): FieldTypeDefinition =
         FieldTypeDefinition(SimpleObjectTypeDefinition(rawType.fields.map(fieldRaw =>
-            fieldRaw.name -> parseAnyTypeDef(fieldRaw.typeDef, typePrefixOpt, typesMap)).toMap,
+            fieldRaw.name -> parseAnyTypeDef(fieldRaw, typePrefixOpt, typesMap)).toMap,
             rawType.parent.map(parentTypeName =>
                 findOrParseObjectSuperType(parentTypeName, typePrefixOpt)
             )
-        ))
+        ), isNullable)
 
 
     @tailrec

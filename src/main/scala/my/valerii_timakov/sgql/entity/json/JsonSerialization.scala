@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.entity.json
 
 import akka.parboiled2.util.Base64
 import my.valerii_timakov.sgql.entity
-import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BinaryValue, BooleanValue, DateTimeValue, DateValue, DoubleValue, EntityValue, EntityId, FloatValue, IntId, IntValue, LongId, LongValue, ObjectValue, StringId, StringValue, TimeValue, UUIDId, Entity}
+import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BinaryValue, BooleanValue, DateTimeValue, DateValue, DoubleValue, EmptyValue, Entity, EntityId, EntityValue, FilledEntityValue, FloatValue, IntId, IntValue, LongId, LongValue, ObjectValue, StringId, StringValue, TimeValue, UUIDId}
 import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, AbstractTypeDefinition, ArrayItemTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntityType, EntityTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinitions, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, NamedEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, PrimitiveTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition}
 import spray.json.*
 import spray.json.DefaultJsonProtocol.*
@@ -65,8 +65,11 @@ implicit object UUIDIdTypeFormat extends RootJsonFormat[UUIDId]:
         case _ => deserializationError("String ID expected")
     }
 
+def field2json(field: EntityValue): JsValue = field match
+    case EmptyValue(definition) => JsNull
+    case value: FilledEntityValue => field2json(value)
 
-def field2json(field: EntityValue): JsValue = field match 
+def field2json(field: FilledEntityValue): JsValue = field match 
     case StringValue(value) => JsString(value)
     case IntValue(value) => JsNumber(value)
     case LongValue(value) => JsNumber(value)
@@ -82,7 +85,7 @@ def field2json(field: EntityValue): JsValue = field match
     case _ => serializationError("Unknown EntityFieldType")
 
 
-def json2field(json: JsValue): EntityValue = json match 
+def json2field(json: JsValue): FilledEntityValue = json match 
     case JsString(value) => StringValue(value)
     case JsNumber(value) =>
         if (value.isValidLong) LongValue(value.toLong)
@@ -93,9 +96,9 @@ def json2field(json: JsValue): EntityValue = json match
     case _ => deserializationError("Unknown EntityFieldType")
 
 
-implicit object EntityFieldTypeFormat extends RootJsonFormat[EntityValue]:
-    def write(fieldType: EntityValue): JsValue = field2json(fieldType)
-    def read(json: JsValue): EntityValue = json2field(json)
+implicit object EntityFieldTypeFormat extends RootJsonFormat[FilledEntityValue]:
+    def write(fieldType: FilledEntityValue): JsValue = field2json(fieldType)
+    def read(json: JsValue): FilledEntityValue = json2field(json)
 
 
 implicit object EntityIdFormat extends RootJsonFormat[EntityId]:
@@ -116,7 +119,7 @@ implicit object EntityFormat extends RootJsonFormat[Entity]:
         "value" -> entity.value.toJson,
     )    
     def read(json: JsValue): Entity = json.asJsObject.getFields("id", "fields") match 
-        case Seq(id, fields) => Entity(id.convertTo[EntityId], fields.convertTo[EntityValue])
+        case Seq(id, fields) => Entity(id.convertTo[EntityId], fields.convertTo[FilledEntityValue])
         case _ => deserializationError("Entity expected")
     
 

@@ -3,7 +3,7 @@ package my.valerii_timakov.sgql.entity.domain.type_definitions
 
 import akka.parboiled2.util.Base64
 import my.valerii_timakov.sgql.entity.IdParseError
-import my.valerii_timakov.sgql.entity.domain.type_values.{BinaryValue, BooleanValue, ByteId, ByteValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, EntityValue, EntityId, FloatValue, IntId, IntValue, LongId, LongValue, ShortIntId, ShortIntValue, StringId, StringValue, TimeValue, UUIDId, UUIDValue}
+import my.valerii_timakov.sgql.entity.domain.type_values.{BinaryValue, BooleanValue, ByteId, ByteValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, EntityId, EntityValue, FilledEntityValue, FloatValue, IntId, IntValue, LongId, LongValue, ShortIntId, ShortIntValue, StringId, StringValue, TimeValue, UUIDId, UUIDValue}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, TypeReinitializationException}
 
 import java.time.{LocalDate, LocalDateTime, LocalTime}
@@ -61,26 +61,26 @@ case object UUIDIdTypeDefinition extends EntityIdTypeDefinition("UUID"):
     protected override def parseIner(value: String): EntityId = UUIDId(java.util.UUID.fromString(value))
 case object StringIdTypeDefinition extends EntityIdTypeDefinition("String"):
     protected override def parseIner(value: String): EntityId = StringId(value)
-case class FixedStringIdTypeDefinition(length: Int) extends EntityIdTypeDefinition("String"):
+case class FixedStringIdTypeDefinition(length: Int) extends EntityIdTypeDefinition(FixedStringIdTypeDefinition.name):
     protected override def parseIner(value: String): EntityId = StringId(value)
-case object FixedStringIdTypeDefinition extends EntityIdTypeDefinition("String"):
+case object FixedStringIdTypeDefinition extends EntityIdTypeDefinition("FixedString"):
     protected override def parseIner(value: String): EntityId = StringId(value)
 
 sealed abstract class AbstractTypeDefinition
 
 sealed abstract class PrimitiveTypeDefinition extends AbstractTypeDefinition:
-    def parse(value: String): Either[IdParseError, EntityValue]
+    def parse(value: String): Either[IdParseError, FilledEntityValue]
     def rootType: RootPrimitiveTypeDefinition
 
 sealed abstract case class RootPrimitiveTypeDefinition(name: String) extends PrimitiveTypeDefinition:
     def rootType: RootPrimitiveTypeDefinition = this
-    def parse(value: String): Either[IdParseError, EntityValue] =
+    def parse(value: String): Either[IdParseError, FilledEntityValue] =
         try {
             Right(parseIner(value))
         } catch {
             case _: Throwable => Left(new IdParseError(this.getClass.getSimpleName, value))
         }
-    protected def parseIner(value: String): EntityValue
+    protected def parseIner(value: String): FilledEntityValue
 
 object ByteTypeDefinition extends RootPrimitiveTypeDefinition("Byte"):
     protected override def parseIner(value: String): ByteValue = ByteValue(value.toByte)
@@ -110,7 +110,7 @@ object DecimalTypeDefinition extends RootPrimitiveTypeDefinition("Decimal"):
     protected override def parseIner(value: String): DecimalValue = DecimalValue(BigDecimal(value))
 object StringTypeDefinition extends RootPrimitiveTypeDefinition("String"):
     protected override def parseIner(value: String): StringValue = StringValue(value)
-class FixedStringTypeDefinition(val length: Int) extends RootPrimitiveTypeDefinition("FixedString"):
+class FixedStringTypeDefinition(val length: Int) extends RootPrimitiveTypeDefinition(FixedStringTypeDefinition.name):
     protected override def parseIner(value: String): StringValue = StringValue(value)
 object FixedStringTypeDefinition extends RootPrimitiveTypeDefinition("FixedString"):
     protected override def parseIner(value: String): StringValue = StringValue(value)
@@ -119,14 +119,14 @@ sealed trait EntityTypeDefinition:
     def idType: EntityIdTypeDefinition
 
     def parent: Option[NamedEntitySuperType]
-        
+
 final case class CustomPrimitiveTypeDefinition(
     parentNode: Either[(EntityIdTypeDefinition, RootPrimitiveTypeDefinition), PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition]]
 ) extends PrimitiveTypeDefinition, EntityTypeDefinition:
     @tailrec def rootType: RootPrimitiveTypeDefinition = this.parentNode match
         case Left((_, root)) => root
         case Right(parent) => parent.valueType.rootType
-    def parse(value: String): Either[IdParseError, EntityValue] = rootType.parse(value)
+    def parse(value: String): Either[IdParseError, FilledEntityValue] = rootType.parse(value)
     lazy val idType: EntityIdTypeDefinition = parentNode.fold(_._1, _.valueType.idType)
     lazy val parent: Option[PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition]] = parentNode.toOption
 
@@ -160,7 +160,7 @@ case class ArrayItemTypeDefinition(valueType: ArrayItemValueTypeDefinitions):
 type FieldValueTypeDefinitions = TypeReferenceDefinition | RootPrimitiveTypeDefinition | TypeBackReferenceDefinition | SimpleObjectTypeDefinition
 
 
-case class FieldTypeDefinition(valueType: FieldValueTypeDefinitions)
+case class FieldTypeDefinition(valueType: FieldValueTypeDefinitions, isNullable: Boolean)
 
 object ObjectTypeDefinition:
     val name = "Object"
@@ -243,4 +243,4 @@ val primitiveFieldTypesMap = Map(
     StringIdTypeDefinition.name -> StringTypeDefinition,
     FixedStringIdTypeDefinition.name -> FixedStringTypeDefinition,
     BinaryTypeDefinition.name -> BinaryTypeDefinition
-) 
+)

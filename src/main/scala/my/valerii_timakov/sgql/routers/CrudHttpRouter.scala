@@ -10,7 +10,7 @@ import akka.util.Timeout
 import my.valerii_timakov.sgql.actors.CrudActor
 import my.valerii_timakov.sgql.actors.CrudActor.*
 import my.valerii_timakov.sgql.entity.Error
-import my.valerii_timakov.sgql.entity.domain.type_values.{EntityValue, Entity}
+import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityValue, FilledEntityValue}
 import my.valerii_timakov.sgql.services.MessageSource
 
 import scala.concurrent.Future
@@ -47,7 +47,7 @@ class CrudHttpRouter(
                     }
                 } ~
                     put {
-                        entity(as [EntityValue]) { requestEntity =>
+                        entity(as [FilledEntityValue]) { requestEntity =>
                             val result: Future[Either[Error, Try[Option[Unit]]]] =
                                 appActor ? (UpdateMessage(objectType, objectId, requestEntity, _))
                             onSuccess(result) {
@@ -97,7 +97,7 @@ class CrudHttpRouter(
             } ~
             pathEnd {
                 post {
-                    entity(as [EntityValue]) { requestEntity =>
+                    entity(as [FilledEntityValue]) { requestEntity =>
                         val result: Future[Either[Error, Try[Entity]]] =
                             appActor ? (CreateMessage(objectType, requestEntity, _))
                         onSuccess(result) {

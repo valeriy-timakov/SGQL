@@ -17,12 +17,14 @@ sealed trait ValuePersistenceDataFinal:
 case class PrimitiveValuePersistenceDataFinal(
     columnName: String,
     columnType: PersistenceFieldType,
+    isNullable: Boolean,
 ) extends ValuePersistenceDataFinal:
     override def columnNames: Seq[String] = Seq(columnName)
 
 class ReferenceValuePersistenceDataFinal(
     val columnName: String,
     referenceTable: TableReference,
+    val isNullable: Boolean,
 ) extends ValuePersistenceDataFinal:
     override def columnNames: Seq[String] = Seq(columnName)
     def refTableData: TableReferenceDataWrapper = referenceTable.get
@@ -594,7 +596,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
             mergeIdTypeDefinition(valueType.idType, parsedData.idColumn),
             PrimitiveValuePersistenceDataFinal(
                 colName(valueColumnData.columnName.getOrElse(valueColumnNameDefault)),
-                valueColumnData.columnType.getOrElse( getValueFieldType(valueType.rootType) )
+                valueColumnData.columnType.getOrElse( getValueFieldType(valueType.rootType) ), false
             ))
         
     private def colName(nameRaw: String): String = 
@@ -618,7 +620,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                         Some(ReferenceValuePersistenceDataFinal(
                             colName(columnName.getOrElse(columnNameParentPrefix +
                                 columnNameFromFieldName(getTypeSimpleName(parentDef.name)))),
-                            tableReferenceFactory.createForType(parentDef.name)
+                            tableReferenceFactory.createForType(parentDef.name), false
                         ))
                     case Left(ExpandParentMarkerSingle) =>
                         parentDef.valueType.parent.map(superParentDef =>
@@ -635,7 +637,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                             ReferenceValuePersistenceDataFinal(
                                 colName(fieldsParsedData.columnName.getOrElse(columnNameSuperParentPrefix +
                                     columnNameFromFieldName(getTypeSimpleName(superParentDef.name)))),
-                                tableReferenceFactory.createForType(superParentDef.name)
+                                tableReferenceFactory.createForType(superParentDef.name), false
                             ))
                     case Left(ExpandParentMarkerTotal) =>
                         None
@@ -676,7 +678,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
         val idColumnSrc = parsed.getOrElse(PrimitiveValuePersistenceData(None, None))
         PrimitiveValuePersistenceDataFinal(
             colName(idColumnSrc.columnName.getOrElse(idColumnNameDefault)),
-            idColumnSrc.columnType.getOrElse( getIdFieldType(idType) )
+            idColumnSrc.columnType.getOrElse( getIdFieldType(idType) ), false
         )
 
     private def getTypeSimpleName(typeName: String): String =
@@ -840,8 +842,8 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                                             prefix: String = ""): ValuePersistenceDataFinal =
         fieldType.valueType match
             case pritimiveType: RootPrimitiveTypeDefinition =>
-                toPrimitivePersistenceDataFinal(pritimiveType, fieldPersitenceData, fieldName, prefix,
-                    () => s"Field $fieldName of type $typeName")
+                toPrimitivePersistenceDataFinal(pritimiveType, fieldPersitenceData, fieldName, fieldType.isNullable,
+                    prefix, () => s"Field $fieldName of type $typeName")
             case subObjectType: SimpleObjectTypeDefinition =>
                 fieldPersitenceData match
                     case SimpleObjectValuePersistenceData(parentRelation, fieldsPersistenceMap) =>
@@ -861,7 +863,8 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                         refType.referencedType.valueType match
                             case customPrimitiveType: CustomPrimitiveTypeDefinition =>
                                 toPrimitivePersistenceDataFinal(customPrimitiveType.rootType, 
-                                    primitivePersistenceData, fieldName, prefix, () => s"Field $fieldName of type $typeName")
+                                    primitivePersistenceData, fieldName, fieldType.isNullable,
+                                    prefix, () => s"Field $fieldName of type $typeName")
                             case otherType => throw new ConsistencyException("Only CustomPrimitiveTypeDefinition could be " +
                                 s"saved in primitive columns! Trying to save $otherType as $primitivePersistenceData.")
                     case SimpleObjectValuePersistenceData(parentRelation, fieldsPersistenceMap) =>
@@ -875,14 +878,14 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                                             s" $fieldName fields of $typeName SimpleObject")
                                     case Right(ReferenceValuePersistenceData(columnName)) =>
                                         toReferencePersistenceDataFinal(refType, ColumnPersistenceData(columnName),
-                                            columnNameFromFieldName(fieldName), prefix,
+                                            columnNameFromFieldName(fieldName), fieldType.isNullable, prefix,
                                             () => s"Field $fieldName of type $typeName")
                             case otherType =>
                                 throw new ConsistencyException("Only ObjectTypePersistenceData could be " +
                                     s"saved in denormalized columns! Trying to save $otherType as $otherType.")
                     case _: ColumnPersistenceData =>
                         toReferencePersistenceDataFinal(refType, fieldPersitenceData,
-                            columnNameFromFieldName(fieldName), prefix,
+                            columnNameFromFieldName(fieldName), fieldType.isNullable, prefix,
                             () => s"Field $fieldName of type $typeName")
             case _ =>
                 throw new ConsistencyException(s"Type definition is not found! ${fieldType.valueType}")
@@ -893,10 +896,10 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                                                     ): PrimitiveValuePersistenceDataFinal | ReferenceValuePersistenceDataFinal =
         itemType match
             case primitiveType: RootPrimitiveTypeDefinition =>
-                toPrimitivePersistenceDataFinal(primitiveType, persistenceData, defaultValueColumnName, "",
+                toPrimitivePersistenceDataFinal(primitiveType, persistenceData, defaultValueColumnName, false, "",
                     () => s"Item $itemType of type $typeName")
             case refType: TypeReferenceDefinition =>
-                toReferencePersistenceDataFinal(refType, persistenceData, defaultValueColumnName, "",
+                toReferencePersistenceDataFinal(refType, persistenceData, defaultValueColumnName, false, "",
                     () => s"Item $itemType of type $typeName")
 
 
@@ -920,6 +923,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
     private def toReferencePersistenceDataFinal(fieldType: TypeReferenceDefinition,
                                                 persistenceData: ValuePersistenceData,
                                                 defaultColumnName: String,
+                                                isNullable: Boolean,
                                                 prefix: String,
                                                 itemDescriptionProvider: () => String) =
 
@@ -928,7 +932,8 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                 val columnNameFinal = colName(prefix + columnName.getOrElse(defaultColumnName))
                 ReferenceValuePersistenceDataFinal(
                     columnNameFinal,
-                    tableReferenceFactory.createForType(fieldType.referencedType.name)
+                    tableReferenceFactory.createForType(fieldType.referencedType.name),
+                    isNullable
                 )
             case _ =>
                 throw new ConsistencyException(itemDescriptionProvider() + s" parsed as not reference type " +
@@ -937,6 +942,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
     private def toPrimitivePersistenceDataFinal(fieldType: RootPrimitiveTypeDefinition,
                                                 persistenceData: ValuePersistenceData,
                                                 defaultColumnName: String,
+                                                isNullable: Boolean,
                                                 prefix: String,
                                                 itemDescriptionProvider: () => String) =
 
@@ -952,7 +958,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
         val rootFieldType = fieldType.rootType
         val persisType = persisTypeOpt.getOrElse( getValueFieldType(rootFieldType))
 
-        PrimitiveValuePersistenceDataFinal(colName(columnNameFinal), persisType)
+        PrimitiveValuePersistenceDataFinal(colName(columnNameFinal), persisType, isNullable)
                     
     private def tableNameFromTypeName(typeName: String): String = typeName.toLowerCase().replace(TypesDefinitionsParser.NAMESPACES_DILIMITER.toString, "_")
     private def columnNameFromFieldName(fieldName: String): String = camelCaseToSnakeCase(fieldName)
