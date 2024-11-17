@@ -29,5 +29,6 @@ object DbTableMigrationException:
         s"Table could not be migrated automatically - use migration tools or try migrate manually.", null)
 class PersistenceRepositoryTypeNotFoundException extends RuntimeException(s"Repository type not found!")
 
+class NotDefinedOperationException(msg: String) extends Exception(msg)
 
 final class NotInitializedException(serviceName: String, depencyName: String) extends Exception(s"Depency $depencyName of $serviceName not initialized!")

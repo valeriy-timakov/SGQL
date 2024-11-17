@@ -2,8 +2,8 @@ package my.valerii_timakov.sgql.services
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.TypesDefinitionsParseError
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, ArrayEntitySuperType, ArrayItemTypeDefinition, ArrayTypeDefinition, ArrayItemValueTypeDefinitions, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntityType, FieldTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, PrimitiveTypeDefinition, RootPrimitiveTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
-import my.valerii_timakov.sgql.exceptions.{ConsistencyException, NoTypeFound, TypesLoadExceptionException}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, ArrayEntitySuperType, ArrayItemTypeDefinition, ArrayItemValueTypeDefinitions, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntityType, FieldTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, PrimitiveTypeDefinition, RootPrimitiveTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
+import my.valerii_timakov.sgql.exceptions.{ConsistencyException, NoTypeFound, NotDefinedOperationException, TypesLoadExceptionException}
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -29,6 +29,11 @@ class ReferenceValuePersistenceDataFinal(
     override def columnNames: Seq[String] = Seq(columnName)
     def refTableData: TableReferenceDataWrapper = referenceTable.get
     override def toString: String = s"ReferenceValuePersistenceDataFinal(columnName=$columnName, referenceTable=${referenceTable.get})"
+    
+class ParentTableReferenceFinal(referenceTable: TableReference):
+    def refTableData: TableReferenceDataWrapper = referenceTable.get
+    def refTableWrapperCopy: TableReference = referenceTable.copy
+    override def toString: String = s"ParentTableReferenceFinal(referenceTable=${referenceTable.get})"
 
 case class SimpleObjectValuePersistenceDataFinal(
     parent: Option[ReferenceValuePersistenceDataFinal],
@@ -59,6 +64,10 @@ object TableReferenceDataWrapper:
 
 trait TableReference:
     def get: TableReferenceDataWrapper
+    def copy: TableReference = TableReferenceInstance(get)
+    
+class TableReferenceInstance(data: TableReferenceDataWrapper) extends TableReference:
+    override def get: TableReferenceDataWrapper = data
 
 class TableReferenceFactory:
     class TableReferenceProxy(data: Option[TableReferenceDataWrapper]) extends TableReference:
@@ -116,14 +125,11 @@ case class ObjectTypePersistenceDataFinal(
     tableName: String,
     idColumn: PrimitiveValuePersistenceDataFinal,
     fields: Map[String, ValuePersistenceDataFinal],
-    parent: Option[ReferenceValuePersistenceDataFinal],
+    parent: Option[ParentTableReferenceFinal],
 ) extends TypePersistenceDataFinal:
     override def getReferenceData: TableReferenceDataWrapper =
         TableReferenceDataWrapper(tableName, idColumn, idColumn.columnType)
 
-object ObjectTypePersistenceDataFinal:
-    def apply (tableName: String, idColumn: PrimitiveValuePersistenceDataFinal, fieldsAndParend: FieldsAndParentPersistenceData) =
-        new ObjectTypePersistenceDataFinal(tableName, idColumn, fieldsAndParend.fields, fieldsAndParend.parent)
 
 private case class FieldsAndParentPersistenceData(
     fields: Map[String, ValuePersistenceDataFinal],
@@ -464,17 +470,17 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
         val tableName = persistenceData.tableName.getOrElse(sqlTableNamesMap(typeName))
         val idColumn = mergeIdTypeDefinition(typeDefinition.idType, persistenceData.idColumn)
 
-        val parentRelation = getParentPersistenceDataOrDefault(persistenceData.parentRelation)
         val columnsNamesChecker = ColumnsNamesChecker()
         columnsNamesChecker.addAndCheckUsage(idColumn.columnName, "ID column")
 
         val parentFieldsOverriden = getOverridenParentsFields(persistenceData.fields, typeDefinition)
 
-        val fieldsAndParentPersistenceData = mergeFieldsAndParentPersistenceData(typeDefinition.parent,
-            typeDefinition.fields ++ parentFieldsOverriden, parentRelation, persistenceData.fields,
-            columnsNamesChecker, typeName, "")
+        val prefix = ""
+        val parentData = parentPersitanceDataToFinal(typeDefinition.parent, persistenceData.parentRelation, prefix)        
+        val allFields = mergeFieldsAndParentFields(typeDefinition.fields ++ parentFieldsOverriden, 
+            persistenceData.fields, parentData.fields, columnsNamesChecker, prefix, typeName)
 
-        ObjectTypePersistenceDataFinal(tableName, idColumn, fieldsAndParentPersistenceData)
+        ObjectTypePersistenceDataFinal(tableName, idColumn, allFields, parentData.parent)
 
     private def getOverridenParentsFields(fieldsPersistenceData: Map[String, ValuePersistenceData],
                                           typeDefinition: FieldsContainer
@@ -485,38 +491,18 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                 fieldName -> typeDefinition.allFields(fieldName)
             )
 
-    private def mergeFieldsAndParentPersistenceData(parentType: Option[ObjectEntitySuperType],
-                                                    fields: Map[String, FieldTypeDefinition],
-                                                    parentPersistenceData: Either[ExpandParentMarker, ReferenceValuePersistenceData],
-                                                    fieldsPersistenceData: Map[String, ValuePersistenceData],
-                                                    columnsNamesChecker: ColumnsNamesChecker,
-                                                    typeName: String,
-                                                    prefix: String
-                                                   ): FieldsAndParentPersistenceData =
-
-        val parentPersistenceDataFinal = parentPersitanceDataToFinal(parentType, parentPersistenceData, typeName)
-        val fieldsFinal = mergeFieldsPersistenceData(fields, fieldsPersistenceData, typeName, prefix)
-        val superFieldsFinal = mergeParentsFields(parentType, parentPersistenceData, prefix)
-            .filter((fieldName, _) => !fieldsFinal.contains(fieldName))
-
-        parentPersistenceDataFinal.foreach(p => columnsNamesChecker.addAndCheckUsage(p.columnName, "Parent column"))
-        val allFieldsDataFinal = fieldsFinal ++ superFieldsFinal
-        allFieldsDataFinal.foreach(fe => fe._2.columnNames.foreach(columnsNamesChecker.addAndCheckUsage(_, "Field " + fe._1) ) )
-
-        FieldsAndParentPersistenceData(allFieldsDataFinal, parentPersistenceDataFinal)
-
-    private def mergeParentsFields(parent: Option[ObjectEntitySuperType],
-                                   parentRelation: Either[ExpandParentMarker, ReferenceValuePersistenceData],
-                                   prefix: String
-                                  ): Map[String, ValuePersistenceDataFinal] =
-        parent match
-            case Some(parentDef) =>
-                parentRelation match
-                    case Left(ExpandParentMarkerTotal) => copyParentFieldsPersitenceData(prefix, parentDef, true)
-                    case Left(_) => copyParentFieldsPersitenceData(prefix, parentDef, false)
-                    case Right(_) => Map.empty
-            case None =>
-                Map.empty
+    private def mergeFieldsAndParentFields(
+        fields: Map[String, FieldTypeDefinition],
+        fieldsPersistenceData: Map[String, ValuePersistenceData],
+        mergedParentFields: Map[String, ValuePersistenceDataFinal],
+        columnsNamesChecker: ColumnsNamesChecker,
+        prefix: String,
+        typeName: String,
+    ):  Map[String, ValuePersistenceDataFinal] =
+        val currentFields = mergeFieldsPersistenceData(fields, fieldsPersistenceData, typeName, prefix)
+        val allFields = currentFields ++ mergedParentFields.filter((fieldName, _) => !currentFields.contains(fieldName))
+        allFields.foreach(fe => fe._2.columnNames.foreach(columnsNamesChecker.addAndCheckUsage(_, "Field " + fe._1) ) )
+        allFields
 
     private def mergeArrayTypePersistenceData(typeName: String,
                                               valueType: ArrayTypeDefinition,
@@ -605,53 +591,97 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
         res
 
     private def getParentPersistenceDataOrDefault(
-                                              parentRelationOpt: Option[Either[ExpandParentMarker, ReferenceValuePersistenceData]]
+                                              parentRelationOpt: Option[ExpandParentMarker]
                                           ): Either[ExpandParentMarker, ReferenceValuePersistenceData] =
-        parentRelationOpt.getOrElse(Right(ReferenceValuePersistenceData(None)))
+        parentRelationOpt.map(Left(_)).getOrElse(Right(ReferenceValuePersistenceData(None)))
 
-    private def parentPersitanceDataToFinal(parentType: Option[ObjectEntitySuperType],
-                                            parentPersistenceData: Either[ExpandParentMarker, ReferenceValuePersistenceData],
-                                            typeName: String
-                                           ): Option[ReferenceValuePersistenceDataFinal] =
+    private class SimpleObjectParendData[P <: ReferenceValuePersistenceDataFinal | ParentTableReferenceFinal](
+        val parent: Option[P],
+        val fields: Map[String, ValuePersistenceDataFinal]
+    )
+
+    private def parentPersitanceDataToFinal(
+        parentType: Option[ObjectEntitySuperType],
+        parentPersistenceData: Either[ExpandParentMarker, ReferenceValuePersistenceData],
+        typeName: String,
+        fieldsPrefix: String, 
+    ): SimpleObjectParendData[ReferenceValuePersistenceDataFinal] =
         parentType match
             case Some(parentDef) =>
                 parentPersistenceData match
                     case Right(ReferenceValuePersistenceData(columnName)) =>
-                        Some(ReferenceValuePersistenceDataFinal(
-                            colName(columnName.getOrElse(columnNameParentPrefix +
-                                columnNameFromFieldName(getTypeSimpleName(parentDef.name)))),
-                            tableReferenceFactory.createForType(parentDef.name), false
-                        ))
+                        SimpleObjectParendData(
+                            Some(ReferenceValuePersistenceDataFinal(
+                                colName(columnName.getOrElse(columnNameParentPrefix +
+                                    columnNameFromFieldName(getTypeSimpleName(parentDef.name)))),
+                                tableReferenceFactory.createForType(parentDef.name), false
+                            )),
+                            Map.empty
+                        )
                     case Left(ExpandParentMarkerSingle) =>
-                        parentDef.valueType.parent.map(superParentDef =>
-                            val fieldsParsedData = typesDataPersistenceMap.get(superParentDef.name)
-                                .flatMap(p =>
-                                    if (!p.isInstanceOf[ObjectTypePersistenceData])
-                                        throw new ConsistencyException(s"Persistence data for type " +
-                                            s"${superParentDef.name} is not ObjectTypePersistenceData type!")
-                                    val superTypeParentRelation = getParentPersistenceDataOrDefault(
-                                        p.asInstanceOf[ObjectTypePersistenceData].parentRelation)
-                                    superTypeParentRelation.toOption
-                                )
-                                .getOrElse(ReferenceValuePersistenceData(None))
-                            ReferenceValuePersistenceDataFinal(
-                                colName(fieldsParsedData.columnName.getOrElse(columnNameSuperParentPrefix +
-                                    columnNameFromFieldName(getTypeSimpleName(superParentDef.name)))),
-                                tableReferenceFactory.createForType(superParentDef.name), false
-                            ))
+                        SimpleObjectParendData(
+                            parentDef.valueType.parent.map(superParentDef =>
+                                val fieldsParsedData = typesDataPersistenceMap.get(superParentDef.name)
+                                    .flatMap(p =>
+                                        if (!p.isInstanceOf[ObjectTypePersistenceData])
+                                            throw new ConsistencyException(s"Persistence data for type " +
+                                                s"${superParentDef.name} is not ObjectTypePersistenceData type!")
+                                        val superTypeParentRelation = getParentPersistenceDataOrDefault(
+                                            p.asInstanceOf[ObjectTypePersistenceData].parentRelation)
+                                        superTypeParentRelation.toOption
+                                    )
+                                    .getOrElse(ReferenceValuePersistenceData(None))
+                                ReferenceValuePersistenceDataFinal(
+                                    colName(fieldsParsedData.columnName.getOrElse(columnNameSuperParentPrefix +
+                                        columnNameFromFieldName(getTypeSimpleName(superParentDef.name)))),
+                                    tableReferenceFactory.createForType(superParentDef.name), false
+                                )),
+                            copyParentFieldsPersitenceData(fieldsPrefix, parentDef, false)
+                        )
                     case Left(ExpandParentMarkerTotal) =>
-                        None
-                    case _ =>
-                        None
+                        SimpleObjectParendData(None, copyParentFieldsPersitenceData(fieldsPrefix, parentDef, true))
+                    case Left(expandMarker) =>
+                        throw new NotDefinedOperationException(s"Undefined parent expander marker $expandMarker!")
             case None =>
                 parentPersistenceData match
                     case Right(ReferenceValuePersistenceData(columnName)) =>
                         if (columnName.isDefined)
                             throw new ConsistencyException(s"Type $typeName has no super type, but there is reference " +
                                 s"column defined!")
-                        None
+                        SimpleObjectParendData(None, Map.empty)
                     case _ =>
-                        None
+                        SimpleObjectParendData(None, Map.empty)
+
+    private def parentPersitanceDataToFinal(
+        parentType: Option[ObjectEntitySuperType],
+        parentPersistenceData: Option[ExpandParentMarker],
+        fieldsPrefix: String, 
+    ): SimpleObjectParendData[ParentTableReferenceFinal] =
+        parentType match
+            case Some(parentDef) =>
+                parentPersistenceData match
+                    case None =>
+                        SimpleObjectParendData(
+                            Some(ParentTableReferenceFinal(tableReferenceFactory.createForType(parentDef.name))),
+                            Map.empty
+                        )
+                    case Some(ExpandParentMarkerSingle) =>
+                        SimpleObjectParendData(
+                            parentDef.valueType.parent.map(superParentDef =>
+                                ParentTableReferenceFinal(tableReferenceFactory.createForType(superParentDef.name))),
+                                copyParentFieldsPersitenceData(fieldsPrefix, parentDef, false)
+                        )
+                    case Some(ExpandParentMarkerTotal) =>
+                        SimpleObjectParendData(
+                            None,
+                            copyParentFieldsPersitenceData(fieldsPrefix, parentDef, true)
+                        )
+                    case Some(expandMarker) =>
+                        throw new NotDefinedOperationException(s"Undefined parent expander marker $expandMarker!")
+            case None =>
+                SimpleObjectParendData(
+                    None, Map.empty
+                )
 
 
     private def checkRootPrimitiveAndPersistenceTypeConsistency(fieldType: RootPrimitiveTypeDefinition,
@@ -912,11 +942,16 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                                              prefix: String,
                                              typeName: String): SimpleObjectValuePersistenceDataFinal =
 
-        val fieldsAndParentPersistenceData = mergeFieldsAndParentPersistenceData(parent, fields, parentPersistenceData,
-            subFieldsPersistenceDataMap, ColumnsNamesChecker(), typeName,
-                prefix + columnNameFromFieldName(fieldName) + nameSubnamesDelimiter)
+        val prefix_ = prefix + columnNameFromFieldName(fieldName) + nameSubnamesDelimiter
+        val parentPersistenceDataFinal = parentPersitanceDataToFinal(parent, parentPersistenceData, typeName, prefix_)
+        
+        val columnsNamesChecker = ColumnsNamesChecker()
+        parentPersistenceDataFinal.parent.foreach(p => columnsNamesChecker.addAndCheckUsage(p.columnName, "Parent column"))
+        
+        val allFields = mergeFieldsAndParentFields(fields, subFieldsPersistenceDataMap, 
+            parentPersistenceDataFinal.fields, columnsNamesChecker, prefix_, typeName)
 
-        SimpleObjectValuePersistenceDataFinal(fieldsAndParentPersistenceData)
+        SimpleObjectValuePersistenceDataFinal(parentPersistenceDataFinal.parent, allFields)
 
 
 

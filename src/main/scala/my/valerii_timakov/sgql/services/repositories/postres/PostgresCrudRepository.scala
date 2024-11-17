@@ -348,9 +348,10 @@ class PostgresCrudRepository(
             s"fk_${tableName}_${columnName}_$refTableName"
 
 
-        def getObjectRefData(tableName: String,
-                             fields: Map[String, ValuePersistenceDataFinal],
-                             parent: Option[ReferenceValuePersistenceDataFinal],
+        def getObjectRefData(
+            tableName: String,
+            fields: Map[String, ValuePersistenceDataFinal],
+            parent: Option[ReferenceValuePersistenceDataFinal],
         ): List[RefData] =
             val parentRef = parent.flatMap(parentTableRef =>
                 parentTableRef.refTableData.data.map(RefData(tableName, parentTableRef.columnName, _))
@@ -432,15 +433,10 @@ class PostgresCrudRepository(
             """).execute.apply()
 
         def createObjectValueTable(
-                                      tableName: String,
-                                      idColumn: PrimitiveValuePersistenceDataFinal,
-                                      fields: Map[String, ValuePersistenceDataFinal],
-                                      parent: Option[ReferenceValuePersistenceDataFinal],
-                                  ): Unit =
-            val parentSql = parent.map( parentTableRef =>
-                s"${esc(parentTableRef.columnName)} ${getFieldType(parentTableRef.refTableData.idColumnType)} NOT NULL, "
-            ).getOrElse("")
-
+            tableName: String,
+            idColumn: PrimitiveValuePersistenceDataFinal,
+            fields: Map[String, ValuePersistenceDataFinal],
+        ): Unit =
             val fieldsSqlData = getFieldsColumsData(fields, None)
             val fieldsSql = fieldsSqlData.map { case (columnName, columnType, fieldName, isNullable) =>
                 s"${esc(columnName)} $columnType ${if isNullable then "" else "NOT NULL"}"
@@ -449,17 +445,13 @@ class PostgresCrudRepository(
             SQL(s"""
                 CREATE TABLE ${esc(tableName)} (
                     ${esc(idColumn.columnName)} ${getIdFieldType(idColumn.columnType)} NOT NULL,
-                    $parentSql $fieldsSql,
+                    $fieldsSql,
                     $archivedEntityColumnName ${getIdFieldType(BooleanFieldType)} NOT NULL DEFAULT FALSE,
                     CONSTRAINT ${esc(tableName + primaryKeySuffix)} PRIMARY KEY (${esc(idColumn.columnName)})
                 )
             """).execute.apply()
             val tableId = savedTablesIdsMap(tableName)
             dbUtils.addTableColumn(tableId, idColumn.columnName, getIdFieldType(idColumn.columnType), "id")
-            parent.foreach( parentTableRef =>
-                dbUtils.addTableColumn(tableId, parentTableRef.columnName,
-                    getIdFieldType(parentTableRef.refTableData.idColumnType), "parent")
-            )
             fieldsSqlData.foreach { case (columnName, columnType, fieldName, _) =>
                 dbUtils.addTableColumn(tableId, columnName, columnType, fieldName)
             }
@@ -560,12 +552,12 @@ class PostgresCrudRepository(
         def checkAndFixExistingSimpleObjectValueTable(
             tableName: String,
             fields: Map[String, ValuePersistenceDataFinal],
-            parent: Option[ReferenceValuePersistenceDataFinal],
+            parentIndirect: Option[ReferenceValuePersistenceDataFinal],
             existingColumns: Map[String, ColumnData],
             fieldsPrefixOpt: Option[String],
         ): Unit =
             val fieldsPrefix = fieldsPrefixOpt.getOrElse("")
-            parent.foreach(parentTableRef =>
+            parentIndirect.foreach(parentTableRef =>
                 checkAndFixExistingTableValueColumn(tableName, parentTableRef.columnName, 
                     parentTableRef.refTableData.idColumnType, false, existingColumns, Some(fieldsPrefix + "parent"))
             )
@@ -589,13 +581,12 @@ class PostgresCrudRepository(
             tableName: String,
             idColumn: PrimitiveValuePersistenceDataFinal,
             fields: Map[String, ValuePersistenceDataFinal],
-            parent: Option[ReferenceValuePersistenceDataFinal],
             existingColumnsOption: Option[Map[String, ColumnData]] = None, 
         ): Unit =
             val existingColumns: Map[String, ColumnData] = existingColumnsOption.getOrElse( 
                 metadataUtils.getTableColumnsDataMap(tableName) )
             checkAndFixExistingTableIdColumn(tableName, idColumn, existingColumns, false)
-            checkAndFixExistingSimpleObjectValueTable(tableName, fields, parent, existingColumns, None)
+            checkAndFixExistingSimpleObjectValueTable(tableName, fields, None, existingColumns, None)
 
         def getFieldsColumsData(
             fields: Map[String, ValuePersistenceDataFinal], 
@@ -646,9 +637,11 @@ class PostgresCrudRepository(
                     }
                 case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
                     if !existingTableNames.contains(tableName)
-                        then createObjectValueTable(tableName, idColumn, fields, parent)
-                        else checkAndFixExistingObjectValueTable(tableName, idColumn, fields, parent)
-                    getObjectRefData(tableName, fields, parent)
+                        then createObjectValueTable(tableName, idColumn, fields)
+                        else checkAndFixExistingObjectValueTable(tableName, idColumn, fields)
+                    getObjectRefData(tableName, fields, parent.map(refTable => ReferenceValuePersistenceDataFinal(
+                        idColumn.columnName, refTable.refTableWrapperCopy, false)))
+                    
             }
 
         val refDataByTable = refData.groupBy(_.tableName)

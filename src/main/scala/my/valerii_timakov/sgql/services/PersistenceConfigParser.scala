@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.services
 
 import scala.collection.immutable.LazyList
 
-class ExpandParentMarker
+sealed class ExpandParentMarker
 
 object ExpandParentMarkerSingle extends ExpandParentMarker
 
@@ -122,7 +122,7 @@ class ObjectTypePersistenceData(
     val tableName: Option[String],
     val idColumn: Option[PrimitiveValuePersistenceData],
     val fields: Map[String, ValuePersistenceData],
-    val parentRelation: Option[Either[ExpandParentMarker, ReferenceValuePersistenceData]],
+    val parentRelation: Option[ExpandParentMarker],
 ) extends TypePersistenceData
 
 type RootPackagePersistenceData = RootPackageData[AbstractTypePersistenceData]
@@ -248,20 +248,14 @@ object PersistenceConfigParser extends DefinitionsParser[RootPackagePersistenceD
         }, "tableWithIdData")
     
     private def objectType: Parser[ObjectTypePersistenceData] = log(
-        itemName ~ opt(tableWithIdData) ~ opt(expandParentSingle | expandParentTotal | 
-            //TODO check why ":"
-            (":" ~> inheritenceReferenceData) ) ~ fieldsData
+        itemName ~ opt(tableWithIdData) ~ opt(expandParentSingle | expandParentTotal) ~ fieldsData
         ^^ {
             case typeName ~ tableData ~ inheritanceDataOpt ~ fields => 
                 val fieldsMap = fields.map(f => f.fieldName -> f.columnData).toMap
-                val parentRelation = inheritanceDataOpt.map {
-                    case refData: ReferenceValuePersistenceData => Right(refData)
-                    case expandParentMarker: ExpandParentMarker => Left(expandParentMarker)
-                }
                 tableData match 
                     case Some((tableName, idColumn)) => new ObjectTypePersistenceData(typeName, Some(tableName), 
-                        idColumn, fieldsMap, parentRelation)
-                    case None => new ObjectTypePersistenceData(typeName, None, None, fieldsMap, parentRelation)
+                        idColumn, fieldsMap, inheritanceDataOpt)
+                    case None => new ObjectTypePersistenceData(typeName, None, None, fieldsMap, inheritanceDataOpt)
         },
         "objectType")
     private def anyItem: Parser[AbstractTypePersistenceData] = 
