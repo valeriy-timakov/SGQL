@@ -2,34 +2,34 @@ package my.valerii_timakov.sgql.entity.json
 
 import akka.parboiled2.util.Base64
 import my.valerii_timakov.sgql.entity
-import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayType, BinaryType, BooleanType, DateTimeType, DateType, DoubleType, EntityFieldType, EntityId, FloatType, IntId, IntType, LongId, LongType, ObjectType, StringId, StringType, TimeType, UUIDId}
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, AbstractNamedEntityType, AbstractTypeDefinition, ArrayItemTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DoubleTypeDefinition, Entity, EntityIdTypeDefinition, EntityType, EntityTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinitions, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, NamedEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, PrimitiveFieldTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BinaryValue, BooleanValue, DateTimeValue, DateValue, DoubleValue, EntityValue, EntityId, FloatValue, IntId, IntValue, LongId, LongValue, ObjectValue, StringId, StringValue, TimeValue, UUIDId, Entity}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, AbstractTypeDefinition, ArrayItemTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntityType, EntityTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinitions, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, NamedEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, PrimitiveTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition}
 import spray.json.*
 import spray.json.DefaultJsonProtocol.*
 
 import java.time.{LocalDate, LocalDateTime, LocalTime}
 import java.util.UUID
 
-implicit object DateTypeFormat extends RootJsonFormat[DateType]:
-    def write(c: DateType): JsString = JsString(c.value.toString)
-    def read(value: JsValue): DateType = value match {
-        case JsString(str) => DateType(LocalDate.parse(str))
+implicit object DateTypeFormat extends RootJsonFormat[DateValue]:
+    def write(c: DateValue): JsString = JsString(c.value.toString)
+    def read(value: JsValue): DateValue = value match {
+        case JsString(str) => DateValue(LocalDate.parse(str))
         case _ => deserializationError("Date expected")
     }
 
 
-implicit object DateTimeTypeFormat extends RootJsonFormat[DateTimeType]:
-    def write(c: DateTimeType): JsString = JsString(c.value.toString)
-    def read(value: JsValue): DateTimeType = value match {
-        case JsString(str) => DateTimeType(LocalTime.parse(str))
+implicit object DateTimeTypeFormat extends RootJsonFormat[DateTimeValue]:
+    def write(c: DateTimeValue): JsString = JsString(c.value.toString)
+    def read(value: JsValue): DateTimeValue = value match {
+        case JsString(str) => DateTimeValue(LocalTime.parse(str))
         case _ => deserializationError("DateTime expected")
     }
 
 
-implicit object TimeTypeFormat extends RootJsonFormat[TimeType]:
-    def write(c: TimeType): JsString = JsString(c.value.toString)
-    def read(value: JsValue): TimeType = value match {
-        case JsString(str) => TimeType(LocalDateTime.parse(str))
+implicit object TimeTypeFormat extends RootJsonFormat[TimeValue]:
+    def write(c: TimeValue): JsString = JsString(c.value.toString)
+    def read(value: JsValue): TimeValue = value match {
+        case JsString(str) => TimeValue(LocalDateTime.parse(str))
         case _ => deserializationError("Time expected")
     }
 
@@ -66,36 +66,36 @@ implicit object UUIDIdTypeFormat extends RootJsonFormat[UUIDId]:
     }
 
 
-def field2json(field: EntityFieldType): JsValue = field match 
-    case StringType(value) => JsString(value)
-    case IntType(value) => JsNumber(value)
-    case LongType(value) => JsNumber(value)
-    case FloatType(value) => JsNumber(value)
-    case DoubleType(value) => JsNumber(value)
-    case BooleanType(value) => JsBoolean(value)
-    case DateType(value) => JsString(value.toString)
-    case DateTimeType(value) => JsString(value.toString)
-    case TimeType(value) => JsString(value.toString)
-    case BinaryType(value) => JsString(Base64.rfc2045().encodeToString(value, false))
-    case ArrayType(value, _) => JsArray(value.map(field2json).toVector)
-    case ObjectType(value, _) => JsObject(value.map((fieldName, fieldValue) => fieldName -> field2json(fieldValue)))
+def field2json(field: EntityValue): JsValue = field match 
+    case StringValue(value) => JsString(value)
+    case IntValue(value) => JsNumber(value)
+    case LongValue(value) => JsNumber(value)
+    case FloatValue(value) => JsNumber(value)
+    case DoubleValue(value) => JsNumber(value)
+    case BooleanValue(value) => JsBoolean(value)
+    case DateValue(value) => JsString(value.toString)
+    case DateTimeValue(value) => JsString(value.toString)
+    case TimeValue(value) => JsString(value.toString)
+    case BinaryValue(value) => JsString(Base64.rfc2045().encodeToString(value, false))
+    case ArrayValue(value, _) => JsArray(value.map(field2json).toVector)
+    case ObjectValue(value, _) => JsObject(value.map((fieldName, fieldValue) => fieldName -> field2json(fieldValue)))
     case _ => serializationError("Unknown EntityFieldType")
 
 
-def json2field(json: JsValue): EntityFieldType = json match 
-    case JsString(value) => StringType(value)
+def json2field(json: JsValue): EntityValue = json match 
+    case JsString(value) => StringValue(value)
     case JsNumber(value) =>
-        if (value.isValidLong) LongType(value.toLong)
-        else DoubleType(value.toDouble)
-    case JsBoolean(value) => BooleanType(value)
+        if (value.isValidLong) LongValue(value.toLong)
+        else DoubleValue(value.toDouble)
+    case JsBoolean(value) => BooleanValue(value)
     case JsArray(value) => ??? //ArrayType(value.map(json2field).toList)
     case JsObject(value) => ??? //ObjectType(value.map((fieldName, fieldValue) => fieldName -> json2field(fieldValue)))
     case _ => deserializationError("Unknown EntityFieldType")
 
 
-implicit object EntityFieldTypeFormat extends RootJsonFormat[EntityFieldType]:
-    def write(fieldType: EntityFieldType): JsValue = field2json(fieldType)
-    def read(json: JsValue): EntityFieldType = json2field(json)
+implicit object EntityFieldTypeFormat extends RootJsonFormat[EntityValue]:
+    def write(fieldType: EntityValue): JsValue = field2json(fieldType)
+    def read(json: JsValue): EntityValue = json2field(json)
 
 
 implicit object EntityIdFormat extends RootJsonFormat[EntityId]:
@@ -116,7 +116,7 @@ implicit object EntityFormat extends RootJsonFormat[Entity]:
         "value" -> entity.value.toJson,
     )    
     def read(json: JsValue): Entity = json.asJsObject.getFields("id", "fields") match 
-        case Seq(id, fields) => Entity(id.convertTo[EntityId], fields.convertTo[EntityFieldType])
+        case Seq(id, fields) => Entity(id.convertTo[EntityId], fields.convertTo[EntityValue])
         case _ => deserializationError("Entity expected")
     
 

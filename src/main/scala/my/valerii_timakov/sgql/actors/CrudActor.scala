@@ -3,8 +3,8 @@ package my.valerii_timakov.sgql.actors
 import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import my.valerii_timakov.sgql.entity.{AbstractTypeError, Error, TypeNotFountError}
-import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayType, BinaryType, EntityFieldType, EntityId}
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, AbstractNamedEntityType, EntityType, NamedEntitySuperType, Entity}
+import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BinaryValue, EntityValue, EntityId, Entity}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, EntityType, NamedEntitySuperType}
 import my.valerii_timakov.sgql.entity.read_modiriers.{SearchCondition, GetFieldsDescriptor}
 import my.valerii_timakov.sgql.services.{CrudRepository, TypesDefinitionProvider}
 
@@ -106,10 +106,10 @@ object CrudActor:
         Behaviors.setup(context => new CrudActor(context, repository, typesDefinitionProvider))
     sealed trait CrudMessage extends MainActor.Message
 
-    final case class CreateMessage(entityTypeName: String, data: EntityFieldType, 
+    final case class CreateMessage(entityTypeName: String, data: EntityValue,
                                    replyTo: ActorRef[Either[Error, Try[Entity]]]) extends CrudMessage
 
-    final case class UpdateMessage(entityTypeName: String, id: String, data: EntityFieldType, 
+    final case class UpdateMessage(entityTypeName: String, id: String, data: EntityValue,
                                    replyTo: ActorRef[Either[Error, Try[Option[Unit]]]]) extends CrudMessage
 
     final case class DeleteMessage(entityTypeName: String, id: String, 

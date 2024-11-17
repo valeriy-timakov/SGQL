@@ -4,14 +4,13 @@ import akka.actor.typed.{ActorRef, ActorSystem}
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport.*
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.model.headers.Language
-import akka.http.scaladsl.server.Directives.{entity, *}
+import akka.http.scaladsl.server.Directives.*
 import akka.http.scaladsl.server.{Directives, Route}
 import akka.util.Timeout
 import my.valerii_timakov.sgql.actors.CrudActor
 import my.valerii_timakov.sgql.actors.CrudActor.*
 import my.valerii_timakov.sgql.entity.Error
-import my.valerii_timakov.sgql.entity.domain.type_values.EntityFieldType
-import my.valerii_timakov.sgql.entity.domain.type_definitions.Entity
+import my.valerii_timakov.sgql.entity.domain.type_values.{EntityValue, Entity}
 import my.valerii_timakov.sgql.services.MessageSource
 
 import scala.concurrent.Future
@@ -48,7 +47,7 @@ class CrudHttpRouter(
                     }
                 } ~
                     put {
-                        entity(as [EntityFieldType]) { requestEntity =>
+                        entity(as [EntityValue]) { requestEntity =>
                             val result: Future[Either[Error, Try[Option[Unit]]]] =
                                 appActor ? (UpdateMessage(objectType, objectId, requestEntity, _))
                             onSuccess(result) {
@@ -98,7 +97,7 @@ class CrudHttpRouter(
             } ~
             pathEnd {
                 post {
-                    entity(as [EntityFieldType]) { requestEntity =>
+                    entity(as [EntityValue]) { requestEntity =>
                         val result: Future[Either[Error, Try[Entity]]] =
                             appActor ? (CreateMessage(objectType, requestEntity, _))
                         onSuccess(result) {

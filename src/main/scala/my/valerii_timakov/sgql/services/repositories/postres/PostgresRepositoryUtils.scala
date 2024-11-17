@@ -1,9 +1,6 @@
 package my.valerii_timakov.sgql.services.repositories.postres
 
 import com.typesafe.config.Config
-import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayType, BinaryType, EntityFieldType, EntityId}
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, AbstractNamedEntityType, EntityType, NamedEntitySuperType, Entity}
-import my.valerii_timakov.sgql.exceptions.{DbTableMigrationException, PersistenceRepositoryTypeNotFoundException}
 import my.valerii_timakov.sgql.services.*
 import java.sql.{DatabaseMetaData, ResultSet}
 import java.time.LocalDateTime

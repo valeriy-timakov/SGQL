@@ -1,8 +1,8 @@
 package my.valerii_timakov.sgql.services.repositories.postres
 
 import com.typesafe.config.Config
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, Entity, EntityType}
-import my.valerii_timakov.sgql.entity.domain.type_values.{EntityFieldType, EntityId}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, EntityType}
+import my.valerii_timakov.sgql.entity.domain.type_values.{EntityValue, Entity, EntityId}
 import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, DbTableMigrationException, NotInitializedException}
 import my.valerii_timakov.sgql.services.*
@@ -29,7 +29,7 @@ class PostgresCrudRepository(
         if typesDefinitionsProviderContainer.isEmpty then throw NotInitializedException("PostgresCrudRepository", "typesDefinitionsProvider")
         typesDefinitionsProviderContainer.get
 
-    override def create(entityType: EntityType[?], data: EntityFieldType): Try[Entity] = ???
+    override def create(entityType: EntityType[?], data: EntityValue): Try[Entity] = ???
 //        val persistenceData = typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
 //            throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
 //        persistenceData match
@@ -167,7 +167,7 @@ class PostgresCrudRepository(
 //                
 //    }
     
-    private def getAsConcreteValue[T <: EntityFieldType](entityValue: EntityFieldType, errorMessage: String): T =
+    private def getAsConcreteValue[T <: EntityValue](entityValue: EntityValue, errorMessage: String): T =
         entityValue match
             case value: T => value
             case _ => throw new ConsistencyException(errorMessage)
