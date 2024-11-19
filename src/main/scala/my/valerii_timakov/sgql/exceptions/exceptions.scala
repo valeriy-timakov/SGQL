@@ -31,4 +31,6 @@ class PersistenceRepositoryTypeNotFoundException extends RuntimeException(s"Repo
 
 class NotDefinedOperationException(msg: String) extends Exception(msg)
 
+class WrongStateExcetion(msg: String) extends Exception(msg)
+
 final class NotInitializedException(serviceName: String, depencyName: String) extends Exception(s"Depency $depencyName of $serviceName not initialized!")

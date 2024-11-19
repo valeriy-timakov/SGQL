@@ -4,7 +4,7 @@ import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import my.valerii_timakov.sgql.entity.{AbstractTypeError, Error, TypeNotFountError}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BinaryValue, Entity, EntityId, EntityValue, FilledEntityValue}
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, EntityType, NamedEntitySuperType}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, EntityType, EntitySuperType}
 import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.services.{CrudRepository, TypesDefinitionProvider}
 
@@ -29,7 +29,7 @@ class CrudActor(
             case UpdateMessage(entityTypeName, idStr, data, replyTo) =>
                 replyTo ! getType(entityTypeName) { entityType =>
                     parseId(entityType, idStr) { id =>
-                        Right(repository.update(entityType, Entity(id, data)))
+                        Right(repository.update(entityType, Entity(id, data.)))
                     }
                 }
                 this
@@ -65,7 +65,7 @@ class CrudActor(
         typesDefinitionProvider.getType(entityTypeName) match
             case None =>
                 Left(TypeNotFountError(entityTypeName))
-            case Some(_: NamedEntitySuperType) =>
+            case Some(_: EntitySuperType) =>
                 Left(AbstractTypeError(entityTypeName))
             case Some(entityType: EntityType[?]) =>
                 typeMapper(entityType)

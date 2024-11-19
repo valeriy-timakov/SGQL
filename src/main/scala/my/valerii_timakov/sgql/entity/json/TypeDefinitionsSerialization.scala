@@ -1,11 +1,11 @@
 package my.valerii_timakov.sgql.entity.json
 
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{EntityTypeDefinition, IntIdTypeDefinition, LongIdTypeDefinition, NamedEntitySuperType, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, EntityType, EntityIdTypeDefinition, CustomPrimitiveTypeDefinition, ArrayTypeDefinition, ArrayEntitySuperType, AbstractTypeDefinition, AbstractNamedEntityType}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{EntityTypeDefinition, IntIdTypeDefinition, LongIdTypeDefinition, EntitySuperType, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, EntityType, EntityIdTypeDefinition, CustomPrimitiveTypeDefinition, ArrayTypeDefinition, ArrayEntitySuperType, AbstractTypeDefinition, AbstractEntityType}
 import spray.json.{JsArray, JsNull, JsObject, JsString, JsValue, RootJsonFormat, deserializationError, enrichAny}
 
 
-implicit val entityTypeFormat: RootJsonFormat[AbstractNamedEntityType] = new RootJsonFormat[AbstractNamedEntityType]:
-    override def write(typeDef: AbstractNamedEntityType): JsValue =
+implicit val entityTypeFormat: RootJsonFormat[AbstractEntityType] = new RootJsonFormat[AbstractEntityType]:
+    override def write(typeDef: AbstractEntityType): JsValue =
         val kind = typeDef match
             case value: EntityType[?] => "EntityType"
             case value: ArrayEntitySuperType => "ArrayEntitySuperType"
@@ -27,10 +27,10 @@ implicit val entityTypeFormat: RootJsonFormat[AbstractNamedEntityType] = new Roo
             case _ => deserializationError("AbstractNamedEntityType expected!")*/
 
 
-implicit val entityTypeListFormat: RootJsonFormat[Seq[AbstractNamedEntityType]] = new RootJsonFormat[Seq[AbstractNamedEntityType]]:
-    def write(obj: Seq[AbstractNamedEntityType]): JsValue = JsArray(obj.map(_.toJson).toVector)
-    def read(json: JsValue): Seq[AbstractNamedEntityType] = json match
-        case JsArray(array) => array.map(_.convertTo[AbstractNamedEntityType]).toList
+implicit val entityTypeListFormat: RootJsonFormat[Seq[AbstractEntityType]] = new RootJsonFormat[Seq[AbstractEntityType]]:
+    def write(obj: Seq[AbstractEntityType]): JsValue = JsArray(obj.map(_.toJson).toVector)
+    def read(json: JsValue): Seq[AbstractEntityType] = json match
+        case JsArray(array) => array.map(_.convertTo[AbstractEntityType]).toList
         case _ => deserializationError("List[Entity] expected!")
 
 implicit val entityTypeDefinitionFormat: RootJsonFormat[EntityTypeDefinition] = new RootJsonFormat[EntityTypeDefinition]:
@@ -98,11 +98,6 @@ implicit val entityFieldTypeDefinitionFormat: RootJsonFormat[AbstractTypeDefinit
             "type" -> JsString("SimpleObject"),
             "parent" -> parent.map(p => JsString(p.name)).getOrElse(JsNull),
             "fields" -> JsObject(fields.map((fieldName, fieldType) => fieldName -> write(fieldType.valueType))))
-
-    //    private def writeEntityType(entityDef: AbstractEntityType): JsValue = entityDef match
-    //        case namedEntityDef: AbstractNamedEntityType => JsString(namedEntityDef.name)
-    //        case FieldType(valueType) => valueType.asInstanceOf[AbstractTypeDefinition].toJson
-
 
 
     //    def readPrimitiveType(name: String): Option[PrimitiveFieldTypeDefinition] = name match

@@ -1,7 +1,7 @@
 package my.valerii_timakov.sgql.services.repositories.postres
 
 import com.typesafe.config.Config
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, EntityType}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, EntityType}
 import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId, EntityValue, FilledEntityValue}
 import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, DbTableMigrationException, NotInitializedException}
@@ -330,7 +330,7 @@ class PostgresCrudRepository(
     private val archivedColumnNameSuffix = persistenceConf.getString("archived-column-name-suffix")
     private val archivedEntityColumnName = persistenceConf.getString("archived-entity-column")
 
-    private var typesPersistenceData: Map[AbstractNamedEntityType, TypePersistenceData] = Map()
+    private var typesPersistenceData: Map[AbstractEntityType, TypePersistenceData] = Map()
 
     private class RefData(
         val tableName: String,

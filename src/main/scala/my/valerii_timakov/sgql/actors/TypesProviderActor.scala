@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.actors
 
 import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, EntityType}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, EntityType}
 import my.valerii_timakov.sgql.services.{TypePersistenceDataFinal, TypesDefinitionProvider}
 
 import scala.util.Try
@@ -33,6 +33,6 @@ object TypesProviderActor:
     def apply(typesDefinitionProvider: TypesDefinitionProvider): Behavior[Command] =
         Behaviors.setup(context => new TypesProviderActor(context, typesDefinitionProvider))
     sealed trait Command extends MainActor.Message
-    final case class Get(name: String, replyTo: ActorRef[Option[AbstractNamedEntityType]]) extends Command
-    final case class GetAll(replyTo: ActorRef[Seq[AbstractNamedEntityType]]) extends Command
+    final case class Get(name: String, replyTo: ActorRef[Option[AbstractEntityType]]) extends Command
+    final case class GetAll(replyTo: ActorRef[Seq[AbstractEntityType]]) extends Command
     final case class GetAllPersist(replyTo: ActorRef[Map[String, TypePersistenceDataFinal]]) extends Command

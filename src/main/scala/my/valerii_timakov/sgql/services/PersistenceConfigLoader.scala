@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.services
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.TypesDefinitionsParseError
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractNamedEntityType, ArrayEntitySuperType, ArrayItemTypeDefinition, ArrayItemValueTypeDefinitions, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntityType, FieldTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, PrimitiveTypeDefinition, RootPrimitiveTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, ArrayEntitySuperType, ArrayItemTypeDefinition, ItemValueTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntityType, FieldTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, PrimitiveTypeDefinition, RootPrimitiveTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, NoTypeFound, NotDefinedOperationException, TypesLoadExceptionException}
 
 import scala.annotation.tailrec
@@ -138,7 +138,7 @@ private case class FieldsAndParentPersistenceData(
 
 trait PersistenceConfigLoader:
     def load(dataResourcePath: String,
-             typesDefinitionsMap: Map[String, AbstractNamedEntityType]): Map[String, TypePersistenceDataFinal]
+             typesDefinitionsMap: Map[String, AbstractEntityType]): Map[String, TypePersistenceDataFinal]
     def getTypeToTableMap: Map[String, String]
 
 
@@ -259,7 +259,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
 
     override def load(
         dataResourcePath: String,
-        typesDefinitionsMap: Map[String, AbstractNamedEntityType]
+        typesDefinitionsMap: Map[String, AbstractEntityType]
     ): Map[String, TypePersistenceDataFinal] =
         val tdSource = Source.fromResource (dataResourcePath)
         PersistenceConfigParser.parse(StreamReader( tdSource.reader() )) match
@@ -280,8 +280,8 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
     private case class TypeNameData(name: String, subNames: List[String])
 
     private def mapTypeNamesToShortestUniqueNames(
-        typesDefinitionsMap: Map[String, AbstractNamedEntityType],
-        persistenceDataMap: Map[String, AbstractTypePersistenceData]
+                                                     typesDefinitionsMap: Map[String, AbstractEntityType],
+                                                     persistenceDataMap: Map[String, AbstractTypePersistenceData]
     ): Map[String, String] =
         val originalNames = typesDefinitionsMap.keySet
         val resMap = mutable.Map[String, String]()
@@ -443,7 +443,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
             pos -= 1
         None
 
-    private def mergeTypePersistenceData(typeDef: AbstractNamedEntityType,
+    private def mergeTypePersistenceData(typeDef: AbstractEntityType,
                                          parsed: Option[AbstractTypePersistenceData]): TypePersistenceDataFinal =
         typeDef match
             case EntityType(typeName, td: ObjectTypeDefinition) => mergeObjectTypePersistenceData(typeName, td, parsed)
@@ -835,7 +835,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
             case _ => // do nothing
 
     private def checkTypeReferencePersistenceData(persistData: ValuePersistenceData,
-                                                  referencedType: AbstractNamedEntityType,
+                                                  referencedType: AbstractEntityType,
                                                   itemDescriptionProvider: () => String): Unit =
         referencedType match
             case EntityType(_, valueType: PrimitiveTypeDefinition) =>
@@ -921,7 +921,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                 throw new ConsistencyException(s"Type definition is not found! ${fieldType.valueType}")
 
     private def toArrayItemValuePersistenceDataFinal(persistenceData: ArrayValuePersistenceData,
-                                                     itemType: ArrayItemValueTypeDefinitions,
+                                                     itemType: ItemValueTypeDefinition,
                                                      typeName: String
                                                     ): PrimitiveValuePersistenceDataFinal | ReferenceValuePersistenceDataFinal =
         itemType match
