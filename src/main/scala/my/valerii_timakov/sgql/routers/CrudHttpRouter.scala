@@ -10,8 +10,9 @@ import akka.util.Timeout
 import my.valerii_timakov.sgql.actors.CrudActor
 import my.valerii_timakov.sgql.actors.CrudActor.*
 import my.valerii_timakov.sgql.entity.Error
-import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityValue, FilledEntityValue}
+import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityValue}
 import my.valerii_timakov.sgql.services.MessageSource
+import spray.json.JsValue
 
 import scala.concurrent.Future
 import scala.concurrent.duration.*
@@ -32,7 +33,7 @@ class CrudHttpRouter(
             path(Segment) { objectId =>
                 get {
                     parameterMap { params =>
-                        val result: Future[Either[Error, Try[Option[Entity]]]] =
+                        val result: Future[Either[Error, Try[Option[Entity[?, ?, ?]]]]] =
                             appActor ? (GetMessage(objectType, objectId, params.get("fields"), _))
                         onSuccess(result) {
                             case Left(error) =>
@@ -47,7 +48,7 @@ class CrudHttpRouter(
                     }
                 } ~
                     put {
-                        entity(as [FilledEntityValue]) { requestEntity =>
+                        entity(as [JsValue]) { requestEntity =>
                             val result: Future[Either[Error, Try[Option[Unit]]]] =
                                 appActor ? (UpdateMessage(objectType, objectId, requestEntity, _))
                             onSuccess(result) {
@@ -63,7 +64,7 @@ class CrudHttpRouter(
                         }
                     } ~
                     delete {
-                        extractRequestEntity { requestEntity =>
+                        extractRequestEntity { _ =>
                             val result: Future[Either[Error, Try[Option[Unit]]]] =
                                 appActor ? (DeleteMessage(objectType, objectId, _))
                             onSuccess(result) {
@@ -82,7 +83,7 @@ class CrudHttpRouter(
             path("search") {
                 get {
                     parameterMap { params =>
-                        val result: Future[Either[Error, Try[Seq[Entity]]]] =
+                        val result: Future[Either[Error, Try[Seq[Entity[?, ?, ?]]]]] =
                             appActor ? (SearchMessage(objectType, params.get("search"), params.get("fields"), _))
                         onSuccess(result) {
                             case Left(error) =>
@@ -97,8 +98,8 @@ class CrudHttpRouter(
             } ~
             pathEnd {
                 post {
-                    entity(as [FilledEntityValue]) { requestEntity =>
-                        val result: Future[Either[Error, Try[Entity]]] =
+                    entity(as [JsValue]) { requestEntity =>
+                        val result: Future[Either[Error, Try[Entity[?, ?, ?]]]] =
                             appActor ? (CreateMessage(objectType, requestEntity, _))
                         onSuccess(result) {
                             case Left(error) =>

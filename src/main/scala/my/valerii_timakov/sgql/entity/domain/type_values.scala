@@ -1,6 +1,6 @@
 package my.valerii_timakov.sgql.entity.domain.type_values
 
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, AbstractNamedType, AbstractType, AbstractTypeDefinition, ItemValueTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntityType, EntityTypeDefinition, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectTypeDefinition, RootPrimitiveType, RootPrimitiveTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectType, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, AbstractNamedType, AbstractType, AbstractTypeDefinition, ArrayTypeDefinition, BackReferenceType, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntitySuperType, EntityType, EntityTypeDefinition, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, ItemValueTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectTypeDefinition, ReferenceDefinition, ReferenceType, RootPrimitiveType, RootPrimitiveTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectType, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition, ValueType}
 import my.valerii_timakov.sgql.exceptions.ConsistencyException
 
 import java.time.{LocalDate, LocalDateTime, LocalTime}
@@ -38,13 +38,14 @@ final case class UUIDId(value: java.util.UUID) extends EntityId:
     override val typeDefinition: EntityIdTypeDefinition = UUIDIdTypeDefinition
 
 sealed abstract class EntityValue:
-    def definition: FieldValueTypeDefinition
+    def typeDefinition: ValueType
     
-sealed abstract class FilledEntityValue extends EntityValue
+sealed abstract class ItemValue extends EntityValue:
+    def typeDefinition: ItemValueTypeDefinition
 
-final case class EmptyValue(typeDefinition: AbstractNamedType) extends EntityValue
+final case class EmptyValue(typeDefinition: ValueType) extends EntityValue
 
-sealed abstract class PrimitiveValue[T] extends FilledEntityValue:
+sealed abstract class PrimitiveValue[T] extends ItemValue:
     def value: T
 sealed abstract class RootPrimitiveValue[T] extends PrimitiveValue[T]:
     override def typeDefinition: RootPrimitiveType
@@ -77,80 +78,76 @@ final case class DecimalValue(value: BigDecimal) extends RootPrimitiveValue[BigD
 final case class BinaryValue(value: Array[Byte]) extends RootPrimitiveValue[Array[Byte]]:
     def typeDefinition: RootPrimitiveType = RootPrimitiveType(BinaryTypeDefinition)
 
+final case class SimpleObjectValue(
+    value: Map[String, EntityValue],
+    typeDefinition: SimpleObjectType
+) extends EntityValue:
+    checkObjectTypeData(value, typeDefinition.valueType)
 
-trait Entity:
-    def typeDefinition: AbstractType
+final case class ReferenceValue(value: FilledEntityId, typeDefinition: ReferenceType) extends ItemValue:
+    checkReferenceId(value, typeDefinition.valueType)
+    protected var _refValue: Option[Entity[?, ?, ?]] = None
+
+    def refValue: Entity[?, ?, ?] = _refValue.getOrElse(throw new ConsistencyException("Reference value is not set!"))
+
+    def setRefValue(value: Entity[?, ?, ?]): Unit = _refValue =
+        checkReferenceValue(value, typeDefinition.valueType.referencedType, this.value)
+        Some(value)
+
+final case class BackReferenceValue(value: FilledEntityId, typeDefinition: BackReferenceType) extends EntityValue:
+    checkReferenceId(value, typeDefinition.valueType)
+    protected var _refValue: Option[Seq[Entity[?, ?, ?]]] = None
+
+    def refValue: Seq[Entity[?, ?, ?]] = _refValue.getOrElse(throw new ConsistencyException("Reference value is not set!"))
+
+    def setRefValue(value: Seq[Entity[?, ?, ?]]): Unit =
+        value.foreach(entity => checkReferenceValue(entity, typeDefinition.valueType.referencedType, this.value))
+        _refValue = Some(value)
+        
+type ValueTypes = RootPrimitiveValue[?] | Seq[ItemValue] | Map[String, EntityValue]
+
+trait Entity[VT <: Entity[VT, V, D], V <: ValueTypes, D <: EntityTypeDefinition[VT, V, D]]:
+    def typeDefinition: EntityType[VT , V, D]
     def id: EntityId
-    def value: FilledEntityValue
+    def value: V
     def cloneWithId(newId: EntityId): this.type 
 
 final case class CustomPrimitiveValue(
     id: EntityId,
     value: RootPrimitiveValue[?],
     typeDefinition: EntityType[CustomPrimitiveValue, RootPrimitiveValue[?], CustomPrimitiveTypeDefinition]
-) extends Entity:
+) extends Entity[CustomPrimitiveValue, RootPrimitiveValue[?], CustomPrimitiveTypeDefinition]:
     if typeDefinition.valueType.rootType != value.typeDefinition then throw new ConsistencyException(
         s"CustomPrimitiveTypeDefinition ${typeDefinition.valueType.rootType} does not match provided value type ${value.typeDefinition}!")
-//    def primitiveValue: T = value.value
     def cloneWithId(newId: EntityId): CustomPrimitiveValue = this.copy(id = newId)
-
-type ArrayItemValue = RootPrimitiveValue[?] | ReferenceValue
 
 final case class ArrayValue(
     id: EntityId,
-    value: Seq[ArrayItemValue],
-    typeDefinition: EntityType[ArrayValue, Seq[ArrayItemValue], ArrayTypeDefinition]
-) extends Entity:
-    private val acceptableItemsTypes = typeDefinition.valueType.elementTypes.map(_.valueType)
+    value: Seq[ItemValue],
+    typeDefinition: EntityType[ArrayValue, Seq[ItemValue], ArrayTypeDefinition]
+) extends Entity[ArrayValue, Seq[ItemValue], ArrayTypeDefinition]:
     def cloneWithId(newId: EntityId): ArrayValue = this.copy(id = newId)
-    value.foreach(item =>
-        val itemValueDef: ItemValueTypeDefinition = item.definition match
-            case arrDef: ItemValueTypeDefinition => arrDef
-            //impossible, but scala does not understand it
-            case _ => throw new ConsistencyException(s"Unexpected ArrayItemType definition! $item")
-        if acceptableItemsTypes.contains(itemValueDef)
-        then throw new ConsistencyException(s"Array item type ${item.definition} does not match provided " +
-            s"element type ${typeDefinition.valueType.elementTypes.head.valueType}!")
-    )
-
-type FieldValue = RootPrimitiveValue[?] | ReferenceValue | BackReferenceValue | SimpleObjectValue | EmptyValue
+    checkArrayDate(value, typeDefinition.valueType)
 
 final case class ObjectValue(
     id: EntityId,
-    value: Map[String, FieldValue],
-    typeDefinition: EntityType[ObjectValue, Map[String, FieldValue], ObjectTypeDefinition]
-) extends Entity:
+    value: Map[String, EntityValue],
+    typeDefinition: EntityType[ObjectValue, Map[String, EntityValue], ObjectTypeDefinition]
+) extends Entity[ObjectValue, Map[String, EntityValue], ObjectTypeDefinition]:
     checkObjectTypeData(value, typeDefinition.valueType)
     def cloneWithId(newId: EntityId): ObjectValue = this.copy(id = newId)
 
-
-final case class SimpleObjectValue(
-    value: Map[String, FieldValue],
-    valueType: SimpleObjectType
-) extends FilledEntityValue:
-    checkObjectTypeData(value, valueType.valueType)
-    val typeDefinition: SimpleObjectType = valueType
-
-final case class ReferenceValue(value: FilledEntityId, definition: TypeReferenceDefinition) extends FilledEntityValue:
-    checkReferenceId(value, definition)
-    protected var _refValue: Option[Entity] = None
-    def refValue: Entity = _refValue.getOrElse(throw new ConsistencyException("Reference value is not set!"))
-    def setRefValue(value: Entity): Unit = _refValue =
-        checkReferenceValue(value, definition.referencedType, this.value)
-        Some(value)
-
-final case class BackReferenceValue(value: FilledEntityId, definition: TypeBackReferenceDefinition) extends FilledEntityValue:
-    checkReferenceId(value, definition)
-    protected var _refValue: Option[Seq[Entity]] = None
-    def refValue: Seq[Entity] = _refValue.getOrElse(throw new ConsistencyException("Reference value is not set!"))
-    def setRefValue(value: Seq[Entity]): Unit =
-        value.foreach(entity => checkReferenceValue(entity, definition.referencedType, this.value))
-        _refValue = Some(value)
-
+private def checkArrayDate(value: Seq[ItemValue], definition: ArrayTypeDefinition): Unit =
+    val acceptableItemsTypes = definition.elementTypes.map(_.valueType)
+    value.foreach(item =>
+        if acceptableItemsTypes.contains(item.typeDefinition) then
+            throw new ConsistencyException(s"Array item type ${item.typeDefinition} does not match provided " +
+                s"element type ${definition.elementTypes.head.valueType}!")
+    )
 
 private def checkObjectTypeData(
-    value: Map[String, FieldValue],
-    definition: FieldsContainer
+    value: Map[String, EntityValue],
+    definition: FieldsContainer, 
 ): Unit =
     val allFieldsDefsMap = definition.allFields
     value.foreach((fieldName, fieldValue) =>
@@ -166,24 +163,24 @@ private def checkObjectTypeData(
 
 private def checkReferenceId(
     value: FilledEntityId,
-    definition: TypeReferenceDefinition | TypeBackReferenceDefinition
+    definition: ReferenceDefinition
 ): Unit =
     if value.typeDefinition != definition.idType then
         throw new ConsistencyException(s"Reference type ${value.typeDefinition} does not match provided " +
             s"type ${definition.idType}!")
 
-private def checkReferenceValue(entity: Entity, refTypeDef: AbstractEntityType, idValue: EntityId): Unit =
-    if entity.value.typeDefinition != refTypeDef.valueType then
-        throw new ConsistencyException(s"Reference value type ${entity.value.typeDefinition} does not match " +
+private def checkReferenceValue(entity: Entity[?, ?, ?], refTypeDef: AbstractEntityType, idValue: EntityId): Unit =
+    if entity.typeDefinition.valueType != refTypeDef.valueType then
+        throw new ConsistencyException(s"Reference value type ${entity.typeDefinition.valueType} does not match " +
             s"provided type ${refTypeDef.valueType}!")
     if entity.id != idValue then
         throw new ConsistencyException(s"Reference value id ${entity.id} does not match provided id $idValue!")
 
-//private def isParentOf(parent: AbstractEntityType, child: AbstractTypeDefinition): Boolean =
+//private def isParentOf(parent: AbstractEntityType, child: EntityType[?, ?, ?]): Boolean =
 //    parent match
-//        case EntityType(name, _) => name == child.name
-//        case superType: NamedEntitySuperType =>
-//            child match
+//        case entityType: EntityType[?, ?, ?] => entityType.getId == child.getId
+//        case superType: EntitySuperType =>
+//            child.valueType.parent.fo match
 //                case childEntityType: EntityTypeDefinition => childEntityType.parent.exists(_parent => _parent == parent || isParentOf(parent, _parent))
 //                    isParentOf(parent, childEntityType)
 

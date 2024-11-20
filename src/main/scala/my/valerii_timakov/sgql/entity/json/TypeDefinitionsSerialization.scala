@@ -7,7 +7,7 @@ import spray.json.{JsArray, JsNull, JsObject, JsString, JsValue, RootJsonFormat,
 implicit val entityTypeFormat: RootJsonFormat[AbstractEntityType] = new RootJsonFormat[AbstractEntityType]:
     override def write(typeDef: AbstractEntityType): JsValue =
         val kind = typeDef match
-            case value: EntityType[?] => "EntityType"
+            case value: EntityType[?, ?, ?] => "EntityType"
             case value: ArrayEntitySuperType => "ArrayEntitySuperType"
             case value: ObjectEntitySuperType => "ObjectEntitySuperType"
             case value: PrimitiveEntitySuperType[?] => "PrimitiveEntitySuperType"
@@ -18,7 +18,7 @@ implicit val entityTypeFormat: RootJsonFormat[AbstractEntityType] = new RootJson
             "valueType" -> typeDef.valueType.toJson
         )
 
-    override def read(json: JsValue): EntityType[?] = ??? /* json match
+    override def read(json: JsValue): EntityType[?, ?, ?] = ??? /* json match
             case JsObject(fields) =>
                 (fields("name"), fields("idType"), fields("valueType")) match
                     case Seq(Some(JsString(name)), Some(JsString(idTypeName)), Some(fieldsType)) =>
@@ -33,14 +33,14 @@ implicit val entityTypeListFormat: RootJsonFormat[Seq[AbstractEntityType]] = new
         case JsArray(array) => array.map(_.convertTo[AbstractEntityType]).toList
         case _ => deserializationError("List[Entity] expected!")
 
-implicit val entityTypeDefinitionFormat: RootJsonFormat[EntityTypeDefinition] = new RootJsonFormat[EntityTypeDefinition]:
-    def write(value: EntityTypeDefinition): JsValue = value match
+implicit val entityTypeDefinitionFormat: RootJsonFormat[EntityTypeDefinition[?, ?, ?]] = new RootJsonFormat[EntityTypeDefinition[?, ?, ?]]:
+    def write(value: EntityTypeDefinition[?, ?, ?]): JsValue = value match
         case value: CustomPrimitiveTypeDefinition => value.asInstanceOf[AbstractTypeDefinition].toJson
         case value: ArrayTypeDefinition => value.asInstanceOf[AbstractTypeDefinition].toJson
         case value: ObjectTypeDefinition => value.asInstanceOf[AbstractTypeDefinition].toJson
         case value: TypeBackReferenceDefinition => value.asInstanceOf[AbstractTypeDefinition].toJson
         case value: TypeReferenceDefinition => value.asInstanceOf[AbstractTypeDefinition].toJson
-    def read(json: JsValue): EntityTypeDefinition = ???
+    def read(json: JsValue): EntityTypeDefinition[?, ?, ?] = ???
 
 implicit val entityIdTypeDefinitionFormat: RootJsonFormat[EntityIdTypeDefinition] = new RootJsonFormat[EntityIdTypeDefinition]:
     override def write(obj: EntityIdTypeDefinition): JsValue = JsString(obj.name)

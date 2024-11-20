@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.services.repositories.postres
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, EntityType}
-import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId, EntityValue, FilledEntityValue}
+import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId, EntityValue, ValueTypes}
 import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, DbTableMigrationException, NotInitializedException}
 import my.valerii_timakov.sgql.services.*
@@ -29,7 +29,7 @@ class PostgresCrudRepository(
         if typesDefinitionsProviderContainer.isEmpty then throw NotInitializedException("PostgresCrudRepository", "typesDefinitionsProvider")
         typesDefinitionsProviderContainer.get
 
-    override def create(entityType: EntityType[?], data: FilledEntityValue): Try[Entity] = ???
+    override def create(entityType: EntityType[?, ?, ?], data: ValueTypes): Try[Entity[?, ?, ?]] = ???
 //        val persistenceData = typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
 //            throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
 //        persistenceData match
@@ -57,7 +57,7 @@ class PostgresCrudRepository(
 //            .updateAndReturnGeneratedKey(trc.getString(ID_COLUMN_NAME)).apply()
 //        }
 
-    override def update(entityType: EntityType[?], entity: Entity): Try[Option[Unit]] = ???//Try {
+    override def update(entityType: EntityType[?, ?, ?], entity: Entity[?, ?, ?]): Try[Option[Unit]] = ???//Try {
 //        entity.value match
 //            case CustomPrimitiveType(rootValue, definition) =>
 //                getEntityPersistendeData(definition) match
@@ -167,12 +167,12 @@ class PostgresCrudRepository(
 //                
 //    }
     
-    private def getAsConcreteValue[T <: FilledEntityValue](entityValue: FilledEntityValue, errorMessage: String): T =
+    private def getAsConcreteValue[T <: ValueTypes](entityValue: ValueTypes, errorMessage: String): T =
         entityValue match
             case value: T => value
             case _ => throw new ConsistencyException(errorMessage)
 
-    override def delete(entityType: EntityType[?], id: EntityId): Try[Option[Unit]] = 
+    override def delete(entityType: EntityType[?, ?, ?], id: EntityId): Try[Option[Unit]] = 
         Try {
             val persistenceData = getEntityPersistendeData(entityType)
             val tableData = persistenceData match
@@ -196,14 +196,14 @@ class PostgresCrudRepository(
         else throw new ConsistencyException(nonUniqueErrorMessage)
 
 
-    private def getEntityPersistendeData(entityType: EntityType[?]) = {
+    private def getEntityPersistendeData(entityType: EntityType[?, ?, ?]) = {
         typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
             throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
     }
 
-    override def get(entityType: EntityType[?], id: EntityId, getFields: GetFieldsDescriptor): Try[Option[Entity]] = ???
+    override def get(entityType: EntityType[?, ?, ?], id: EntityId, getFields: GetFieldsDescriptor): Try[Option[Entity[?, ?, ?]]] = ???
 
-    override def find(entityType: EntityType[?], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity]] = ???
+    override def find(entityType: EntityType[?, ?, ?], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity[?, ?, ?]]] = ???
 
 
     def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit =

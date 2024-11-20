@@ -3,10 +3,11 @@ package my.valerii_timakov.sgql.actors
 import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import my.valerii_timakov.sgql.entity.{AbstractTypeError, Error, TypeNotFountError}
-import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BinaryValue, Entity, EntityId, EntityValue, FilledEntityValue}
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, EntityType, EntitySuperType}
+import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BinaryValue, Entity, EntityId, EntityValue}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, EntitySuperType, EntityType}
 import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.services.{CrudRepository, TypesDefinitionProvider}
+import spray.json.JsValue
 
 import scala.util.{Failure, Success, Try}
 
@@ -23,13 +24,21 @@ class CrudActor(
         msg match
             case CreateMessage(entityTypeName, data, replyTo) =>
                 replyTo ! getType(entityTypeName) { entityType =>
-                    Right(repository.create(entityType, data))
+                    entityType.parseValue(data) match
+                        case Left(error) =>
+                            Left(error)
+                        case Right(value) =>
+                            Right(repository.create(entityType, value))
                 }
                 this
             case UpdateMessage(entityTypeName, idStr, data, replyTo) =>
                 replyTo ! getType(entityTypeName) { entityType =>
                     parseId(entityType, idStr) { id =>
-                        Right(repository.update(entityType, Entity(id, data.)))
+                        entityType.parseValue(data) match
+                            case Left(error) =>
+                                Left(error)
+                            case Right(value) =>
+                                Right(repository.update(entityType, entityType.createEntity(id, value)))
                     }
                 }
                 this
@@ -60,17 +69,17 @@ class CrudActor(
                 this
                 
     private def getType[Res](entityTypeName: String)
-                            (typeMapper: EntityType[?] => Either[Error, Try[Res]])
+                            (typeMapper: EntityType[?, ?, ?] => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
         typesDefinitionProvider.getType(entityTypeName) match
             case None =>
                 Left(TypeNotFountError(entityTypeName))
             case Some(_: EntitySuperType) =>
                 Left(AbstractTypeError(entityTypeName))
-            case Some(entityType: EntityType[?]) =>
+            case Some(entityType: EntityType[?, ?, ?]) =>
                 typeMapper(entityType)
                 
-    private def parseId[Res](entityType: EntityType[?], idStr: String)
+    private def parseId[Res](entityType: EntityType[?, ?, ?], idStr: String)
                             (idMapper: EntityId => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
         entityType.valueType.idType.parse(idStr) match
@@ -79,7 +88,7 @@ class CrudActor(
             case Right(id) =>
                 idMapper(id)
                 
-    private def parseGetFieldsDescriptor[Res](getFields: Option[String], entityType: EntityType[?])
+    private def parseGetFieldsDescriptor[Res](getFields: Option[String], entityType: EntityType[?, ?, ?])
                                              (getFieldsDescriptorMapper: GetFieldsDescriptor => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
         typesDefinitionProvider.parseGetFieldsDescriptor(getFields, entityType) match
@@ -90,7 +99,7 @@ class CrudActor(
             case Success(Right(getFields)) =>
                 getFieldsDescriptorMapper(getFields)
                 
-    private def parseSearchCondition[Res](searchQuery: Option[String], entityType: EntityType[?])
+    private def parseSearchCondition[Res](searchQuery: Option[String], entityType: EntityType[?, ?, ?])
                                          (searchConditionMapper: SearchCondition => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
         typesDefinitionProvider.parseSearchCondition(searchQuery, entityType) match
@@ -106,17 +115,17 @@ object CrudActor:
         Behaviors.setup(context => new CrudActor(context, repository, typesDefinitionProvider))
     sealed trait CrudMessage extends MainActor.Message
 
-    final case class CreateMessage(entityTypeName: String, data: FilledEntityValue,
-                                   replyTo: ActorRef[Either[Error, Try[Entity]]]) extends CrudMessage
+    final case class CreateMessage(entityTypeName: String, data: JsValue,
+                                   replyTo: ActorRef[Either[Error, Try[Entity[?, ?, ?]]]]) extends CrudMessage
 
-    final case class UpdateMessage(entityTypeName: String, id: String, data: FilledEntityValue,
+    final case class UpdateMessage(entityTypeName: String, id: String, data: JsValue,
                                    replyTo: ActorRef[Either[Error, Try[Option[Unit]]]]) extends CrudMessage
 
     final case class DeleteMessage(entityTypeName: String, id: String, 
                                    replyTo: ActorRef[Either[Error, Try[Option[Unit]]]]) extends CrudMessage
 
     final case class GetMessage(entityTypeName: String, id: String, getFieldsQuery: Option[String], 
-                                replyTo: ActorRef[Either[Error, Try[Option[Entity]]]]) extends CrudMessage
+                                replyTo: ActorRef[Either[Error, Try[Option[Entity[?, ?, ?]]]]]) extends CrudMessage
 
     final case class SearchMessage(entityTypeName: String, searchQuery: Option[String], getFieldsQuery: Option[String], 
-                                 replyTo: ActorRef[Either[Error, Try[Seq[Entity]]]]) extends CrudMessage
+                                 replyTo: ActorRef[Either[Error, Try[Seq[Entity[?, ?, ?]]]]]) extends CrudMessage
