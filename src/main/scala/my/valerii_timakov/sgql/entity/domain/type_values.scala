@@ -113,7 +113,7 @@ trait Entity[VT <: Entity[VT, V, D], V <: ValueTypes, D <: EntityTypeDefinition[
     def typeDefinition: EntityType[VT , V, D]
     def id: EntityId
     def value: V
-    def cloneWithId(newId: EntityId): this.type 
+    def cloneWithId(newId: EntityId): VT 
 
 final case class CustomPrimitiveValue(
     id: EntityId,

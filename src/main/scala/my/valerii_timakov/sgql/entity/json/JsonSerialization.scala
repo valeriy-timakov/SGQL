@@ -45,7 +45,7 @@ def entityValue2json(entity: EntityValue): JsValue = entity match
     case ref: BackReferenceValue => JsObject(
         "id" -> id2json(ref.value),
         "type" -> typeRef2json(ref.typeDefinition.valueType.referencedType),
-        "value" -> option2json(ref.refValueOpt, JsArray(_.map(entityd2json).toList)),
+        "value" -> option2json(ref.refValueOpt, entities => JsArray(entities.map(entityd2json).toList)),
     )
     
 def option2json[T](value: Option[T], mapper: T => JsValue): JsValue = value match
@@ -111,4 +111,3 @@ implicit val entityListFormat: RootJsonFormat[Seq[Entity[?, ?, ?]]] = new RootJs
         case JsArray(array) => array.map(_.convertTo[Entity[?, ?, ?]]).toList
         case _ => deserializationError("List[Entity] expected")
 
-//------definitions------
