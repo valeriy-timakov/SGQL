@@ -9,10 +9,10 @@ import java.util.UUID
 
 sealed trait EntityId:
     def serialize: String
-object EmptyId extends EntityId:
-    override def serialize: String = "()"
-sealed trait FilledEntityId extends EntityId:
     def typeDefinition: EntityIdTypeDefinition
+//object EmptyId extends EntityId:
+//    override def serialize: String = "()"
+sealed trait FilledEntityId extends EntityId
 final case class ByteId(value: Byte) extends EntityId:
     override def serialize: String = value.toString
     override val typeDefinition: EntityIdTypeDefinition = ByteIdTypeDefinition
@@ -45,9 +45,8 @@ sealed abstract class ItemValue extends EntityValue:
 
 final case class EmptyValue(typeDefinition: ValueType) extends EntityValue
 
-sealed abstract class PrimitiveValue[T] extends ItemValue:
+sealed abstract class RootPrimitiveValue[T] extends ItemValue:
     def value: T
-sealed abstract class RootPrimitiveValue[T] extends PrimitiveValue[T]:
     override def typeDefinition: RootPrimitiveType
 final case class StringValue(value: String) extends RootPrimitiveValue[String]:
     def typeDefinition: RootPrimitiveType = RootPrimitiveType(StringTypeDefinition)
@@ -79,9 +78,11 @@ final case class BinaryValue(value: Array[Byte]) extends RootPrimitiveValue[Arra
     def typeDefinition: RootPrimitiveType = RootPrimitiveType(BinaryTypeDefinition)
 
 final case class SimpleObjectValue(
+    id: Option[EntityId],
     value: Map[String, EntityValue],
     typeDefinition: SimpleObjectType
 ) extends EntityValue:
+    checkMaybeId(id, typeDefinition.valueType.idTypeOpt)
     checkObjectTypeData(value, typeDefinition.valueType)
 
 final case class ReferenceValue(value: FilledEntityId, typeDefinition: ReferenceType) extends ItemValue:
@@ -89,6 +90,7 @@ final case class ReferenceValue(value: FilledEntityId, typeDefinition: Reference
     protected var _refValue: Option[Entity[?, ?, ?]] = None
 
     def refValue: Entity[?, ?, ?] = _refValue.getOrElse(throw new ConsistencyException("Reference value is not set!"))
+    def refValueOpt: Option[Entity[?, ?, ?]] = _refValue
 
     def setRefValue(value: Entity[?, ?, ?]): Unit = _refValue =
         checkReferenceValue(value, typeDefinition.valueType.referencedType, this.value)
@@ -99,6 +101,7 @@ final case class BackReferenceValue(value: FilledEntityId, typeDefinition: BackR
     protected var _refValue: Option[Seq[Entity[?, ?, ?]]] = None
 
     def refValue: Seq[Entity[?, ?, ?]] = _refValue.getOrElse(throw new ConsistencyException("Reference value is not set!"))
+    def refValueOpt: Option[Seq[Entity[?, ?, ?]]] = _refValue
 
     def setRefValue(value: Seq[Entity[?, ?, ?]]): Unit =
         value.foreach(entity => checkReferenceValue(entity, typeDefinition.valueType.referencedType, this.value))
@@ -117,6 +120,8 @@ final case class CustomPrimitiveValue(
     value: RootPrimitiveValue[?],
     typeDefinition: EntityType[CustomPrimitiveValue, RootPrimitiveValue[?], CustomPrimitiveTypeDefinition]
 ) extends Entity[CustomPrimitiveValue, RootPrimitiveValue[?], CustomPrimitiveTypeDefinition]:
+    checkId(id, typeDefinition.valueType.idType)
+    checkValue(value, typeDefinition.valueType)
     if typeDefinition.valueType.rootType != value.typeDefinition then throw new ConsistencyException(
         s"CustomPrimitiveTypeDefinition ${typeDefinition.valueType.rootType} does not match provided value type ${value.typeDefinition}!")
     def cloneWithId(newId: EntityId): CustomPrimitiveValue = this.copy(id = newId)
@@ -126,16 +131,40 @@ final case class ArrayValue(
     value: Seq[ItemValue],
     typeDefinition: EntityType[ArrayValue, Seq[ItemValue], ArrayTypeDefinition]
 ) extends Entity[ArrayValue, Seq[ItemValue], ArrayTypeDefinition]:
-    def cloneWithId(newId: EntityId): ArrayValue = this.copy(id = newId)
+    checkId(id, typeDefinition.valueType.idType)
     checkArrayDate(value, typeDefinition.valueType)
+    def cloneWithId(newId: EntityId): ArrayValue = this.copy(id = newId)
 
 final case class ObjectValue(
     id: EntityId,
     value: Map[String, EntityValue],
     typeDefinition: EntityType[ObjectValue, Map[String, EntityValue], ObjectTypeDefinition]
 ) extends Entity[ObjectValue, Map[String, EntityValue], ObjectTypeDefinition]:
+    checkId(id, typeDefinition.valueType.idType)
     checkObjectTypeData(value, typeDefinition.valueType)
     def cloneWithId(newId: EntityId): ObjectValue = this.copy(id = newId)
+
+private def checkId(id: EntityId, typeDefinition: EntityIdTypeDefinition): Unit =
+    if id.typeDefinition != typeDefinition then
+        throw new ConsistencyException(s"Expected id type $typeDefinition does not match " +
+            s"provided type ${id.typeDefinition}!")
+
+private def checkMaybeId(id: Option[EntityId], typeDefinitionOpt: Option[EntityIdTypeDefinition]): Unit =
+    typeDefinitionOpt match
+        case Some(idType) =>
+            id match
+                case Some(idValue) =>
+                    if idValue.typeDefinition != idType then
+                        throw new ConsistencyException(s"Expected id type ${idValue.typeDefinition} does not match " +
+                            s"provided type $idType!")
+                case None => throw new ConsistencyException("Id is not provided!")
+        case None =>
+            if id.isDefined then throw new ConsistencyException("Id is not expected!")
+            
+private def checkValue(value: RootPrimitiveValue[?], definition: CustomPrimitiveTypeDefinition): Unit =
+    if value.typeDefinition != definition.rootType then
+        throw new ConsistencyException(s"Expected value type $definition does not match provided type ${value.typeDefinition}!")
+
 
 private def checkArrayDate(value: Seq[ItemValue], definition: ArrayTypeDefinition): Unit =
     val acceptableItemsTypes = definition.elementTypes.map(_.valueType)
@@ -144,7 +173,7 @@ private def checkArrayDate(value: Seq[ItemValue], definition: ArrayTypeDefinitio
             throw new ConsistencyException(s"Array item type ${item.typeDefinition} does not match provided " +
                 s"element type ${definition.elementTypes.head.valueType}!")
     )
-
+    
 private def checkObjectTypeData(
     value: Map[String, EntityValue],
     definition: FieldsContainer, 

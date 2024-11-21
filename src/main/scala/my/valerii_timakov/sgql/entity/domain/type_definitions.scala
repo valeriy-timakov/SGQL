@@ -176,6 +176,7 @@ object FixedStringTypeDefinition extends RootPrimitiveTypeDefinition("FixedStrin
 trait FieldsContainer:
     def fields: Map[String, FieldTypeDefinition]
     def allFields: Map[String, FieldTypeDefinition]
+    def idTypeOpt: Option[EntityIdTypeDefinition]
 
 final case class SimpleObjectTypeDefinition(
                                                private var _fields: Map[String, FieldTypeDefinition],
@@ -191,6 +192,7 @@ final case class SimpleObjectTypeDefinition(
         _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldTypeDefinition])
     override def toString: String = parent.map(_.name).getOrElse("") + "{" +
         fields.map(f => s"${f._1}: ${f._2}").mkString(", ") + "}"
+    def idTypeOpt: Option[EntityIdTypeDefinition] = parent.map(_.valueType.idType)
     
 sealed trait ReferenceDefinition extends FieldValueTypeDefinition:
     def idType: EntityIdTypeDefinition
@@ -293,6 +295,7 @@ final case class ObjectTypeDefinition(
         _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldTypeDefinition])
     lazy val idType: EntityIdTypeDefinition = idOrParent.fold(identity, _.valueType.idType)
     lazy val parent: Option[ObjectEntitySuperType] = idOrParent.toOption
+    def idTypeOpt: Option[EntityIdTypeDefinition] = Some(idType)
     
 
 
