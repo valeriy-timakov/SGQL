@@ -62,7 +62,7 @@ def values2json(value: ValueTypes): JsValue =  value match
     case items: Seq[ItemValue] => JsArray(items.map(entityValue2json).toVector)
     case fields:  Map[String, EntityValue] => JsObject(fields.map((fieldName, fieldValue) => fieldName -> entityValue2json(fieldValue)))
 
-def entityd2json(entity: Entity[?, ?, ?]): JsObject = JsObject(
+def entityd2json(entity: Entity[?, ?]): JsObject = JsObject(
         "id" -> entity.id.toJson,
         "value" -> values2json(entity.value), 
         "type" -> typeRef2json(entity.typeDefinition),
@@ -98,16 +98,16 @@ implicit object EntityIdFormat extends RootJsonFormat[EntityId]:
         case _ => deserializationError("EntityId expected")
     
 
-implicit object EntityFormat extends RootJsonFormat[Entity[?, ?, ?]]:    
-    def write(entity: Entity[?, ?, ?]): JsObject = entityd2json(entity) 
-    def read(json: JsValue): Entity[?, ?, ?] = json.asJsObject.getFields("id", "fields") match 
+implicit object EntityFormat extends RootJsonFormat[Entity[?, ?]]:    
+    def write(entity: Entity[?, ?]): JsObject = entityd2json(entity) 
+    def read(json: JsValue): Entity[?, ?] = json.asJsObject.getFields("id", "fields") match 
         case Seq(id, fields) => ???
         case _ => deserializationError("Entity expected")
     
 
-implicit val entityListFormat: RootJsonFormat[Seq[Entity[?, ?, ?]]] = new RootJsonFormat[Seq[Entity[?, ?, ?]]]:
-    def write(entities: Seq[Entity[?, ?, ?]]): JsValue = JsArray(entities.map(entityd2json).toVector)
-    def read(json: JsValue): Seq[Entity[?, ?, ?]] = json match
-        case JsArray(array) => array.map(_.convertTo[Entity[?, ?, ?]]).toList
+implicit val entityListFormat: RootJsonFormat[Seq[Entity[?, ?]]] = new RootJsonFormat[Seq[Entity[?, ?]]]:
+    def write(entities: Seq[Entity[?, ?]]): JsValue = JsArray(entities.map(entityd2json).toVector)
+    def read(json: JsValue): Seq[Entity[?, ?]] = json match
+        case JsArray(array) => array.map(_.convertTo[Entity[?, ?]]).toList
         case _ => deserializationError("List[Entity] expected")
 

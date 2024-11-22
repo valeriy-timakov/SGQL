@@ -69,17 +69,17 @@ class CrudActor(
                 this
                 
     private def getType[Res](entityTypeName: String)
-                            (typeMapper: EntityType[?, ?, ?] => Either[Error, Try[Res]])
+                            (typeMapper: EntityType[?, ?] => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
         typesDefinitionProvider.getType(entityTypeName) match
             case None =>
                 Left(TypeNotFountError(entityTypeName))
             case Some(_: EntitySuperType) =>
                 Left(AbstractTypeError(entityTypeName))
-            case Some(entityType: EntityType[?, ?, ?]) =>
+            case Some(entityType: EntityType[?, ?]) =>
                 typeMapper(entityType)
                 
-    private def parseId[Res](entityType: EntityType[?, ?, ?], idStr: String)
+    private def parseId[Res](entityType: EntityType[?, ?], idStr: String)
                             (idMapper: EntityId => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
         entityType.valueType.idType.parse(idStr) match
@@ -88,7 +88,7 @@ class CrudActor(
             case Right(id) =>
                 idMapper(id)
                 
-    private def parseGetFieldsDescriptor[Res](getFields: Option[String], entityType: EntityType[?, ?, ?])
+    private def parseGetFieldsDescriptor[Res](getFields: Option[String], entityType: EntityType[?, ?])
                                              (getFieldsDescriptorMapper: GetFieldsDescriptor => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
         typesDefinitionProvider.parseGetFieldsDescriptor(getFields, entityType) match
@@ -99,7 +99,7 @@ class CrudActor(
             case Success(Right(getFields)) =>
                 getFieldsDescriptorMapper(getFields)
                 
-    private def parseSearchCondition[Res](searchQuery: Option[String], entityType: EntityType[?, ?, ?])
+    private def parseSearchCondition[Res](searchQuery: Option[String], entityType: EntityType[?, ?])
                                          (searchConditionMapper: SearchCondition => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
         typesDefinitionProvider.parseSearchCondition(searchQuery, entityType) match
@@ -116,7 +116,7 @@ object CrudActor:
     sealed trait CrudMessage extends MainActor.Message
 
     final case class CreateMessage(entityTypeName: String, data: JsValue,
-                                   replyTo: ActorRef[Either[Error, Try[Entity[?, ?, ?]]]]) extends CrudMessage
+                                   replyTo: ActorRef[Either[Error, Try[Entity[?, ?]]]]) extends CrudMessage
 
     final case class UpdateMessage(entityTypeName: String, id: String, data: JsValue,
                                    replyTo: ActorRef[Either[Error, Try[Option[Unit]]]]) extends CrudMessage
@@ -125,7 +125,7 @@ object CrudActor:
                                    replyTo: ActorRef[Either[Error, Try[Option[Unit]]]]) extends CrudMessage
 
     final case class GetMessage(entityTypeName: String, id: String, getFieldsQuery: Option[String], 
-                                replyTo: ActorRef[Either[Error, Try[Option[Entity[?, ?, ?]]]]]) extends CrudMessage
+                                replyTo: ActorRef[Either[Error, Try[Option[Entity[?, ?]]]]]) extends CrudMessage
 
     final case class SearchMessage(entityTypeName: String, searchQuery: Option[String], getFieldsQuery: Option[String], 
-                                 replyTo: ActorRef[Either[Error, Try[Seq[Entity[?, ?, ?]]]]]) extends CrudMessage
+                                 replyTo: ActorRef[Either[Error, Try[Seq[Entity[?, ?]]]]]) extends CrudMessage

@@ -5,7 +5,7 @@ import spray.json.{JsArray, JsNull, JsObject, JsString, JsValue, RootJsonFormat,
 
 def abstractEntityType2json(typeDef: AbstractEntityType): JsValue =
     val kind = typeDef match
-        case value: EntityType[?, ?, ?] => "EntityType"
+        case value: EntityType[?, ?] => "EntityType"
         case value: ArrayEntitySuperType => "ArrayEntitySuperType"
         case value: ObjectEntitySuperType => "ObjectEntitySuperType"
         case value: PrimitiveEntitySuperType[?] => "PrimitiveEntitySuperType"
@@ -16,7 +16,7 @@ def abstractEntityType2json(typeDef: AbstractEntityType): JsValue =
         "valueType" -> valueType
     )
 
-def entityTypeDefinition2json(value: EntityTypeDefinition[?, ?, ?]): JsValue = value match
+def entityTypeDefinition2json(value: AbstractTypeDefinition): JsValue = value match
     case value: CustomPrimitiveTypeDefinition => value.asInstanceOf[AbstractTypeDefinition].toJson
     case value: ArrayTypeDefinition => value.asInstanceOf[AbstractTypeDefinition].toJson
     case value: ObjectTypeDefinition => value.asInstanceOf[AbstractTypeDefinition].toJson
@@ -27,7 +27,7 @@ implicit val entityTypeFormat: RootJsonFormat[AbstractEntityType] = new RootJson
     override def write(typeDef: AbstractEntityType): JsValue =
         abstractEntityType2json(typeDef)
 
-    override def read(json: JsValue): EntityType[?, ?, ?] = ??? /* json match
+    override def read(json: JsValue): EntityType[?, ?] = ??? /* json match
             case JsObject(fields) =>
                 (fields("name"), fields("idType"), fields("valueType")) match
                     case Seq(Some(JsString(name)), Some(JsString(idTypeName)), Some(fieldsType)) =>
@@ -42,8 +42,9 @@ implicit val entityTypeListFormat: RootJsonFormat[Seq[AbstractEntityType]] = new
         case JsArray(array) => array.map(_.convertTo[AbstractEntityType]).toList
         case _ => deserializationError("List[Entity] expected!")
 
-implicit val entityTypeDefinitionFormat: RootJsonFormat[EntityTypeDefinition[?, ?, ?]] = new RootJsonFormat[EntityTypeDefinition[?, ?, ?]]:
-    def write(value: EntityTypeDefinition[?, ?, ?]): JsValue =
+implicit val entityTypeDefinitionFormat: RootJsonFormat[EntityTypeDefinition[?, ?]] = new RootJsonFormat[EntityTypeDefinition[?, ?]]:
+    def read(json: JsValue): EntityTypeDefinition[?, ?] = ??? //json match
+    def write(value: EntityTypeDefinition[?, ?]): JsValue =
         entityTypeDefinition2json(value)
 
 implicit val entityIdTypeDefinitionFormat: RootJsonFormat[EntityIdTypeDefinition] = new RootJsonFormat[EntityIdTypeDefinition]:

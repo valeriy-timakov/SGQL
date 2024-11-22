@@ -50,13 +50,17 @@ object TypesMap:
 sealed trait AbstractType:
     def valueType: AbstractTypeDefinition
     
-sealed trait ValueType extends AbstractType
+sealed trait FieldValueType extends AbstractType:
+    def valueType: FieldValueTypeDefinition
+
+sealed trait ItemValueType extends FieldValueType:
+    def valueType: ItemValueTypeDefinition
     
-case class SimpleObjectType(valueType: SimpleObjectTypeDefinition) extends ValueType
+case class SimpleObjectType(valueType: SimpleObjectTypeDefinition) extends FieldValueType
 
-case class ReferenceType(valueType: TypeReferenceDefinition) extends ValueType
+case class ReferenceType(valueType: TypeReferenceDefinition) extends ItemValueType
 
-case class BackReferenceType(valueType: TypeBackReferenceDefinition) extends ValueType
+case class BackReferenceType(valueType: TypeBackReferenceDefinition) extends FieldValueType
 
 sealed abstract class AbstractNamedType extends AbstractType:
     private var id: Option[Long] = None
@@ -66,22 +70,41 @@ sealed abstract class AbstractNamedType extends AbstractType:
         this.id = Some(id)
     def getId: Long = id.getOrElse(throw new ConsistencyException(s"Type $name has no id yet!"))
 
-case class RootPrimitiveType(valueType: RootPrimitiveTypeDefinition) extends AbstractNamedType, ValueType:
+case class RootPrimitiveType(valueType: RootPrimitiveTypeDefinition) extends AbstractNamedType, ItemValueType:
     def name: String = valueType.name
 
 sealed abstract class AbstractEntityType extends AbstractNamedType:
-    override def valueType: EntityTypeDefinition[?, ?, ?]
+    override def valueType: EntityTypeDefinition[?, ?]
 
-case class EntityType[VT <: Entity[VT, V, D], V <: ValueTypes, D <: EntityTypeDefinition[VT, V, D]](
-    name: String,
-    valueType: D,
-) extends AbstractEntityType:
-    def createEntity(id: EntityId, value: V): VT = valueType.createEntity(id, value, this)
+abstract class EntityType[VT <: Entity[VT, V], V <: ValueTypes] extends AbstractEntityType:
+    override def valueType: EntityTypeDefinition[VT, V]
+    def createEntity(id: EntityId, value: V): VT
     def parseValue(data: JsValue): Either[IdParseError, V] = ???
+
+case class CustomPrimitiveEntityType(
+    name: String,
+    valueType: CustomPrimitiveTypeDefinition,
+) extends EntityType[CustomPrimitiveValue, RootPrimitiveValue[?]]:
+    def createEntity(id: EntityId, value: RootPrimitiveValue[?]): CustomPrimitiveValue =
+        CustomPrimitiveValue(id, value, this)
+
+case class ArrayEntityType(
+    name: String,
+    valueType: ArrayTypeDefinition,
+) extends EntityType[ArrayValue, Seq[ItemValue]]:
+    def createEntity(id: EntityId, value: Seq[ItemValue]): ArrayValue =
+        ArrayValue(id, value, this)
+
+case class ObjectEntityType(
+    name: String,
+    valueType: ObjectTypeDefinition,
+) extends EntityType[ObjectValue, Map[String, EntityValue]]:
+    def createEntity(id: EntityId, value: Map[String, EntityValue]): ObjectValue =
+        ObjectValue(id, value, this)
 
 trait EntitySuperType extends AbstractEntityType:
     def name: String
-    def valueType: EntityTypeDefinition[?, ?, ?]
+    def valueType: EntityTypeDefinition[?, ?]
 
 case class PrimitiveEntitySuperType[+TD <: CustomPrimitiveTypeDefinition](
     name: String,
@@ -213,27 +236,16 @@ final case class TypeBackReferenceDefinition(
     override def toString: String = s"TypeReferenceDefinition(ref[${referencedType.name}], $refField)"
 
 
-sealed trait EntityTypeDefinition[VT <: Entity[VT, V, D], V <: ValueTypes, D <: EntityTypeDefinition[VT, V, D]] extends AbstractTypeDefinition:
+sealed trait EntityTypeDefinition[VT <: Entity[VT, V], V <: ValueTypes] extends AbstractTypeDefinition:
     def idType: EntityIdTypeDefinition
     def parent: Option[EntitySuperType]
-    private[type_definitions] def createEntity(
-            id: EntityId,
-            value: V,
-            typeDefinition: EntityType[VT, V, D]
-        ): VT
 
 final case class CustomPrimitiveTypeDefinition(
     parentNode: Either[(EntityIdTypeDefinition, RootPrimitiveTypeDefinition), PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition]]
-) extends EntityTypeDefinition[CustomPrimitiveValue, RootPrimitiveValue[?], CustomPrimitiveTypeDefinition]:
+) extends EntityTypeDefinition[CustomPrimitiveValue, RootPrimitiveValue[?]]:
     @tailrec def rootType: RootPrimitiveTypeDefinition = this.parentNode match
         case Left((_, root)) => root
         case Right(parent) => parent.valueType.rootType
-    private[type_definitions] def createEntity(
-                id: EntityId,
-                value: RootPrimitiveValue[?],
-                typeDefinition: EntityType[CustomPrimitiveValue, RootPrimitiveValue[?], CustomPrimitiveTypeDefinition]
-            ): CustomPrimitiveValue =
-        CustomPrimitiveValue(id, value, typeDefinition)
     lazy val idType: EntityIdTypeDefinition = parentNode.fold(_._1, _.valueType.idType)
     lazy val parent: Option[PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition]] = parentNode.toOption
 
@@ -243,19 +255,13 @@ object ArrayTypeDefinition:
 final case class ArrayTypeDefinition(
     private var _elementTypes: Set[ArrayItemTypeDefinition],
     idOrParent: Either[EntityIdTypeDefinition, ArrayEntitySuperType]
-) extends EntityTypeDefinition[ArrayValue, Seq[ItemValue], ArrayTypeDefinition]:
+) extends EntityTypeDefinition[ArrayValue, Seq[ItemValue]]:
     private var initiated = false
     def elementTypes: Set[ArrayItemTypeDefinition] = _elementTypes
     def setChildren(elementTypesValues: Set[ArrayItemTypeDefinition]): Unit =
         if (initiated) throw new TypeReinitializationException
         _elementTypes = elementTypesValues
         initiated = true
-    private[type_definitions] def createEntity(
-                id: EntityId, 
-                value: Seq[ItemValue], 
-                typeDefinition: EntityType[ArrayValue, Seq[ItemValue], ArrayTypeDefinition]
-            ): ArrayValue = 
-        ArrayValue(id, value, typeDefinition)        
     lazy val allElementTypes: Set[ArrayItemTypeDefinition] =
         _elementTypes ++ parent.map(_.valueType.allElementTypes).getOrElse(Set.empty[ArrayItemTypeDefinition])
     lazy val idType: EntityIdTypeDefinition = idOrParent.fold(identity, _.valueType.idType)
@@ -278,19 +284,13 @@ object ObjectTypeDefinition:
 final case class ObjectTypeDefinition(
     private var _fields: Map[String, FieldTypeDefinition],
     idOrParent: Either[EntityIdTypeDefinition, ObjectEntitySuperType]
-) extends EntityTypeDefinition[ObjectValue, Map[String, EntityValue], ObjectTypeDefinition], FieldsContainer:
+) extends EntityTypeDefinition[ObjectValue, Map[String, EntityValue]], FieldsContainer:
     private var initiated = false
     def fields: Map[String, FieldTypeDefinition] = _fields
     def setChildren(fieldsValues: Map[String, FieldTypeDefinition]): Unit =
         if (initiated) throw new TypeReinitializationException
         _fields = fieldsValues
         initiated = true
-    private[type_definitions] def createEntity(
-                id: EntityId,
-                value: Map[String, EntityValue],
-                typeDefinition: EntityType[ObjectValue, Map[String, EntityValue], ObjectTypeDefinition]
-            ): ObjectValue =
-        ObjectValue(id, value, typeDefinition)
     lazy val allFields: Map[String, FieldTypeDefinition] =
         _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldTypeDefinition])
     lazy val idType: EntityIdTypeDefinition = idOrParent.fold(identity, _.valueType.idType)

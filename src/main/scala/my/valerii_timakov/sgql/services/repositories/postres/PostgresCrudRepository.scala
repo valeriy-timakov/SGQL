@@ -29,7 +29,7 @@ class PostgresCrudRepository(
         if typesDefinitionsProviderContainer.isEmpty then throw NotInitializedException("PostgresCrudRepository", "typesDefinitionsProvider")
         typesDefinitionsProviderContainer.get
 
-    override def create(entityType: EntityType[?, ?, ?], data: ValueTypes): Try[Entity[?, ?, ?]] = ???
+    override def create(entityType: EntityType[?, ?], data: ValueTypes): Try[Entity[?, ?]] = ???
 //        val persistenceData = typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
 //            throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
 //        persistenceData match
@@ -51,13 +51,13 @@ class PostgresCrudRepository(
 //                        ${trc.getString(TYPE_NAME_COLUMN)},
 //                        ${trc.getString(TABLE_NAME_COLUMN)},
 //                        ${trc.getString(VERSION_REF_COLUMN)}
-//                    ) VALUES (?, ?, ?)"""
+//                    ) VALUES (?, ?)"""
 //            )
 //            .bind(typeName, tableName, versionId)
 //            .updateAndReturnGeneratedKey(trc.getString(ID_COLUMN_NAME)).apply()
 //        }
 
-    override def update(entityType: EntityType[?, ?, ?], entity: Entity[?, ?, ?]): Try[Option[Unit]] = ???//Try {
+    override def update(entityType: EntityType[?, ?], entity: Entity[?, ?]): Try[Option[Unit]] = ???//Try {
 //        entity.value match
 //            case CustomPrimitiveType(rootValue, definition) =>
 //                getEntityPersistendeData(definition) match
@@ -172,7 +172,7 @@ class PostgresCrudRepository(
             case value: T => value
             case _ => throw new ConsistencyException(errorMessage)
 
-    override def delete(entityType: EntityType[?, ?, ?], id: EntityId): Try[Option[Unit]] = 
+    override def delete(entityType: EntityType[?, ?], id: EntityId): Try[Option[Unit]] = 
         Try {
             val persistenceData = getEntityPersistendeData(entityType)
             val tableData = persistenceData match
@@ -196,14 +196,14 @@ class PostgresCrudRepository(
         else throw new ConsistencyException(nonUniqueErrorMessage)
 
 
-    private def getEntityPersistendeData(entityType: EntityType[?, ?, ?]) = {
+    private def getEntityPersistendeData(entityType: EntityType[?, ?]) = {
         typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
             throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
     }
 
-    override def get(entityType: EntityType[?, ?, ?], id: EntityId, getFields: GetFieldsDescriptor): Try[Option[Entity[?, ?, ?]]] = ???
+    override def get(entityType: EntityType[?, ?], id: EntityId, getFields: GetFieldsDescriptor): Try[Option[Entity[?, ?]]] = ???
 
-    override def find(entityType: EntityType[?, ?, ?], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity[?, ?, ?]]] = ???
+    override def find(entityType: EntityType[?, ?], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity[?, ?]]] = ???
 
 
     def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit =

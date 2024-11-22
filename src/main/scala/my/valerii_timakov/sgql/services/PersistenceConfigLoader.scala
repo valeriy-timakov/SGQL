@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.services
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.TypesDefinitionsParseError
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, ArrayEntitySuperType, ArrayItemTypeDefinition, ItemValueTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntityType, FieldTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, ArrayEntitySuperType, ArrayEntityType, ArrayItemTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntityType, FieldTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, ItemValueTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntitySuperType, ObjectEntityType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, NoTypeFound, NotDefinedOperationException, TypesLoadExceptionException}
 
 import scala.annotation.tailrec
@@ -446,9 +446,9 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
     private def mergeTypePersistenceData(typeDef: AbstractEntityType,
                                          parsed: Option[AbstractTypePersistenceData]): TypePersistenceDataFinal =
         typeDef match
-            case EntityType(typeName, td: ObjectTypeDefinition) => mergeObjectTypePersistenceData(typeName, td, parsed)
-            case EntityType(typeName, td: ArrayTypeDefinition) => mergeArrayTypePersistenceData(typeName, td, parsed)
-            case EntityType(typeName, td: CustomPrimitiveTypeDefinition) => mergePrimitiveTypePersistenceData(typeName, td, parsed)
+            case ObjectEntityType(typeName, td: ObjectTypeDefinition) => mergeObjectTypePersistenceData(typeName, td, parsed)
+            case ArrayEntityType(typeName, td: ArrayTypeDefinition) => mergeArrayTypePersistenceData(typeName, td, parsed)
+            case CustomPrimitiveEntityType(typeName, td: CustomPrimitiveTypeDefinition) => mergePrimitiveTypePersistenceData(typeName, td, parsed)
             case ObjectEntitySuperType(typeName, valueType) => mergeObjectTypePersistenceData(typeName, valueType, parsed)
             case ArrayEntitySuperType(typeName, valueType) => mergeArrayTypePersistenceData(typeName, valueType, parsed)
             case PrimitiveEntitySuperType(typeName, valueType) => mergePrimitiveTypePersistenceData(typeName, valueType, parsed)
@@ -838,7 +838,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                                                   referencedType: AbstractEntityType,
                                                   itemDescriptionProvider: () => String): Unit =
         referencedType match
-            case EntityType(_, valueType: CustomPrimitiveTypeDefinition) =>
+            case CustomPrimitiveEntityType(_, valueType: CustomPrimitiveTypeDefinition) =>
                 persistData match
                     case fieldPersistType: PrimitiveValuePersistenceData =>
                         checkRootPrimitiveAndPersistenceTypeConsistency(valueType.rootType,
@@ -850,7 +850,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                         checkRootPrimitiveAndPersistenceTypeConsistency(valueType.rootType,
                             fieldPersistType, itemDescriptionProvider)
                     case _ => // do nothing
-            case EntityType(_, valueType: ObjectTypeDefinition) =>
+            case ObjectEntityType(_, valueType: ObjectTypeDefinition) =>
                 persistData match
                     case fieldPersistType: SimpleObjectValuePersistenceData => // do nothing
                     case fieldPersistType: ColumnPersistenceData => // do nothing
