@@ -3,11 +3,11 @@ package my.valerii_timakov.sgql
 import akka.actor.typed.{ActorRef, ActorSystem}
 import com.typesafe.config.{Config, ConfigFactory}
 import my.valerii_timakov.sgql.actors.MainActor
+import my.valerii_timakov.sgql.entity.domain.type_definitions.GlobalSerializationData
 import my.valerii_timakov.sgql.routers.{CrudHttpRouter, TypesProviderHttpRouter}
 import my.valerii_timakov.sgql.services.*
+
 import scala.concurrent.ExecutionContextExecutor
-
-
 import scala.concurrent.duration.DurationLong
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
 import scala.io.StdIn
@@ -17,6 +17,8 @@ import scala.language.postfixOps
 
     lazy val conf: Config = ConfigFactory.load("application.config.yaml")
         .withFallback(ConfigFactory.load("default.application.config.conf"))
+
+    GlobalSerializationData.initJson(conf.getConfig("serialization.json"))
 
     implicit lazy val typesDefinitionsLoader: TypesDefinitionsLoader = TypesDefinitionsLoaderImpl(conf.getConfig("type-definitions"))
     implicit lazy val typesPersistenceConfigLoader: PersistenceConfigLoader = PersistenceConfigLoaderImpl(conf.getConfig("persistence"))

@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.services
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.TypesDefinitionsParseError
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, ArrayEntitySuperType, ArrayEntityType, ArrayItemTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, AbstractEntityIdTypeDefinition, EntityType, FieldTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, ItemValueTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntitySuperType, ObjectEntityType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, ArrayEntitySuperType, ArrayEntityType, ArrayItemTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, AbstractEntityIdTypeDefinition, EntityType, FieldTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, ItemValueTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntitySuperType, ObjectEntityType, ObjectTypeDefinition, PrimitiveEntitySuperType, AbstractRootPrimitiveTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, NoTypeFound, NotDefinedOperationException, TypesLoadExceptionException}
 
 import scala.annotation.tailrec
@@ -162,7 +162,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
 
     private var sqlTableNamesMap: Map[String, String] = Map.empty
 
-    private val primitiveTypeDefinitionToFieldType: Map[RootPrimitiveTypeDefinition[?], PersistenceFieldType] = Map(
+    private val primitiveTypeDefinitionToFieldType: Map[AbstractRootPrimitiveTypeDefinition, PersistenceFieldType] = Map(
         LongTypeDefinition -> LongFieldType,
         IntTypeDefinition -> IntFieldType,
         ShortIntTypeDefinition -> ShortIntFieldType,
@@ -189,7 +189,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
         UUIDIdTypeDefinition -> UUIDFieldType,
     )
 
-    private val consistencePersistenceTypesMap: Map[RootPrimitiveTypeDefinition[?], Set[PersistenceFieldType]] = Map(
+    private val consistencePersistenceTypesMap: Map[AbstractRootPrimitiveTypeDefinition, Set[PersistenceFieldType]] = Map(
         ByteTypeDefinition -> Set(ByteFieldType, ShortIntFieldType, IntFieldType, LongFieldType),
         ShortIntTypeDefinition -> Set(ShortIntFieldType, IntFieldType, LongFieldType),
         IntTypeDefinition -> Set(IntFieldType, LongFieldType),
@@ -207,7 +207,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
         BinaryTypeDefinition -> Set(BLOBFieldType),
     )
 
-    private val arrayItemTypesDefinitionsMap: Map[PersistenceFieldType, RootPrimitiveTypeDefinition[?]] = Map(
+    private val arrayItemTypesDefinitionsMap: Map[PersistenceFieldType, AbstractRootPrimitiveTypeDefinition] = Map(
         LongFieldType -> LongTypeDefinition,
         IntFieldType -> IntTypeDefinition,
         ShortIntFieldType -> ShortIntTypeDefinition,
@@ -231,7 +231,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
     private def getIdFieldType(idType: AbstractEntityIdTypeDefinition[?]): PersistenceFieldType =
         naturalizeFieldType( idTypeDefinitionToFieldType.getOrElse(idType, throw new NoTypeFound(idType.name)) )
 
-    private def getValueFieldType(valueType: RootPrimitiveTypeDefinition[?]): PersistenceFieldType =
+    private def getValueFieldType(valueType: AbstractRootPrimitiveTypeDefinition): PersistenceFieldType =
         naturalizeFieldType( primitiveTypeDefinitionToFieldType.getOrElse(valueType, throw new NoTypeFound(valueType.name)))
 
     private def naturalizeFieldType(fieldTypeDefinition: PersistenceFieldType): PersistenceFieldType =
@@ -522,7 +522,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
             valueType.elementTypes.map(et =>
                 val itemTypeName = et.valueType match
                     case TypeReferenceDefinition(referencedType) => referencedType.name
-                    case td: RootPrimitiveTypeDefinition[?] => td.name
+                    case td: AbstractRootPrimitiveTypeDefinition => td.name
                 val parsedElementData = parsedData.itemsMap.getOrElse(itemTypeName, ArrayItemPersistenceData(None, None, None))
                 parsedElementData.idColumn.foreach(idColumn =>
                     checkEntityIdAndPersistenceTypeConsistency(valueType.idType, idColumn, () =>
@@ -684,7 +684,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                 )
 
 
-    private def checkRootPrimitiveAndPersistenceTypeConsistency(fieldType: RootPrimitiveTypeDefinition[?],
+    private def checkRootPrimitiveAndPersistenceTypeConsistency(fieldType: AbstractRootPrimitiveTypeDefinition,
                                                                 fieldPersistType: PrimitiveValuePersistenceData,
                                                                 itemDescriptionProvider: () => String): Unit =
         val consistentPersistTypes = consistencePersistenceTypesMap.getOrElse(fieldType,
@@ -767,7 +767,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
             .get(fieldName)
             .map(persistData =>
                 fieldType.valueType match
-                    case fieldType: RootPrimitiveTypeDefinition[?] =>
+                    case fieldType: AbstractRootPrimitiveTypeDefinition =>
                         checkRootPrimitivePersistenceData(persistData, fieldType, itemDescriptionProvider)
                     case SimpleObjectTypeDefinition(_, _) =>
                         checkSimpleObjectPersistenceData(persistData, itemDescriptionProvider)
@@ -781,7 +781,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                 persistData
             )
             .orElse(fieldType.valueType match
-                case fieldType: RootPrimitiveTypeDefinition[?] =>
+                case fieldType: AbstractRootPrimitiveTypeDefinition =>
                     Some(PrimitiveValuePersistenceData(None, None))
                 case SimpleObjectTypeDefinition(_, _) =>
                     Some(SimpleObjectValuePersistenceData(Right(ReferenceValuePersistenceData(None)), Map.empty))
@@ -799,7 +799,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
         fieldsPersistenceData
             .map(persistData =>
                 itemType.valueType match
-                    case fieldType: RootPrimitiveTypeDefinition[?] =>
+                    case fieldType: AbstractRootPrimitiveTypeDefinition =>
                         checkRootPrimitivePersistenceData(persistData, fieldType, itemDescriptionProvider)
                     case TypeReferenceDefinition(referencedType) =>
                         checkTypeReferencePersistenceData(persistData, referencedType, itemDescriptionProvider)
@@ -810,14 +810,14 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                 persistData
             )
             .getOrElse(itemType.valueType match
-                case fieldType: RootPrimitiveTypeDefinition[?] =>
+                case fieldType: AbstractRootPrimitiveTypeDefinition =>
                     PrimitiveValuePersistenceData(None, None)
                 case TypeReferenceDefinition(_) =>
                     ColumnPersistenceData(None)
             )
 
     private def checkRootPrimitivePersistenceData(valuePersistenceData: ValuePersistenceData,
-                                                  fieldType: RootPrimitiveTypeDefinition[?],
+                                                  fieldType: AbstractRootPrimitiveTypeDefinition,
                                                   itemDescriptionProvider: () => String): Unit =
         valuePersistenceData match
             case primitivePersistenceData: PrimitiveValuePersistenceData =>
@@ -871,7 +871,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                                             typeName: String,
                                             prefix: String = ""): ValuePersistenceDataFinal =
         fieldType.valueType match
-            case pritimiveType: RootPrimitiveTypeDefinition[?] =>
+            case pritimiveType: AbstractRootPrimitiveTypeDefinition =>
                 toPrimitivePersistenceDataFinal(pritimiveType, fieldPersitenceData, fieldName, fieldType.isNullable,
                     prefix, () => s"Field $fieldName of type $typeName")
             case subObjectType: SimpleObjectTypeDefinition =>
@@ -925,7 +925,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                                                      typeName: String
                                                     ): PrimitiveValuePersistenceDataFinal | ReferenceValuePersistenceDataFinal =
         itemType match
-            case primitiveType: RootPrimitiveTypeDefinition[?] =>
+            case primitiveType: AbstractRootPrimitiveTypeDefinition =>
                 toPrimitivePersistenceDataFinal(primitiveType, persistenceData, defaultValueColumnName, false, "",
                     () => s"Item $itemType of type $typeName")
             case refType: TypeReferenceDefinition =>
@@ -974,7 +974,7 @@ class PersistenceConfigLoaderImpl(conf: Config) extends PersistenceConfigLoader:
                 throw new ConsistencyException(itemDescriptionProvider() + s" parsed as not reference type " +
                     s"whereas field type is TypeReferenceDefinition!")
 
-    private def toPrimitivePersistenceDataFinal(fieldType: RootPrimitiveTypeDefinition[?],
+    private def toPrimitivePersistenceDataFinal(fieldType: AbstractRootPrimitiveTypeDefinition,
                                                 persistenceData: ValuePersistenceData,
                                                 defaultColumnName: String,
                                                 isNullable: Boolean,

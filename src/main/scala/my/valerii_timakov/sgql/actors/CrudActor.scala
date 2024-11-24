@@ -24,7 +24,7 @@ class CrudActor(
         msg match
             case CreateMessage(entityTypeName, data, replyTo) =>
                 replyTo ! getType(entityTypeName) { entityType =>
-                    entityType.parseValue(data) match
+                    entityType.valueType.parseValue(data) match
                         case Left(error) =>
                             Left(error)
                         case Right(value) =>
@@ -34,7 +34,7 @@ class CrudActor(
             case UpdateMessage(entityTypeName, idStr, data, replyTo) =>
                 replyTo ! getType(entityTypeName) { entityType =>
                     parseId(entityType, idStr) { id =>
-                        entityType.parseValue(data) match
+                        entityType.valueType.parseValue(data) match
                             case Left(error) =>
                                 Left(error)
                             case Right(value) =>

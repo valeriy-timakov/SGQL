@@ -1,6 +1,6 @@
 package my.valerii_timakov.sgql.entity.domain.type_values
 
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, AbstractNamedType, AbstractType, AbstractTypeDefinition, ArrayEntityType, ArrayTypeDefinition, BackReferenceType, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, AbstractEntityIdTypeDefinition, EntitySuperType, EntityType, EntityTypeDefinition, FieldValueType, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, ItemValueType, ItemValueTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntityType, ObjectTypeDefinition, ReferenceDefinition, ReferenceType, RootPrimitiveType, RootPrimitiveTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectType, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractEntityType, AbstractNamedType, AbstractRootPrimitiveTypeDefinition, AbstractType, AbstractTypeDefinition, ArrayEntityType, ArrayTypeDefinition, BackReferenceType, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntitySuperType, EntityType, EntityTypeDefinition, FieldValueType, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, ItemValueType, ItemValueTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntityType, ObjectTypeDefinition, ReferenceDefinition, ReferenceType, RootPrimitiveType, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectType, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
 import my.valerii_timakov.sgql.exceptions.ConsistencyException
 import spray.json.{JsNull, JsValue}
 
@@ -27,14 +27,18 @@ final case class LongId(value: Long) extends EntityId[Long, LongId]:
     override def serialize: String = value.toString
     override val typeDefinition: AbstractEntityIdTypeDefinition[LongId] = LongIdTypeDefinition
 final case class StringId(value: String) extends EntityId[String, StringId]:
+    if value == null then throw new IllegalArgumentException("StringId cannot be null!")
     override def serialize: String = value
     override val typeDefinition: AbstractEntityIdTypeDefinition[StringId] = StringIdTypeDefinition
 final case class FixedStringId(value: String, typeRef: FixedStringIdTypeDefinition) extends EntityId[String, FixedStringId]:
-    if value == null || typeRef == null || value.length != typeRef.length then throw new IllegalArgumentException(
+    if value == null then throw new IllegalArgumentException("FixedStringId cannot be null!")
+    if value == null then throw new IllegalArgumentException("FixedStringId cannot have null type!")
+    if value.length != typeRef.length then throw new IllegalArgumentException(
         s"FixedStringId value must be of length ${typeRef.length}! Got: $value")
     override def serialize: String = value
     override val typeDefinition: AbstractEntityIdTypeDefinition[FixedStringId] = FixedStringIdTypeDefinition
 final case class UUIDId(value: UUID) extends EntityId[UUID, UUIDId]:
+    if value == null then throw new IllegalArgumentException("UUIDId cannot be null!")
     override def serialize: String = value.toString
     override val typeDefinition: AbstractEntityIdTypeDefinition[UUIDId] = UUIDIdTypeDefinition
 
@@ -51,46 +55,74 @@ final case class EmptyValue(typeDefinition: FieldValueType) extends EntityValue:
 sealed abstract class RootPrimitiveValue[T, V <: RootPrimitiveValue[T, V]] extends ItemValue:
     def value: T
     override def typeDefinition: RootPrimitiveType[T, V]
+    
 final case class StringValue(value: String) extends RootPrimitiveValue[String, StringValue]:
     def typeDefinition: RootPrimitiveType[String, StringValue] = RootPrimitiveType[String, StringValue](StringTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
+final case class FixedStringValue(value: String, typeDef: FixedStringTypeDefinition) extends RootPrimitiveValue[String, FixedStringValue]:
+    if value == null then throw new IllegalArgumentException("FixedStringValue cannot be null!")
+    if value == null then throw new IllegalArgumentException("FixedStringValue cannot have null type!")
+    if value.length != typeDef.length then throw new IllegalArgumentException(
+        s"FixedStringValue value must be of length ${typeDef.length}! Got: $value")
+    def typeDefinition: RootPrimitiveType[String, FixedStringValue] = RootPrimitiveType[String, FixedStringValue](typeDef)
+    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class ByteValue(value: Byte) extends RootPrimitiveValue[Byte, ByteValue]:
     def typeDefinition: RootPrimitiveType[Byte, ByteValue] = RootPrimitiveType[Byte, ByteValue](ByteTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class ShortIntValue(value: Short) extends RootPrimitiveValue[Short, ShortIntValue]:
     def typeDefinition: RootPrimitiveType[Short, ShortIntValue] = RootPrimitiveType[Short, ShortIntValue](ShortIntTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class IntValue(value: Int) extends RootPrimitiveValue[Int, IntValue]:
     def typeDefinition: RootPrimitiveType[Int, IntValue] = RootPrimitiveType(IntTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class LongValue(value: Long) extends RootPrimitiveValue[Long, LongValue]:
     def typeDefinition: RootPrimitiveType[Long, LongValue] = RootPrimitiveType(LongTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+
+final case class DecimalValue(value: BigDecimal) extends RootPrimitiveValue[BigDecimal, DecimalValue]:
+    if value == null then throw new IllegalArgumentException("DecimalValue cannot be null!")
+    def typeDefinition: RootPrimitiveType[BigDecimal, DecimalValue] = RootPrimitiveType(DecimalTypeDefinition)
+    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class DoubleValue(value: Double) extends RootPrimitiveValue[Double, DoubleValue]:
     def typeDefinition: RootPrimitiveType[Double, DoubleValue] = RootPrimitiveType(DoubleTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class FloatValue(value: Float) extends RootPrimitiveValue[Float, FloatValue]:
     def typeDefinition: RootPrimitiveType[Float, FloatValue] = RootPrimitiveType(FloatTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class BooleanValue(value: Boolean) extends RootPrimitiveValue[Boolean, BooleanValue]:
     def typeDefinition: RootPrimitiveType[Boolean, BooleanValue] = RootPrimitiveType(BooleanTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class DateValue(value: LocalDate) extends RootPrimitiveValue[LocalDate, DateValue]:
+    if value == null then throw new IllegalArgumentException("DateValue cannot be null!")
     def typeDefinition: RootPrimitiveType[LocalDate, DateValue] = RootPrimitiveType(DateTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class DateTimeValue(value: LocalDateTime) extends RootPrimitiveValue[LocalDateTime, DateTimeValue]:
+    if value == null then throw new IllegalArgumentException("DateTimeValue cannot be null!")
     def typeDefinition: RootPrimitiveType[LocalDateTime, DateTimeValue] = RootPrimitiveType(DateTimeTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class TimeValue(value: LocalTime) extends RootPrimitiveValue[LocalTime, TimeValue]:
+    if value == null then throw new IllegalArgumentException("TimeValue cannot be null!")
     def typeDefinition: RootPrimitiveType[LocalTime, TimeValue] = RootPrimitiveType(TimeTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class UUIDValue(value: UUID) extends RootPrimitiveValue[UUID, UUIDValue]:
+    if value == null then throw new IllegalArgumentException("UUIDValue cannot be null!")
     def typeDefinition: RootPrimitiveType[UUID, UUIDValue] = RootPrimitiveType(UUIDTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
-final case class DecimalValue(value: BigDecimal) extends RootPrimitiveValue[BigDecimal, DecimalValue]:
-    def typeDefinition: RootPrimitiveType[BigDecimal, DecimalValue] = RootPrimitiveType(DecimalTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    
 final case class BinaryValue(value: Array[Byte]) extends RootPrimitiveValue[Array[Byte], BinaryValue]:
+    if value == null then throw new IllegalArgumentException("BinaryValue cannot be null!")
     def typeDefinition: RootPrimitiveType[Array[Byte], BinaryValue] = RootPrimitiveType(BinaryTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
 

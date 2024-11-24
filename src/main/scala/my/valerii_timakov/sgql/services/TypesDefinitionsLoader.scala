@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.services
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.TypesDefinitionsParseError
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractEntityType, ArrayEntitySuperType, ArrayEntityType, ArrayItemTypeDefinition, ArrayTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, EntitySuperType, EntityType, FieldTypeDefinition, FieldValueTypeDefinition, FixedStringIdTypeDefinition, ObjectEntitySuperType, ObjectEntityType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, idTypesMap, primitiveFieldTypesMap}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractEntityType, AbstractRootPrimitiveTypeDefinition, ArrayEntitySuperType, ArrayEntityType, ArrayItemTypeDefinition, ArrayTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, EntitySuperType, EntityType, FieldTypeDefinition, FieldValueTypeDefinition, FixedStringIdTypeDefinition, ObjectEntitySuperType, ObjectEntityType, ObjectTypeDefinition, PrimitiveEntitySuperType, FixedStringTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, idTypesMap, primitiveFieldTypesMap}
 import my.valerii_timakov.sgql.exceptions.*
 import my.valerii_timakov.sgql.services.TypesDefinitionsParser.IdTypeRef
 
@@ -134,8 +134,8 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData], defaul
                                        typePrefixOpt: Option[String]): PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition] =
         primitiveSuperTypesMap.getOrElse(typeName, {
 
-            val parent: Either[(EntityIdTypeDefinition[?], RootPrimitiveTypeDefinition[?]), PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition]] = 
-                typePredefsMap.get(parentTypeName) match
+            val parent: Either[(EntityIdTypeDefinition[?], RootPrimitiveTypeDefinition[?]), PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition]] =
+                getPrimitiveType(parentTypeName) match
                     case Some(rootPrimitiveType) => 
                         idType match
                             case Some(idTypeName) =>
@@ -227,6 +227,18 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData], defaul
             case _ =>
                 throw new ConsistencyException("Only reference or root primitive types could be array items! " +
                     s"Type ${rowData.refTypeName} is trying to be array item!")
+                
+    private def getPrimitiveType(name: String): Option[RootPrimitiveTypeDefinition[?]] =
+        typePredefsMap.get(name)
+            .map {
+                case rootPrimitiveType: RootPrimitiveTypeDefinition[?] =>
+                    rootPrimitiveType
+                case FixedStringTypeDefinition =>
+                    //TODO: add support for fixed string customized length
+                    FixedStringTypeDefinition(defaultFixedStringLength)
+                case _ =>
+                    throw new WrongStateExcetion(s"Type $name is not root primitive type!")
+            }
 
     private def parseReferenceType(refData: ReferenceData,
                                    typePrefix: Option[String],
@@ -257,7 +269,7 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData], defaul
                     case Some(anyTypeDefinition) =>
                         TypeReferenceDefinition(anyTypeDefinition)
                     case None =>
-                        typePredefsMap.get(refData.refTypeName) match
+                        getPrimitiveType(refData.refTypeName) match
                             case Some(valueType) =>
                                 valueType
                             case None =>
