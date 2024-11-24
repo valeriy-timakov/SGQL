@@ -172,7 +172,7 @@ class PostgresCrudRepository(
             case value: T => value
             case _ => throw new ConsistencyException(errorMessage)
 
-    override def delete(entityType: EntityType[?, ?], id: EntityId): Try[Option[Unit]] = 
+    override def delete(entityType: EntityType[?, ?], id: EntityId[?, ?]): Try[Option[Unit]] = 
         Try {
             val persistenceData = getEntityPersistendeData(entityType)
             val tableData = persistenceData match
@@ -201,7 +201,7 @@ class PostgresCrudRepository(
             throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
     }
 
-    override def get(entityType: EntityType[?, ?], id: EntityId, getFields: GetFieldsDescriptor): Try[Option[Entity[?, ?]]] = ???
+    override def get(entityType: EntityType[?, ?], id: EntityId[?, ?], getFields: GetFieldsDescriptor): Try[Option[Entity[?, ?]]] = ???
 
     override def find(entityType: EntityType[?, ?], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity[?, ?]]] = ???
 

@@ -1,7 +1,8 @@
 package my.valerii_timakov.sgql.services
 
+import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.TypesDefinitionsParseError
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, ArrayEntitySuperType, ArrayEntityType, ArrayItemTypeDefinition, ArrayTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, EntitySuperType, EntityType, FieldTypeDefinition, ObjectEntitySuperType, ObjectEntityType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, idTypesMap, primitiveFieldTypesMap}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractEntityType, ArrayEntitySuperType, ArrayEntityType, ArrayItemTypeDefinition, ArrayTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, EntitySuperType, EntityType, FieldTypeDefinition, FieldValueTypeDefinition, FixedStringIdTypeDefinition, ObjectEntitySuperType, ObjectEntityType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, idTypesMap, primitiveFieldTypesMap}
 import my.valerii_timakov.sgql.exceptions.*
 import my.valerii_timakov.sgql.services.TypesDefinitionsParser.IdTypeRef
 
@@ -13,14 +14,15 @@ import scala.util.parsing.input.StreamReader
 trait TypesDefinitionsLoader:
     def load(typesDefinitionResourcePath: String): Map[String, AbstractEntityType]
 
-object TypesDefinitionsLoader extends TypesDefinitionsLoader:
-    private val specialConcreteSuffix = "Concrete"
+class TypesDefinitionsLoaderImpl(conf: Config) extends TypesDefinitionsLoader:
+    private val specialConcreteSuffix = conf.getString("super-type-default-implementation-suffix")
+    private val defaultFixedStringLength = conf.getInt("fixed-string-length-default")
     def load(typesDefinitionResourcePath: String): Map[String, AbstractEntityType] =
         val tdSource = Source.fromResource (typesDefinitionResourcePath)
         TypesDefinitionsParser.parse(StreamReader( tdSource.reader() )) match
             case Right(packageData: TypesRootPackageData) =>
                 var rawTypesDataMap = packageData.toMap
-                val parser = new AbstractTypesParser(rawTypesDataMap)
+                val parser = new AbstractTypesParser(rawTypesDataMap, defaultFixedStringLength)
 
                 val typesMapBuilder = Map.newBuilder[String, AbstractEntityType]
                 val generatedConcreteTypes = mutable.Map[String, TypeData]()
@@ -41,7 +43,7 @@ object TypesDefinitionsLoader extends TypesDefinitionsLoader:
                             if (mandatoryConrete) {
                                 val concreteName = name + specialConcreteSuffix
                                 typesMapBuilder += concreteName ->
-                                    ArrayEntityType(concreteName, ArrayTypeDefinition(Set.empty, Right(parent)))
+                                    ArrayEntityType(concreteName, ArrayTypeDefinition(None, Right(parent)))
                                 generatedConcreteTypes += concreteName -> 
                                     ArrayTypeData(concreteName, ArrayData(Right(name), List()), mandatoryConrete)
                             }
@@ -119,7 +121,7 @@ def typeNamespace(typeName: String): Option[String] =
 
 
 
-private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
+private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData], defaultFixedStringLength: Int):
     private val typePredefsMap = primitiveFieldTypesMap
     private val primitiveSuperTypesMap = mutable.Map[String, PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition]]()
     private val arraySuperTypesMap = mutable.Map[String, ArrayEntitySuperType]()
@@ -132,22 +134,23 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
                                        typePrefixOpt: Option[String]): PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition] =
         primitiveSuperTypesMap.getOrElse(typeName, {
 
-            val parent = typePredefsMap.get(parentTypeName) match
-                case Some(rootPrimitiveType) => 
-                    idType match
-                        case Some(idTypeName) =>
-                            Left( (parseIdType(idTypeName), rootPrimitiveType) )
-                        case None =>
-                            throw new NoIdentityForRootSupetType(typeName)                    
-                case None =>
-                    if (idType.isDefined) {
-                        throw new IdentitySetForNonRootType(typeName)
-                    }
-                    findTypeDefinition(parentTypeName, typePrefixOpt) match
-                        case (typeFullName, PrimitiveTypeData(_, parentIdType, superParentTypeName, _)) =>
-                            Right( parsePrimitiveSupertypesChain(parentTypeName, parentIdType, superParentTypeName, typeNamespace(typeFullName)) )
-                        case (typeFullName, _) =>
-                            throw new NotPrimitiveAbstractTypeException(typeFullName)
+            val parent: Either[(EntityIdTypeDefinition[?], RootPrimitiveTypeDefinition[?]), PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition]] = 
+                typePredefsMap.get(parentTypeName) match
+                    case Some(rootPrimitiveType) => 
+                        idType match
+                            case Some(idTypeName) =>
+                                Left( (parseIdType(idTypeName), rootPrimitiveType) )
+                            case None =>
+                                throw new NoIdentityForRootSupetType(typeName)                    
+                    case None =>
+                        if (idType.isDefined) {
+                            throw new IdentitySetForNonRootType(typeName)
+                        }
+                        findTypeDefinition(parentTypeName, typePrefixOpt) match
+                            case (typeFullName, PrimitiveTypeData(_, parentIdType, superParentTypeName, _)) =>
+                                Right( parsePrimitiveSupertypesChain(parentTypeName, parentIdType, superParentTypeName, typeNamespace(typeFullName)) )
+                            case (typeFullName, _) =>
+                                throw new NotPrimitiveAbstractTypeException(typeFullName)
             val result = PrimitiveEntitySuperType(typeName, CustomPrimitiveTypeDefinition(parent))
             primitiveSuperTypesMap += ((result.name, result))
             result
@@ -155,7 +158,7 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
 
     def parseArraySupertypesChain(typeName: String, idOrParent: Either[IdTypeRef, String], typePrefixOpt: Option[String]): ArrayEntitySuperType =
         arraySuperTypesMap.getOrElse(typeName, {
-            val idOrParentType: Either[EntityIdTypeDefinition, ArrayEntitySuperType] = idOrParent match
+            val idOrParentType: Either[EntityIdTypeDefinition[?], ArrayEntitySuperType] = idOrParent match
                 case Left(idType) => Left(parseIdType(idType.name))
                 case Right(parentTypeName) =>
                     findTypeDefinition(parentTypeName, typePrefixOpt) match
@@ -163,7 +166,7 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
                             Right( parseArraySupertypesChain(parentTypeFullName, parentIdOrParent, typeNamespace(parentTypeFullName)) )
                         case (typeFullName, _) =>
                             throw new NotArrayAbstractTypeException(typeFullName)
-            val result = ArrayEntitySuperType(typeName, ArrayTypeDefinition(Set.empty, idOrParentType))
+            val result = ArrayEntitySuperType(typeName, ArrayTypeDefinition(None, idOrParentType))
             arraySuperTypesMap += ((result.name, result))
             result
         })
@@ -171,7 +174,7 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
 
     def parseObjectSupertypeChain(typeName: String, idOrParent: Either[IdTypeRef, String], typePrefixOpt: Option[String]): ObjectEntitySuperType =
         objectSuperTypesMap.getOrElse(typeName, {
-            val idOrParentType: Either[EntityIdTypeDefinition, ObjectEntitySuperType] = idOrParent match
+            val idOrParentType: Either[EntityIdTypeDefinition[?], ObjectEntitySuperType] = idOrParent match
                 case Left(idType) =>
                     Left(parseIdType(idType.name))
                 case Right(parentTypeName) =>
@@ -188,7 +191,11 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
             case (typeFullName, _) =>
                 throw new NotObjectAbstractTypeException(typeFullName)
 
-    private def parseIdType(name: String) = idTypesMap.getOrElse(name, throw new NoIdTypeFound(name))
+    private def parseIdType(name: String): EntityIdTypeDefinition[?] =
+        idTypesMap.getOrElse(name, throw new NoIdTypeFound(name)) match
+            //TODO: add support for fixed string customized length
+            case FixedStringIdTypeDefinition => FixedStringIdTypeDefinition(defaultFixedStringLength)
+            case entityIdDef => entityIdDef.asInstanceOf[EntityIdTypeDefinition[?]]
 
     private def findTypeDefinition(typeName: String, typePrefixOpt: Option[String]): (String, TypeData) =
         rawTypesDataMap.get(typeName)
@@ -202,7 +209,7 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
                            fieldData: FieldData,
                            typePrefix: Option[String],
                            typesMap: Map[String, AbstractEntityType],
-    ): FieldTypeDefinition =
+    ): FieldTypeDefinition[?] =
         fieldData.typeDef match
             case refData: ReferenceData =>
                 FieldTypeDefinition(parseReferenceType(refData, typePrefix, typesMap), fieldData.isNullable)
@@ -215,7 +222,7 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
         parseReferenceType(rowData, typePrefix, typesMap) match
             case refData: TypeReferenceDefinition =>
                 ArrayItemTypeDefinition(refData)
-            case refData: RootPrimitiveTypeDefinition =>
+            case refData: RootPrimitiveTypeDefinition[?] =>
                 ArrayItemTypeDefinition(refData)
             case _ =>
                 throw new ConsistencyException("Only reference or root primitive types could be array items! " +
@@ -224,7 +231,7 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
     private def parseReferenceType(refData: ReferenceData,
                                    typePrefix: Option[String],
                                    typesMap: Map[String, AbstractEntityType]
-                                  ): RootPrimitiveTypeDefinition | TypeReferenceDefinition | TypeBackReferenceDefinition =
+                                  ): FieldValueTypeDefinition[?] =
         val referencedTypeOpt: Option[AbstractEntityType] =
             typesMap.get(refData.refTypeName)
                 .orElse(
@@ -262,7 +269,7 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData]):
                                          typePrefixOpt: Option[String],
                                          typesMap: Map[String, AbstractEntityType],
                                          isNullable: Boolean, 
-    ): FieldTypeDefinition =
+    ): FieldTypeDefinition[?] =
         FieldTypeDefinition(SimpleObjectTypeDefinition(rawType.fields.map(fieldRaw =>
             fieldRaw.name -> parseAnyTypeDef(fieldRaw, typePrefixOpt, typesMap)).toMap,
             rawType.parent.map(parentTypeName =>

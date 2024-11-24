@@ -80,7 +80,7 @@ class CrudActor(
                 typeMapper(entityType)
                 
     private def parseId[Res](entityType: EntityType[?, ?], idStr: String)
-                            (idMapper: EntityId => Either[Error, Try[Res]])
+                            (idMapper: EntityId[?, ?] => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
         entityType.valueType.idType.parse(idStr) match
             case Left(error) =>

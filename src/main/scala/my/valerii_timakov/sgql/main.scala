@@ -18,7 +18,7 @@ import scala.language.postfixOps
     lazy val conf: Config = ConfigFactory.load("application.config.yaml")
         .withFallback(ConfigFactory.load("default.application.config.conf"))
 
-    implicit lazy val typesDefinitionsLoader: TypesDefinitionsLoader = TypesDefinitionsLoader
+    implicit lazy val typesDefinitionsLoader: TypesDefinitionsLoader = TypesDefinitionsLoaderImpl(conf.getConfig("type-definitions"))
     implicit lazy val typesPersistenceConfigLoader: PersistenceConfigLoader = PersistenceConfigLoaderImpl(conf.getConfig("persistence"))
     lazy val typesDefinitionProvider: TypesDefinitionProvider = TypesDefinitionProvider.create
     val typeNameMaxLength = conf.getInt("type-definitions.type-name-max-length").toShort

@@ -1,6 +1,6 @@
 package my.valerii_timakov.sgql.entity.json
 
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{EntityTypeDefinition, IntIdTypeDefinition, LongIdTypeDefinition, EntitySuperType, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, EntityType, EntityIdTypeDefinition, CustomPrimitiveTypeDefinition, ArrayTypeDefinition, ArrayEntitySuperType, AbstractTypeDefinition, AbstractEntityType}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{EntityTypeDefinition, IntIdTypeDefinition, LongIdTypeDefinition, EntitySuperType, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, EntityType, AbstractEntityIdTypeDefinition, CustomPrimitiveTypeDefinition, ArrayTypeDefinition, ArrayEntitySuperType, AbstractTypeDefinition, AbstractEntityType}
 import spray.json.{JsArray, JsNull, JsObject, JsString, JsValue, RootJsonFormat, deserializationError, enrichAny}
 
 def abstractEntityType2json(typeDef: AbstractEntityType): JsValue =
@@ -31,7 +31,7 @@ implicit val entityTypeFormat: RootJsonFormat[AbstractEntityType] = new RootJson
             case JsObject(fields) =>
                 (fields("name"), fields("idType"), fields("valueType")) match
                     case Seq(Some(JsString(name)), Some(JsString(idTypeName)), Some(fieldsType)) =>
-                        EntityType(name, idType.convertTo[EntityIdTypeDefinition], fieldsType.convertTo[EntityFieldTypeDefinition])
+                        EntityType(name, idType.convertTo[EntityIdTypeDefinition[?]], fieldsType.convertTo[EntityFieldTypeDefinition])
             case _ => deserializationError("EntityType expected!")
             case _ => deserializationError("AbstractNamedEntityType expected!")*/
 
@@ -47,9 +47,9 @@ implicit val entityTypeDefinitionFormat: RootJsonFormat[EntityTypeDefinition[?, 
     def write(value: EntityTypeDefinition[?, ?]): JsValue =
         entityTypeDefinition2json(value)
 
-implicit val entityIdTypeDefinitionFormat: RootJsonFormat[EntityIdTypeDefinition] = new RootJsonFormat[EntityIdTypeDefinition]:
-    override def write(obj: EntityIdTypeDefinition): JsValue = JsString(obj.name)
-    override def read(json: JsValue): EntityIdTypeDefinition = json match
+implicit val entityIdTypeDefinitionFormat: RootJsonFormat[AbstractEntityIdTypeDefinition[?]] = new RootJsonFormat[AbstractEntityIdTypeDefinition[?]]:
+    override def write(obj: AbstractEntityIdTypeDefinition[?]): JsValue = JsString(obj.name)
+    override def read(json: JsValue): AbstractEntityIdTypeDefinition[?] = json match
         case JsString(value) => value match
             case IntIdTypeDefinition.name => IntIdTypeDefinition
             case LongIdTypeDefinition.name => LongIdTypeDefinition
@@ -81,13 +81,13 @@ implicit val entityFieldTypeDefinitionFormat: RootJsonFormat[AbstractTypeDefinit
             JsObject(
                 "type" -> JsString("CustomPrimitive"),
                 "parent" -> parentName,
-                "id" -> idOrParentType.left.toOption.map(_._1.toJson).getOrElse(JsNull)
+//                "id" -> idOrParentType.left.toOption.map(_._1.toJson).getOrElse(JsNull)
             )
         case RootPrimitiveTypeDefinition(name) => JsString(name)
         case ArrayTypeDefinition(elementsType, parentType) => JsObject(
             "type" -> JsString("Array"),
             "parent" -> parentType.map(p => JsString(p.name)).getOrElse(JsNull),
-            "elements" -> JsArray(elementsType.map(v => JsString(v.name)).toVector))
+            "elements" -> JsArray(elementsType.getOrElse(Set.empty).map(v => JsString(v.name)).toVector))
         case ObjectTypeDefinition(fields, parentType) => JsObject(
             "type" -> JsString("Object"),
             "parent" -> parentType.map(p => JsString(p.name)).getOrElse(JsNull),
