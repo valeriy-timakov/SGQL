@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.services
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.TypesDefinitionsParseError
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractEntityType, AbstractRootPrimitiveTypeDefinition, ArrayEntitySuperType, ArrayEntityType, ArrayItemTypeDefinition, ArrayTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, EntitySuperType, EntityType, FieldTypeDefinition, FieldValueTypeDefinition, FixedStringIdTypeDefinition, ObjectEntitySuperType, ObjectEntityType, ObjectTypeDefinition, PrimitiveEntitySuperType, FixedStringTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, idTypesMap, primitiveFieldTypesMap}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractEntityType, AbstractObjectEntityType, AbstractRootPrimitiveTypeDefinition, ArrayEntitySuperType, ArrayEntityType, ArrayItemTypeDefinition, ArrayTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, EntitySuperType, EntityType, FieldTypeDefinition, FieldValueTypeDefinition, FixedStringIdTypeDefinition, FixedStringTypeDefinition, ObjectEntitySuperType, ObjectEntityType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, idTypesMap, primitiveFieldTypesMap}
 import my.valerii_timakov.sgql.exceptions.*
 import my.valerii_timakov.sgql.services.TypesDefinitionsParser.IdTypeRef
 
@@ -78,6 +78,7 @@ class TypesDefinitionsLoaderImpl(conf: Config) extends TypesDefinitionsLoader:
                             typeFullName -> typeEntityDef
                         }
                     )
+                //initialize children - fields or array items
                 typesMap.foreach((typeFullName, typeEntityDef) =>
                     typeEntityDef.valueType match
                         case arrDef: ArrayTypeDefinition =>
@@ -95,6 +96,29 @@ class TypesDefinitionsLoaderImpl(conf: Config) extends TypesDefinitionsLoader:
                                         fieldRaw.name -> parser.parseAnyTypeDef(fieldRaw, typePrefix, typesMap)).toMap
                                     objDef.setChildren(fieldsMap)
                                 case _ => throw new NoTypeFound(typeFullName)
+                        case _ => // do nothing
+                )
+                //check back references
+                typesMap.foreach((typeFullName, entityType) =>
+                    entityType.valueType match
+                        case objDef: ObjectTypeDefinition =>
+                            objDef.fields.foreach((fieldName, fieldDef) =>
+                                fieldDef.valueType match
+                                    case TypeBackReferenceDefinition(backReferencedType, refFieldName) =>
+                                        val refFieldDef = backReferencedType.valueType.fields.getOrElse(fieldName,
+                                            throw new ConsistencyException(s"Field $fieldName not found in back " +
+                                                s"referenced type ${backReferencedType.name}!"))
+                                        refFieldDef.valueType match
+                                            case TypeReferenceDefinition(referencedType) =>
+                                                if (referencedType.getId != entityType.getId)
+                                                    throw new ConsistencyException(s"Found reference " +
+                                                        s"${backReferencedType.name}.${refFieldName}: refFieldDef$refFieldDef " +
+                                                        s"in back referenced type does not reference to current type ${entityType.name}!")
+                                            case _ => throw new ConsistencyException(s"Field $fieldName in back " +
+                                                s"referenced type ${backReferencedType.name} is not of reference type! " +
+                                                s"Type: ${refFieldDef.valueType}")
+                                    case _ => // do nothing
+                            )
                         case _ => // do nothing
                 )
                 typesMap
@@ -258,16 +282,16 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData], defaul
                             s"reference! Type ${refData.refTypeName} is trying to be referenced by ${refData.refFieldName}!")
                     else
                         throw new NoTypeFound(refData.refTypeName))
-                referencedType.valueType match
-                    case _: ObjectTypeDefinition =>
+                referencedType match
+                    case referencedType: AbstractObjectEntityType =>
                         TypeBackReferenceDefinition(referencedType, refFieldName)
-                    case anyTypeDefinition: AbstractEntityType =>
+                    case _ =>
                         throw new ConsistencyException("Only object types could be referenced by back reference! " +
                             s"Type ${refData.refTypeName} is trying to be referenced by ${refData.refFieldName}!")
             case None =>
                 referencedTypeOpt match
-                    case Some(anyTypeDefinition) =>
-                        TypeReferenceDefinition(anyTypeDefinition)
+                    case Some(referencedType) =>
+                        TypeReferenceDefinition(referencedType)
                     case None =>
                         getPrimitiveType(refData.refTypeName) match
                             case Some(valueType) =>

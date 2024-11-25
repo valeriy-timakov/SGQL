@@ -7,7 +7,7 @@ import my.valerii_timakov.sgql.entity.domain.type_definitions.LongTypeDefinition
 import my.valerii_timakov.sgql.entity.{IdParseError, ValueParseError}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BackReferenceValue, BinaryValue, BooleanValue, ByteId, ByteValue, CustomPrimitiveValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, Entity, EntityId, EntityValue, FixedStringId, FixedStringValue, FloatValue, IntId, IntValue, ItemValue, LongId, LongValue, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, ShortIntValue, SimpleObjectValue, StringId, StringValue, TimeValue, UUIDId, UUIDValue, ValueTypes}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, TypeReinitializationException, WrongStateExcetion}
-import spray.json.{JsArray, JsBoolean, JsNumber, JsObject, JsString, JsValue}
+import spray.json.{JsArray, JsBoolean, JsNull, JsNumber, JsObject, JsString, JsValue}
 
 import java.time.format.DateTimeFormatter
 import java.time.{LocalDate, LocalDateTime, LocalTime}
@@ -104,6 +104,9 @@ case class RootPrimitiveType[T, V <: RootPrimitiveValue[T, V]](valueType: RootPr
 sealed abstract class AbstractEntityType extends AbstractNamedType:
     override def valueType: EntityTypeDefinition[?, ?]
 
+sealed trait AbstractObjectEntityType extends AbstractEntityType:
+    def valueType: ObjectTypeDefinition
+
 sealed abstract class EntityType[VT <: Entity[VT, V], V <: ValueTypes] extends AbstractEntityType:
     override def valueType: EntityTypeDefinition[VT, V]
     def createEntity(id: EntityId[?, ?], value: V): VT
@@ -133,7 +136,7 @@ case class ArrayEntityType(
 case class ObjectEntityType(
     name: String,
     valueType: ObjectTypeDefinition,
-) extends EntityType[ObjectValue, Map[String, EntityValue]]:
+) extends EntityType[ObjectValue, Map[String, EntityValue]], AbstractObjectEntityType:
     def createEntity(id: EntityId[?, ?], value: Map[String, EntityValue]): ObjectValue =
         ObjectValue(id, value, this)
 
@@ -154,7 +157,7 @@ case class ArrayEntitySuperType(
 case class ObjectEntitySuperType(
     name: String,
     valueType: ObjectTypeDefinition,
-) extends EntitySuperType
+) extends EntitySuperType, AbstractObjectEntityType
 
 sealed abstract class AbstractEntityIdTypeDefinition[V <: EntityId[?, V]]:
     def name: String
@@ -241,13 +244,32 @@ final case class TypeReferenceDefinition(
                                         ) extends ItemValueTypeDefinition[ReferenceValue], ReferenceDefinition[ReferenceValue]:
     lazy val idType: AbstractEntityIdTypeDefinition[?] = referencedType.valueType.idType
     override def name: String = referencedType.name
-    def toJson(value: ReferenceValue): JsValue = ???
-    def parse(value: JsValue): Either[ValueParseError, ReferenceValue] = ???
+    def toJson(value: ReferenceValue): JsValue =
+        JsObject(
+            "refId" -> value.refId.toJson,
+            "type" -> JsString(referencedType.name),
+            "value" -> value.refValueOpt.map(v => v.toJson).getOrElse(JsNull),
+        )
+    def parse(value: JsValue): Either[ValueParseError, ReferenceValue] =
+        value match
+            case JsObject(fields) =>
+                fields.get("refId") match
+                    case Some(_refId) =>
+                        val refId = idType.parse(_refId)
+                        val res = ReferenceValue(refId, this)
+                        val refValue = fields.get("value")
+                            .map(v => referencedType.valueType.parseValue(v))
+                            .foreach(v => res.setRefValue(v)
+                        Right(res)
+                    case None =>
+                        Left(new ValueParseError(name, value.toString, "no refId"))
+            case _ =>
+                Left(new ValueParseError(name, value.toString, "wrong reference format"))
     override def toString: String = s"TypeReferenceDefinition(ref[${referencedType.name}])"
 
 final case class TypeBackReferenceDefinition(
                                                 //reference to abstract type to make it possible to reference to any concrete nested type
-                                                referencedType: AbstractEntityType,
+                                                referencedType: AbstractObjectEntityType,
                                                 refField: String
                                             ) extends FieldValueTypeDefinition[BackReferenceValue], ReferenceDefinition[BackReferenceValue]:
     lazy val idType: AbstractEntityIdTypeDefinition[?] = referencedType.valueType.idType
@@ -266,7 +288,7 @@ sealed abstract case class RootPrimitiveTypeDefinition[V <: RootPrimitiveValue[?
         try {
             Right(parseInner(value))
         } catch {
-            case _: Throwable => Left(new ValueParseError(this.getClass.getSimpleName, value))
+            case e: Exception => Left(new ValueParseError(this.getClass.getSimpleName, value, e.getMessage))
         }
     def parse(value: JsValue): Either[ValueParseError, V]
     protected def parseInner(value: String): V
@@ -474,6 +496,7 @@ sealed trait EntityTypeDefinition[VT <: Entity[VT, V], V <: ValueTypes] extends 
     def idType: EntityIdTypeDefinition[?]
     def parent: Option[EntitySuperType]
     def parseValue(data: JsValue): Either[ValueParseError, V]
+    def toJson(value: V): JsValue
 
 final case class CustomPrimitiveTypeDefinition(
     parentNode: Either[(EntityIdTypeDefinition[?], RootPrimitiveTypeDefinition[?]), PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition]]

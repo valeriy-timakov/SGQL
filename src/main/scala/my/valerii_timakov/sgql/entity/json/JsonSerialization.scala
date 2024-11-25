@@ -38,7 +38,7 @@ def entityValue2json(entity: EntityValue): JsValue = entity match
         "value" -> values2json(value),
     )
     case ref: ReferenceValue => JsObject(
-        "id" -> id2json(ref.value),
+        "id" -> id2json(ref.refId),
         "type" -> typeRef2json(ref.typeDefinition.valueType.referencedType),
         "value" -> option2json(ref.refValueOpt, entityd2json),
     )

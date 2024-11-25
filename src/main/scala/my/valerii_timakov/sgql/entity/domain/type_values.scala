@@ -1,6 +1,6 @@
 package my.valerii_timakov.sgql.entity.domain.type_values
 
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractEntityType, AbstractNamedType, AbstractRootPrimitiveTypeDefinition, AbstractType, AbstractTypeDefinition, ArrayEntityType, ArrayTypeDefinition, BackReferenceType, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntitySuperType, EntityType, EntityTypeDefinition, FieldValueType, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, ItemValueType, ItemValueTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntityType, ObjectTypeDefinition, ReferenceDefinition, ReferenceType, RootPrimitiveType, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectType, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractEntityType, AbstractNamedType, AbstractRootPrimitiveTypeDefinition, AbstractType, AbstractTypeDefinition, ArrayEntityType, ArrayTypeDefinition, BackReferenceType, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveEntityType, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntitySuperType, EntityType, EntityTypeDefinition, FieldValueType, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, ItemValueType, ItemValueTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectEntityType, ObjectTypeDefinition, ReferenceDefinition, ReferenceType, RootPrimitiveType, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectType, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
 import my.valerii_timakov.sgql.exceptions.ConsistencyException
 import spray.json.{JsNull, JsValue}
 
@@ -10,37 +10,38 @@ import java.util.UUID
 
 sealed trait EntityId[T, V <: EntityId[T, V]]:
     def serialize: String
-    def typeDefinition: AbstractEntityIdTypeDefinition[V]
+    def typeDefinition: EntityIdTypeDefinition[V]
+    def toJson: JsValue = typeDefinition.toJson(this.asInstanceOf[V])
 //object EmptyId extends EntityId:
 //    override def serialize: String = "()"
 sealed trait FilledEntityId[T, V <: EntityId[T, V]] extends EntityId[T, V]
 final case class ByteId(value: Byte) extends EntityId[Byte, ByteId]:
     override def serialize: String = value.toString
-    override val typeDefinition: AbstractEntityIdTypeDefinition[ByteId] = ByteIdTypeDefinition
+    override val typeDefinition: EntityIdTypeDefinition[ByteId] = ByteIdTypeDefinition
 final case class ShortIntId(value: Short) extends EntityId[Short, ShortIntId]:
     override def serialize: String = value.toString
-    override val typeDefinition: AbstractEntityIdTypeDefinition[ShortIntId] = ShortIdTypeDefinition
+    override val typeDefinition: EntityIdTypeDefinition[ShortIntId] = ShortIdTypeDefinition
 final case class IntId(value: Int) extends EntityId[Int, IntId]:
     override def serialize: String = value.toString
-    override val typeDefinition: AbstractEntityIdTypeDefinition[IntId] = IntIdTypeDefinition
+    override val typeDefinition: EntityIdTypeDefinition[IntId] = IntIdTypeDefinition
 final case class LongId(value: Long) extends EntityId[Long, LongId]:
     override def serialize: String = value.toString
-    override val typeDefinition: AbstractEntityIdTypeDefinition[LongId] = LongIdTypeDefinition
+    override val typeDefinition: EntityIdTypeDefinition[LongId] = LongIdTypeDefinition
 final case class StringId(value: String) extends EntityId[String, StringId]:
     if value == null then throw new IllegalArgumentException("StringId cannot be null!")
     override def serialize: String = value
-    override val typeDefinition: AbstractEntityIdTypeDefinition[StringId] = StringIdTypeDefinition
+    override val typeDefinition: EntityIdTypeDefinition[StringId] = StringIdTypeDefinition
 final case class FixedStringId(value: String, typeRef: FixedStringIdTypeDefinition) extends EntityId[String, FixedStringId]:
     if value == null then throw new IllegalArgumentException("FixedStringId cannot be null!")
     if value == null then throw new IllegalArgumentException("FixedStringId cannot have null type!")
     if value.length != typeRef.length then throw new IllegalArgumentException(
         s"FixedStringId value must be of length ${typeRef.length}! Got: $value")
     override def serialize: String = value
-    override val typeDefinition: AbstractEntityIdTypeDefinition[FixedStringId] = FixedStringIdTypeDefinition
+    override val typeDefinition: EntityIdTypeDefinition[FixedStringId] = typeRef
 final case class UUIDId(value: UUID) extends EntityId[UUID, UUIDId]:
     if value == null then throw new IllegalArgumentException("UUIDId cannot be null!")
     override def serialize: String = value.toString
-    override val typeDefinition: AbstractEntityIdTypeDefinition[UUIDId] = UUIDIdTypeDefinition
+    override val typeDefinition: EntityIdTypeDefinition[UUIDId] = UUIDIdTypeDefinition
 
 sealed abstract class EntityValue:
     def typeDefinition: FieldValueType
@@ -135,8 +136,8 @@ final case class SimpleObjectValue(
     checkObjectTypeData(value, typeDefinition.valueType)
     def toJson: JsValue = ???//typeDefinition.valueType.toJson(value) 
 
-final case class ReferenceValue(value: FilledEntityId[?, ?], typeDefinition: ReferenceType) extends ItemValue:
-    checkReferenceId(value, typeDefinition.valueType)
+final case class ReferenceValue(refId: FilledEntityId[?, ?], typeDefinition: ReferenceType) extends ItemValue:
+    checkReferenceId(refId, typeDefinition.valueType)
     protected var _refValue: Option[Entity[?, ?]] = None
     def toJson: JsValue = ???//typeDefinition.valueType.toJson(value)
 
@@ -145,7 +146,7 @@ final case class ReferenceValue(value: FilledEntityId[?, ?], typeDefinition: Ref
     def refValueOpt: Option[Entity[?, ?]] = _refValue
 
     def setRefValue(value: Entity[?, ?]): Unit = _refValue =
-        checkReferenceValue(value, typeDefinition.valueType.referencedType, this.value)
+        checkReferenceValue(value, typeDefinition.valueType.referencedType, this.refId)
         Some(value)
 
 final case class BackReferenceValue(value: FilledEntityId[?, ?], typeDefinition: BackReferenceType) extends EntityValue:
@@ -167,6 +168,7 @@ trait Entity[VT <: Entity[VT, V], V <: ValueTypes]:
     def id: EntityId[?, ?]
     def value: V
     def cloneWithId(newId: EntityId[?, ?]): VT
+    def toJson: JsValue = typeDefinition.valueType.toJson(this.value)
 
 final case class CustomPrimitiveValue(
     id: EntityId[?, ?],
