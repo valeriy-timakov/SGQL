@@ -248,7 +248,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Short, fie
                     ${trc.getString(PREVIOUS_NAME_COLUMN)},
                     ${trc.getString(NEW_NAME_COLUMN)},
                     ${trc.getString(VERSION_REF_COLUMN)}
-                ) VALUES (?, ?, ?)
+                ) VALUES (_, _, _)
             """)
                 .bind(prevName, newName, versionId)
                 .update.apply()
@@ -267,7 +267,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Short, fie
                 s"""INSERT INTO $utilsSchemaName.${trc.getString(VERSIONS_TABLE_NAME)} (
                     ${trc.getString(VERSION_NAME_COLUMN)},
                     ${trc.getString(CREATION_DATE_COLUMN)}
-                ) VALUES (?, ?)"""
+                ) VALUES (_, _)"""
             )
             .bind(version, creationDate)
             .updateAndReturnGeneratedKey(trc.getString(ID_COLUMN_NAME)).apply()
@@ -281,7 +281,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Short, fie
                     ${trc.getString(TYPE_NAME_COLUMN)},
                     ${trc.getString(TABLE_NAME_COLUMN)},
                     ${trc.getString(VERSION_REF_COLUMN)}
-                ) VALUES (?, ?, ?)"""
+                ) VALUES (_, _, _)"""
             )
             .bind(typeName, tableName, versionId)
             .updateAndReturnGeneratedKey(trc.getString(ID_COLUMN_NAME)).apply()
@@ -290,7 +290,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Short, fie
     def getTypesToTablesMap(versionId: Long): Map[String, String] =
         DB.readOnly { implicit session =>
             SQL(
-                s"""SELECT * FROM $utilsSchemaName.${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)} WHERE ${trc.getString(VERSION_REF_COLUMN)} = ?"""
+                s"""SELECT * FROM $utilsSchemaName.${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)} WHERE ${trc.getString(VERSION_REF_COLUMN)} = _"""
             )
             .bind(versionId)
             .map(rs => (rs.string(trc.getString(TYPE_NAME_COLUMN)), rs.string(trc.getString(TABLE_NAME_COLUMN))))
@@ -315,7 +315,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Short, fie
                     ${trc.getString(COLUMN_NAME_COLUMN)},
                     ${trc.getString(COLUMN_TYPE_COLUMN)}, 
                     ${trc.getString(FIELD_NAME_COLUMN)}
-                ) VALUES (?, ?, ?, ?)"""
+                ) VALUES (_, _, _, _)"""
             )
             .bind(tableItemId, fieldName, columnName, columnType)
             .update.apply()
@@ -334,7 +334,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Short, fie
                         ${trc.getString(PREVIOUS_NAME_COLUMN)},
                         ${trc.getString(NEW_NAME_COLUMN)},
                         ${trc.getString(VERSION_REF_COLUMN)}
-                    ) VALUES (?, ?, ?, ?)"""
+                    ) VALUES (_, _, _, _)"""
             )
                 .bind(alteringTableName, prevValue, newValue, versionId)
                 .update.apply()

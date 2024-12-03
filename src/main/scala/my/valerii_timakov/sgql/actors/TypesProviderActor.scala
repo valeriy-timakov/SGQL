@@ -33,6 +33,6 @@ object TypesProviderActor:
     def apply(typesDefinitionProvider: TypesDefinitionProvider): Behavior[Command] =
         Behaviors.setup(context => new TypesProviderActor(context, typesDefinitionProvider))
     sealed trait Command extends MainActor.Message
-    final case class Get(name: String, replyTo: ActorRef[Option[AbstractEntityType]]) extends Command
-    final case class GetAll(replyTo: ActorRef[Seq[AbstractEntityType]]) extends Command
+    final case class Get(name: String, replyTo: ActorRef[Option[AbstractEntityType[_, _, _]]]) extends Command
+    final case class GetAll(replyTo: ActorRef[Seq[AbstractEntityType[_, _, _]]]) extends Command
     final case class GetAllPersist(replyTo: ActorRef[Map[String, TypePersistenceDataFinal]]) extends Command

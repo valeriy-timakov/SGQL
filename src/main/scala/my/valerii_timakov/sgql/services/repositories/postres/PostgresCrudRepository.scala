@@ -29,7 +29,7 @@ class PostgresCrudRepository(
         if typesDefinitionsProviderContainer.isEmpty then throw NotInitializedException("PostgresCrudRepository", "typesDefinitionsProvider")
         typesDefinitionsProviderContainer.get
 
-    override def create(entityType: EntityType[?, ?], data: ValueTypes): Try[Entity[?, ?]] = ???
+    override def create(entityType: EntityType[_, _, _], data: ValueTypes): Try[Entity[_, _, _]] = ???
 //        val persistenceData = typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
 //            throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
 //        persistenceData match
@@ -39,7 +39,7 @@ class PostgresCrudRepository(
 //                        s"""INSERT INTO $typesSchemaName.$tableName (
 //                            ${esc(idColumn.columnName)},
 //                            ${esc(valueColumn.columnName)}
-//                        ) VALUES (?, ?)"""
+//                        ) VALUES (_, _)"""
 //                    )
 //                    .bind(data.id, data.value)
 //                    .updateAndReturnGeneratedKey(esc(idColumn.columnName)).apply()
@@ -51,13 +51,13 @@ class PostgresCrudRepository(
 //                        ${trc.getString(TYPE_NAME_COLUMN)},
 //                        ${trc.getString(TABLE_NAME_COLUMN)},
 //                        ${trc.getString(VERSION_REF_COLUMN)}
-//                    ) VALUES (?, ?)"""
+//                    ) VALUES (_, _)"""
 //            )
 //            .bind(typeName, tableName, versionId)
 //            .updateAndReturnGeneratedKey(trc.getString(ID_COLUMN_NAME)).apply()
 //        }
 
-    override def update(entityType: EntityType[?, ?], entity: Entity[?, ?]): Try[Option[Unit]] = ???//Try {
+    override def update(entityType: EntityType[_, _, _], entity: Entity[_, _, _]): Try[Option[Unit]] = ???//Try {
 //        entity.value match
 //            case CustomPrimitiveType(rootValue, definition) =>
 //                getEntityPersistendeData(definition) match
@@ -65,8 +65,8 @@ class PostgresCrudRepository(
 //                        mapColColuntResult( DB.autoCommit { implicit session =>
 //                            SQL(
 //                                s"""UPDATE $typesSchemaName.$tableName
-//                                    SET ${esc(valueColumn.columnName)} = ?
-//                                    WHERE ${esc(idColumn.columnName)} = ?"""
+//                                    SET ${esc(valueColumn.columnName)} = _
+//                                    WHERE ${esc(idColumn.columnName)} = _"""
 //                            )
 //                                .bind(rootValue.value, entity.id)
 //                                .update.apply()
@@ -79,7 +79,7 @@ class PostgresCrudRepository(
 //                        val fieldsData = filedValuesMap.map { case (fieldName, fieldValue) =>
 //                            fieldsPersistenceData(fieldName) match
 //                                case PrimitiveValuePersistenceDataFinal(columnName, columnType) =>
-//                                    (columnName, getAsConcreteValue[PrimitiveFieldType[?]](fieldValue, "").value)
+//                                    (columnName, getAsConcreteValue[PrimitiveFieldType[_]](fieldValue, "").value)
 //                                case ref: ReferenceValuePersistenceDataFinal =>
 //                                    (ref.columnName, getAsConcreteValue[ReferenceFieldType](fieldValue, "").id)
 //                                case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
@@ -89,7 +89,7 @@ class PostgresCrudRepository(
 //                                    val fieldsData = fields.map { case (fieldName, field) =>
 //                                        fields(fieldName) match
 //                                            case PrimitiveValuePersistenceDataFinal(columnName, columnType) =>
-//                                                (columnName, field.asInstanceOf[PrimitiveFieldType[?]].value)
+//                                                (columnName, field.asInstanceOf[PrimitiveFieldType[_]].value)
 //                                            case ref: ReferenceValuePersistenceDataFinal =>
 //                                                (ref.columnName, field.asInstanceOf[ReferenceFieldType].id)
 //                                            case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
@@ -100,8 +100,8 @@ class PostgresCrudRepository(
 //                        mapColColuntResult( DB.autoCommit { implicit session =>
 //                            SQL(
 //                                s"""UPDATE $typesSchemaName.$tableName
-//                                    SET ${fieldsData.map { case (columnName, _) => s"${esc(columnName)} = ?" }.mkString(", ")}
-//                                    WHERE ${esc(idColumn.columnName)} = ?"""
+//                                    SET ${fieldsData.map { case (columnName, _) => s"${esc(columnName)} = _" }.mkString(", ")}
+//                                    WHERE ${esc(idColumn.columnName)} = _"""
 //                            )
 //                                .bind(fieldsData.map(_._2) :+ entity.id: _*)
 //                                .update.apply()
@@ -116,13 +116,13 @@ class PostgresCrudRepository(
 //        persistenceData match
 //            case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
 //                val value = entity.value match
-//                    case primitive: PrimitiveFieldType[?] => primitive.value
+//                    case primitive: PrimitiveFieldType[_] => primitive.value
 //                    case _ => throw new ConsistencyException("Entity value is not Primitive!")
 //                DB.autoCommit { implicit session =>
 //                    SQL(
 //                        s"""UPDATE $typesSchemaName.$tableName
-//                            SET ${esc(valueColumn.columnName)} = ?
-//                            WHERE ${esc(idColumn.columnName)} = ?"""
+//                            SET ${esc(valueColumn.columnName)} = _
+//                            WHERE ${esc(idColumn.columnName)} = _"""
 //                    )
 //                        .bind(value, entity.id)
 //                        .update.apply()
@@ -135,7 +135,7 @@ class PostgresCrudRepository(
 //                        fieldsValuesMap.map { case (fieldName, field) =>
 //                            fields(fieldName) match
 //                                case PrimitiveValuePersistenceDataFinal(columnName, columnType) =>
-//                                    (columnName, field.asInstanceOf[PrimitiveFieldType[?]].value)
+//                                    (columnName, field.asInstanceOf[PrimitiveFieldType[_]].value)
 //                                case ref: ReferenceValuePersistenceDataFinal =>
 //                                    (ref.columnName, field.asInstanceOf[ReferenceFieldType].id)
 //                                case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
@@ -145,7 +145,7 @@ class PostgresCrudRepository(
 //                                    val fieldsData = fields.map { case (fieldName, field) =>
 //                                        fields(fieldName) match
 //                                            case PrimitiveValuePersistenceDataFinal(columnName, columnType) =>
-//                                                (columnName, field.asInstanceOf[PrimitiveFieldType[?]].value)
+//                                                (columnName, field.asInstanceOf[PrimitiveFieldType[_]].value)
 //                                            case ref: ReferenceValuePersistenceDataFinal =>
 //                                                (ref.columnName, field.asInstanceOf[ReferenceFieldType].id)
 //                                            case SimpleObjectValuePersistenceDataFinal(parent, fields) =>
@@ -157,8 +157,8 @@ class PostgresCrudRepository(
 //                DB.autoCommit { implicit session =>
 //                    SQL(
 //                        s"""UPDATE $typesSchemaName.$tableName
-//                            SET ${fieldsData.map { case (columnName, _) => s"${esc(columnName)} = ?" }.mkString(", ")}
-//                            WHERE ${esc(idColumn.columnName)} = ?"""
+//                            SET ${fieldsData.map { case (columnName, _) => s"${esc(columnName)} = _" }.mkString(", ")}
+//                            WHERE ${esc(idColumn.columnName)} = _"""
 //                    )
 //                        .bind(fieldsData.map(_._2) :+ entity.id: _*)
 //                        .update.apply()
@@ -172,7 +172,7 @@ class PostgresCrudRepository(
             case value: T => value
             case _ => throw new ConsistencyException(errorMessage)
 
-    override def delete(entityType: EntityType[?, ?], id: EntityId[?, ?]): Try[Option[Unit]] = 
+    override def delete(entityType: EntityType[_, _, _], id: EntityId[_, _]): Try[Option[Unit]] =
         Try {
             val persistenceData = getEntityPersistendeData(entityType)
             val tableData = persistenceData match
@@ -182,8 +182,8 @@ class PostgresCrudRepository(
                     (tableName, idColumn.columnName)
             mapColColuntResult( DB.autoCommit { implicit session =>
                 SQL(
-                    s"""UPDATE $typesSchemaName.${tableData._1} SET $archivedEntityColumnName = ?
-                        WHERE ${esc(tableData._2)} = ?"""
+                    s"""UPDATE $typesSchemaName.${tableData._1} SET $archivedEntityColumnName = _
+                        WHERE ${esc(tableData._2)} = _"""
                 )
                     .bind(true, id)
                     .update.apply()
@@ -196,14 +196,14 @@ class PostgresCrudRepository(
         else throw new ConsistencyException(nonUniqueErrorMessage)
 
 
-    private def getEntityPersistendeData(entityType: EntityType[?, ?]) = {
+    private def getEntityPersistendeData(entityType: EntityType[_, _, _]) = {
         typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
             throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
     }
 
-    override def get(entityType: EntityType[?, ?], id: EntityId[?, ?], getFields: GetFieldsDescriptor): Try[Option[Entity[?, ?]]] = ???
+    override def get(entityType: EntityType[_, _, _], id: EntityId[_, _], getFields: GetFieldsDescriptor): Try[Option[Entity[_, _, _]]] = ???
 
-    override def find(entityType: EntityType[?, ?], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity[?, ?]]] = ???
+    override def find(entityType: EntityType[_, _, _], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity[_, _, _]]] = ???
 
 
     def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit =
@@ -229,7 +229,7 @@ class PostgresCrudRepository(
 
     private def initConnectionPoolAndTypesSchema() =
 
-        val typesSchemaParam = if typesSchemaName != null then s"?currentSchema=$typesSchemaName" else ""
+        val typesSchemaParam = if typesSchemaName != null then s"_currentSchema=$typesSchemaName" else ""
         Class.forName("org.postgresql.Driver")
         ConnectionPool.singleton(s"jdbc:postgresql://${connectionConf.getString("host")}:" +
             s"${connectionConf.getInt("port")}/${connectionConf.getString("database")}$typesSchemaParam",
@@ -330,7 +330,7 @@ class PostgresCrudRepository(
     private val archivedColumnNameSuffix = persistenceConf.getString("archived-column-name-suffix")
     private val archivedEntityColumnName = persistenceConf.getString("archived-entity-column")
 
-    private var typesPersistenceData: Map[AbstractEntityType, TypePersistenceData] = Map()
+    private var typesPersistenceData: Map[AbstractEntityType[_, _, _], TypePersistenceData] = Map()
 
     private class RefData(
         val tableName: String,

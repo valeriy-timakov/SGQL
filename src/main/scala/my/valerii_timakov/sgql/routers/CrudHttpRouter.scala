@@ -12,7 +12,7 @@ import my.valerii_timakov.sgql.actors.CrudActor.*
 import my.valerii_timakov.sgql.entity.Error
 import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityValue}
 import my.valerii_timakov.sgql.services.MessageSource
-import spray.json.JsValue
+import spray.json.{JsArray, JsValue}
 
 import scala.concurrent.Future
 import scala.concurrent.duration.*
@@ -33,7 +33,7 @@ class CrudHttpRouter(
             path(Segment) { objectId =>
                 get {
                     parameterMap { params =>
-                        val result: Future[Either[Error, Try[Option[Entity[?, ?]]]]] =
+                        val result: Future[Either[Error, Try[Option[Entity[_, _, _]]]]] =
                             appActor ? (GetMessage(objectType, objectId, params.get("fields"), _))
                         onSuccess(result) {
                             case Left(error) =>
@@ -43,7 +43,7 @@ class CrudHttpRouter(
                             case Right(Success(None)) =>
                                 complete(StatusCodes.NotFound)
                             case Right(Success(Some(entity))) =>
-                                complete(StatusCodes.OK, entity)
+                                complete(StatusCodes.OK, entity.toJson)
                         }
                     }
                 } ~
@@ -83,7 +83,7 @@ class CrudHttpRouter(
             path("search") {
                 get {
                     parameterMap { params =>
-                        val result: Future[Either[Error, Try[Seq[Entity[?, ?]]]]] =
+                        val result: Future[Either[Error, Try[Seq[Entity[_, _, _]]]]] =
                             appActor ? (SearchMessage(objectType, params.get("search"), params.get("fields"), _))
                         onSuccess(result) {
                             case Left(error) =>
@@ -91,7 +91,7 @@ class CrudHttpRouter(
                             case Right(Failure(exception)) =>
                                 complete(StatusCodes.InternalServerError, exception.getMessage)
                             case Right(Success(entities)) =>
-                                complete(StatusCodes.OK, entities)
+                                complete(StatusCodes.OK, JsArray(entities.map(_.toJson).toVector))
                         }
                     }
                 }
@@ -99,7 +99,7 @@ class CrudHttpRouter(
             pathEnd {
                 post {
                     entity(as [JsValue]) { requestEntity =>
-                        val result: Future[Either[Error, Try[Entity[?, ?]]]] =
+                        val result: Future[Either[Error, Try[Entity[_, _, _]]]] =
                             appActor ? (CreateMessage(objectType, requestEntity, _))
                         onSuccess(result) {
                             case Left(error) =>
@@ -107,7 +107,7 @@ class CrudHttpRouter(
                             case Right(Failure(exception)) =>
                                 complete(StatusCodes.InternalServerError, exception.getMessage)
                             case Right(Success(entity)) =>
-                                complete(StatusCodes.OK, entity)
+                                complete(StatusCodes.OK, entity.toJson)
                         }
                     }
                 }

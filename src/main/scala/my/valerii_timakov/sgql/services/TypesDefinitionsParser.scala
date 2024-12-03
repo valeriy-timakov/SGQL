@@ -100,7 +100,7 @@ object TypesDefinitionsParser extends DefinitionsParser[TypesRootPackageData]:
     case class IdTypeRef(name: String)
         
     private def itemName: Parser[String] = log("""[\w_]+""".r, "itemName")
-    private def typeRefName: Parser[String] = log("""[\w_]+([\w_.]+[\w_]+)?""".r, "typeRefName")
+    private def typeRefName: Parser[String] = log("""[\w_]+([\w_.]+[\w_]+)_""".r, "typeRefName")
     private def typeReference: Parser[ReferenceData] = log(opt("$") ~ typeRefName ~ opt("+" ~> itemName) ^^ {
         case uniqueMark ~ refTypeName ~ refFieldName => ReferenceData(refTypeName, refFieldName, uniqueMark.isDefined)
     }, "typeReference")
@@ -150,7 +150,7 @@ object TypesDefinitionsParser extends DefinitionsParser[TypesRootPackageData]:
     private def packageItem: Parser[TypesPackageData] = log((typeRefName <~ "{") ~ packageContent <~ "}" ^^ {
         case packageName ~ packageContent => packageContent.toNamed(packageName)
     }, "packageItem")
-    private def singleTypePackageItem: Parser[TypesPackageData] = log(("""[\w_]+([\w_.]+[\w_]+)??(?=\.[\w_]+:)""".r <~ ".") ~ anyTypeItem ^^ {
+    private def singleTypePackageItem: Parser[TypesPackageData] = log(("""[\w_]+([\w_.]+[\w_]+)__(_=\.[\w_]+:)""".r <~ ".") ~ anyTypeItem ^^ {
         case packageName ~ typeData => TypesPackageData(packageName, List(), List(typeData))
     }, "singleTypePackageItem")
 

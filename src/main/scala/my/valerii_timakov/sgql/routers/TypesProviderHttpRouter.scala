@@ -38,19 +38,19 @@ class TypesProviderHttpRouter(
         pathPrefix("type") {
             path(Segment) { name =>
                 get {
-                    val result: Future[Option[AbstractEntityType]] =
+                    val result: Future[Option[AbstractEntityType[_, _, _]]] =
                         appActor ? (Get(name, _))
                     onSuccess(result) {
                         case None =>
                             complete(StatusCodes.NotFound)
-                        case Some(typeDefinition: AbstractEntityType) =>
+                        case Some(typeDefinition: AbstractEntityType[_, _, _]) =>
                             complete(StatusCodes.OK, typeDefinition)
                     }
                 }
             } ~
             pathEnd {
                 get {
-                    val result: Future[Seq[AbstractEntityType]] = appActor ? GetAll.apply
+                    val result: Future[Seq[AbstractEntityType[_, _, _]]] = appActor ? GetAll.apply
                     onSuccess(result)(types => complete(StatusCodes.OK, types))
                 }
             }

@@ -152,7 +152,7 @@ case class PackageData[ItemDataType <: ItemData](name: String, override val pack
 object PersistenceConfigParser extends DefinitionsParser[RootPackagePersistenceData]:
 
     private def itemName: Parser[String] = log("""[\w_]+""".r, "itemName")
-    private def typeRefName: Parser[String] = log("""[\w_]+([\w_.]+[\w_]+)?""".r, "typeRefName")
+    private def typeRefName: Parser[String] = log("""[\w_]+([\w_.]+[\w_]+)_""".r, "typeRefName")
     private def stringType: Parser[StringFieldType] = log(
         "varchar" ~> "(" ~> """\d+""".r <~ ")" ^^ { maxLength => StringFieldType(maxLength.toInt) },
         "stringType")
@@ -277,7 +277,7 @@ object PersistenceConfigParser extends DefinitionsParser[RootPackagePersistenceD
         case packageName ~ packageContent => packageContent.toNamed(packageName)
     }, "packageItem")
     
-    private def singleTypePackageItem: Parser[PackagePersistenceData] = log(("""[\w_]+([\w_.]+[\w_]+)??(?=\.[\w_]+\s)""".r <~ ".") ~ anyItem ^^ {
+    private def singleTypePackageItem: Parser[PackagePersistenceData] = log(("""[\w_]+([\w_.]+[\w_]+)__(_=\.[\w_]+\s)""".r <~ ".") ~ anyItem ^^ {
         case packageName ~ typeData => PackageData[AbstractTypePersistenceData](packageName, List(), List(typeData))
     }, "singleTypePackageItem")
 

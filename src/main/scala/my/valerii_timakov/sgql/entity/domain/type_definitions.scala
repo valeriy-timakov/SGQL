@@ -4,8 +4,8 @@ package my.valerii_timakov.sgql.entity.domain.type_definitions
 import akka.parboiled2.util.Base64
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.domain.type_definitions.LongTypeDefinition.name
-import my.valerii_timakov.sgql.entity.{IdParseError, ValueParseError}
-import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BackReferenceValue, BinaryValue, BooleanValue, ByteId, ByteValue, CustomPrimitiveValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, Entity, EntityId, EntityValue, FixedStringId, FixedStringValue, FloatValue, IntId, IntValue, ItemValue, LongId, LongValue, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, ShortIntValue, SimpleObjectValue, StringId, StringValue, TimeValue, UUIDId, UUIDValue, ValueTypes}
+import my.valerii_timakov.sgql.entity.{Error, TypesConsistencyError, ValueParseError}
+import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BackReferenceValue, BinaryValue, BooleanValue, ByteId, ByteValue, CustomPrimitiveValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, Entity, EntityId, EntityValue, FilledEntityId, FixedStringId, FixedStringValue, FloatValue, IntId, IntValue, ItemValue, LongId, LongValue, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, ShortIntValue, SimpleObjectValue, StringId, StringValue, TimeValue, UUIDId, UUIDValue, ValueTypes}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, TypeReinitializationException, WrongStateExcetion}
 import spray.json.{JsArray, JsBoolean, JsNull, JsNumber, JsObject, JsString, JsValue}
 
@@ -15,6 +15,7 @@ import java.util.UUID
 import scala.annotation.tailrec
 import scala.util.boundary
 import boundary.break
+
 
 private class JsonSerializationData(
                                        val timeFormat: DateTimeFormatter,
@@ -79,17 +80,17 @@ sealed trait AbstractType:
     def valueType: AbstractTypeDefinition
     
 sealed trait FieldValueType extends AbstractType:
-    def valueType: FieldValueTypeDefinition[?]
+    def valueType: FieldValueTypeDefinition[_]
 
 sealed trait ItemValueType extends FieldValueType:
-    def valueType: ItemValueTypeDefinition[?]
+    def valueType: ItemValueTypeDefinition[_]
     def name: String = valueType.name
     
-case class SimpleObjectType(valueType: SimpleObjectTypeDefinition) extends FieldValueType
+case class SimpleObjectType[ID <: FilledEntityId[_, ID]](valueType: SimpleObjectTypeDefinition[ID]) extends FieldValueType
 
-case class ReferenceType(valueType: TypeReferenceDefinition) extends ItemValueType
+case class ReferenceType[ID <: FilledEntityId[_, ID]](valueType: TypeReferenceDefinition[ID]) extends ItemValueType
 
-case class BackReferenceType(valueType: TypeBackReferenceDefinition) extends FieldValueType
+case class BackReferenceType[ID <: FilledEntityId[_, ID]](valueType: TypeBackReferenceDefinition[ID]) extends FieldValueType
 
 sealed abstract class AbstractNamedType extends AbstractType:
     private var id: Option[Long] = None
@@ -101,15 +102,24 @@ sealed abstract class AbstractNamedType extends AbstractType:
 
 case class RootPrimitiveType[T, V <: RootPrimitiveValue[T, V]](valueType: RootPrimitiveTypeDefinition[V]) extends AbstractNamedType, ItemValueType
 
-sealed abstract class AbstractEntityType extends AbstractNamedType:
-    override def valueType: EntityTypeDefinition[?, ?]
+sealed abstract class AbstractEntityType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractNamedType:
+    override def valueType: EntityTypeDefinition[ID, VT, V]
 
-sealed trait AbstractObjectEntityType extends AbstractEntityType:
-    def valueType: ObjectTypeDefinition
+sealed trait AbstractObjectEntityType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]] extends AbstractEntityType[ID, VT, Map[String, EntityValue]]:
+    def valueType: ObjectTypeDefinition[ID, VT]
 
-sealed abstract class EntityType[VT <: Entity[VT, V], V <: ValueTypes] extends AbstractEntityType:
-    override def valueType: EntityTypeDefinition[VT, V]
-    def createEntity(id: EntityId[?, ?], value: V): VT
+sealed abstract class EntityType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes]
+                    extends AbstractEntityType[ID, VT, V]:
+    override def valueType: EntityTypeDefinition[ID, VT, V]
+    def createEntity(id: EntityId[_, _], value: V): Either[TypesConsistencyError, Entity[ID, VT, V]]
+    def parseEntity(id: ID, valueData: JsValue): Either[my.valerii_timakov.sgql.entity.Error, Entity[ID, VT, V]] =
+        valueType.parseValue(valueData).flatMap(createEntity(id, _))
+    protected def checkId(id: EntityId[_, _]): Either[TypesConsistencyError, ID] =
+        id match
+            case id: ID =>
+                Right(id)
+            case _ => 
+                Left(TypesConsistencyError(s"Wrong ID type for entity $name: $id!"))
 //    def toJson(value: V): JsValue
 //    def parseValue(data: JsValue): Either[ValueParseError, V]
 //    def toJson(entity: VT): JsValue = JsObject(
@@ -119,107 +129,113 @@ sealed abstract class EntityType[VT <: Entity[VT, V], V <: ValueTypes] extends A
 //        "value" -> toJson(entity.value),
 //    )
 
-case class CustomPrimitiveEntityType(
+case class CustomPrimitiveEntityType[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
     name: String,
-    valueType: CustomPrimitiveTypeDefinition,
-) extends EntityType[CustomPrimitiveValue, RootPrimitiveValue[?, ?]]:
-    def createEntity(id: EntityId[?, ?], value: RootPrimitiveValue[?, ?]): CustomPrimitiveValue =
-        CustomPrimitiveValue(id, value, this)
+    valueType: CustomPrimitiveTypeDefinition[ID, VT, V],
+) extends EntityType[ID, VT, V]:
+    def createEntity(id: EntityId[_, _], value: V): Either[TypesConsistencyError, CustomPrimitiveValue[ID, VT, V]] =
+        checkId(id).map(id => CustomPrimitiveValue(id, value, this))
 
-case class ArrayEntityType(
+case class ArrayEntityType[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
     name: String,
-    valueType: ArrayTypeDefinition,
-) extends EntityType[ArrayValue, Seq[ItemValue]]:
-    def createEntity(id: EntityId[?, ?], value: Seq[ItemValue]): ArrayValue =
-        ArrayValue(id, value, this)
+    valueType: ArrayTypeDefinition[ID, VT],
+) extends EntityType[ID, VT, Seq[ItemValue]]:
+    def createEntity(id: EntityId[_, _], value: Seq[ItemValue]):  Either[TypesConsistencyError, ArrayValue[ID, VT]] =
+        checkId(id).map(id => ArrayValue(id, value, this))
 
-case class ObjectEntityType(
+case class ObjectEntityType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     name: String,
-    valueType: ObjectTypeDefinition,
-) extends EntityType[ObjectValue, Map[String, EntityValue]], AbstractObjectEntityType:
-    def createEntity(id: EntityId[?, ?], value: Map[String, EntityValue]): ObjectValue =
-        ObjectValue(id, value, this)
+    valueType: ObjectTypeDefinition[ID, VT],
+) extends EntityType[ID, VT, Map[String, EntityValue]], AbstractObjectEntityType[ID, VT]:
+    def createEntity(id:EntityId[_, _], value: Map[String, EntityValue]):  Either[TypesConsistencyError, ObjectValue[ID, VT]] =
+        checkId(id).map(id => ObjectValue(id, value, this))
 
-trait EntitySuperType extends AbstractEntityType:
+trait EntitySuperType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractEntityType[ID, VT, V]:
     def name: String
-    def valueType: EntityTypeDefinition[?, ?]
+    def valueType: EntityTypeDefinition[ID, VT, V]
+    @tailrec
+    final def hasChild(entityType: AbstractEntityType[ID, _, _]): Boolean =
+        entityType.getId == getId || (entityType.valueType.parent match
+            case None => false
+            case Some(parent) => hasChild(parent)
+            )
 
-case class PrimitiveEntitySuperType[+TD <: CustomPrimitiveTypeDefinition](
+case class PrimitiveEntitySuperType[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
     name: String,
-    valueType: TD,
-) extends EntitySuperType
+    valueType: CustomPrimitiveTypeDefinition[ID, VT, V],
+) extends EntitySuperType[ID, VT, V]
 
-case class ArrayEntitySuperType(
+case class ArrayEntitySuperType[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
     name: String,
-    valueType: ArrayTypeDefinition,
-) extends EntitySuperType
+    valueType: ArrayTypeDefinition[ID, VT],
+) extends EntitySuperType[ID, VT, Seq[ItemValue]]
 
-case class ObjectEntitySuperType(
+case class ObjectEntitySuperType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     name: String,
-    valueType: ObjectTypeDefinition,
-) extends EntitySuperType, AbstractObjectEntityType
+    valueType: ObjectTypeDefinition[ID, VT],
+) extends EntitySuperType[ID, VT, Map[String, EntityValue]], AbstractObjectEntityType[ID, VT]
 
-sealed abstract class AbstractEntityIdTypeDefinition[V <: EntityId[?, V]]:
+sealed abstract class AbstractEntityIdTypeDefinition[V <: EntityId[_, V]]:
     def name: String
 
 
-sealed abstract class EntityIdTypeDefinition[V <: EntityId[?, V]](val name: String) extends AbstractEntityIdTypeDefinition[V]:
-    def parse(value: String): Either[IdParseError, V] = {
+sealed abstract class EntityIdTypeDefinition[V <: EntityId[_, V]](val name: String) extends AbstractEntityIdTypeDefinition[V]:
+    def parse(value: String): Either[ValueParseError, V] = {
         try {
             Right(parseInner(value))
         } catch {
-            case _: Throwable => Left(new IdParseError(this.getClass.getSimpleName, value))
+            case _: Throwable => Left(new ValueParseError(this.getClass.getSimpleName, value))
         }
     }
     def toJson(value: V): JsValue
-    def parse(value: JsValue): Either[IdParseError, V]
+    def parse(value: JsValue): Either[ValueParseError, V]
     protected def parseInner(value: String): V
 
 case object ByteIdTypeDefinition extends EntityIdTypeDefinition[ByteId]("Byte"):
     def toJson(value: ByteId): JsValue = JsNumber(value.value)
-    def parse(value: JsValue): Either[IdParseError, ByteId] =
+    def parse(value: JsValue): Either[ValueParseError, ByteId] =
         parseWholeNumber(value, v => v >= Byte.MinValue && v <= Byte.MaxValue, v => ByteId(v.byteValue),
-            rootCause => Left(new IdParseError(name, value.toString, rootCause)))
+            rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
     protected override def parseInner(value: String): ByteId = ByteId(value.toByte)
 
 case object ShortIdTypeDefinition extends EntityIdTypeDefinition[ShortIntId]("Short"):
     def toJson(value: ShortIntId): JsValue = JsNumber(value.value)
-    def parse(value: JsValue): Either[IdParseError, ShortIntId] =
+    def parse(value: JsValue): Either[ValueParseError, ShortIntId] =
         parseWholeNumber(value, v => v >= Byte.MinValue && v <= Byte.MaxValue, v => ShortIntId(v.byteValue),
-            rootCause => Left(new IdParseError(name, value.toString, rootCause)))
+            rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
     protected override def parseInner(value: String): ShortIntId = ShortIntId(value.toShort)
 
 case object IntIdTypeDefinition extends EntityIdTypeDefinition[IntId]("Integer"):
     def toJson(value: IntId): JsValue = JsNumber(value.value)
-    def parse(value: JsValue): Either[IdParseError, IntId] =
+    def parse(value: JsValue): Either[ValueParseError, IntId] =
         parseWholeNumber(value, v => v >= Byte.MinValue && v <= Byte.MaxValue, v => IntId(v.byteValue),
-            rootCause => Left(new IdParseError(name, value.toString, rootCause)))
+            rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
     protected override def parseInner(value: String): IntId = IntId(value.toInt)
 
 case object LongIdTypeDefinition extends EntityIdTypeDefinition[LongId]("Long"):
     def toJson(value: LongId): JsValue = JsNumber(value.value)
-    def parse(value: JsValue): Either[IdParseError, LongId] =
+    def parse(value: JsValue): Either[ValueParseError, LongId] =
         parseWholeNumber(value, v => v >= Byte.MinValue && v <= Byte.MaxValue, v => LongId(v.byteValue),
-            rootCause => Left(new IdParseError(name, value.toString, rootCause)))
+            rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
     protected override def parseInner(value: String): LongId = LongId(value.toLong)
 
 case object UUIDIdTypeDefinition extends EntityIdTypeDefinition[UUIDId]("UUID"):
     def toJson(value: UUIDId): JsValue = JsString(value.value.toString)
-    def parse(value: JsValue): Either[IdParseError, UUIDId] =
-        parseFormattedString[UUID, UUIDId, IdParseError](value,  UUID.fromString, UUIDId.apply,
-            rootCause => Left(new IdParseError(name, value.toString, rootCause)))
+    def parse(value: JsValue): Either[ValueParseError, UUIDId] =
+        parseFormattedString[UUID, UUIDId](value,  UUID.fromString, UUIDId.apply,
+            rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
     protected override def parseInner(value: String): UUIDId = UUIDId(java.util.UUID.fromString(value))
 
 case object StringIdTypeDefinition extends EntityIdTypeDefinition[StringId]("String"):
     def toJson(value: StringId): JsValue = JsString(value.value)
-    def parse(value: JsValue): Either[IdParseError, StringId] =
-        parseString(value, rootCause => Left(new IdParseError(name, value.toString, rootCause))).map(StringId.apply)
+    def parse(value: JsValue): Either[ValueParseError, StringId] =
+        parseString(value, rootCause => Left(new ValueParseError(name, value.toString, rootCause))).map(StringId.apply)
     protected override def parseInner(value: String): StringId = StringId(value)
 
 case class FixedStringIdTypeDefinition(length: Int) extends EntityIdTypeDefinition[FixedStringId](FixedStringIdTypeDefinition.name):
     def toJson(value: FixedStringId): JsValue = JsString(value.value)
-    def parse(value: JsValue): Either[IdParseError, FixedStringId] =
-        parseString(value, rootCause => Left(new IdParseError(name, value.toString, rootCause))).map(FixedStringId(_, this))
+    def parse(value: JsValue): Either[ValueParseError, FixedStringId] =
+        parseString(value, rootCause => Left(new ValueParseError(name, value.toString, rootCause))).map(FixedStringId(_, this))
     protected override def parseInner(value: String): FixedStringId = FixedStringId(value, this)
 
 case object FixedStringIdTypeDefinition extends AbstractEntityIdTypeDefinition[FixedStringId]:
@@ -229,60 +245,259 @@ sealed trait AbstractTypeDefinition
 
 sealed trait FieldValueTypeDefinition[V <: EntityValue] extends AbstractTypeDefinition:
     def toJson(value: V): JsValue
-    def parse(value: JsValue): Either[ValueParseError, V]
+    def parse(value: JsValue): Either[Error, V]
 
 sealed trait ItemValueTypeDefinition[V <: ItemValue] extends FieldValueTypeDefinition[V]:
     def name: String
 
-sealed trait ReferenceDefinition[V <: EntityValue] extends FieldValueTypeDefinition[V]:
-    def idType: AbstractEntityIdTypeDefinition[?]
-    def referencedType: AbstractEntityType
+sealed trait ReferenceDefinition[ID <: EntityId[_, ID], V <: EntityValue] extends FieldValueTypeDefinition[V]:
+    def idType: EntityIdTypeDefinition[ID]
+    def referencedType: AbstractEntityType[ID, _, _]
     def name: String
 
-final case class TypeReferenceDefinition(
-                                            referencedType: AbstractEntityType,
-                                        ) extends ItemValueTypeDefinition[ReferenceValue], ReferenceDefinition[ReferenceValue]:
-    lazy val idType: AbstractEntityIdTypeDefinition[?] = referencedType.valueType.idType
+final case class TypeReferenceDefinition[ID <: FilledEntityId[_, ID]](
+                                            referencedType: AbstractEntityType[ID, _, _],
+                                        ) extends ItemValueTypeDefinition[ReferenceValue[ID]], ReferenceDefinition[ID, ReferenceValue[ID]]:
+    lazy val idType: EntityIdTypeDefinition[ID] = referencedType.valueType.idType
     override def name: String = referencedType.name
-    def toJson(value: ReferenceValue): JsValue =
+    def toJson(value: ReferenceValue[ID]): JsValue =
         JsObject(
             "refId" -> value.refId.toJson,
             "type" -> JsString(referencedType.name),
             "value" -> value.refValueOpt.map(v => v.toJson).getOrElse(JsNull),
         )
-    def parse(value: JsValue): Either[ValueParseError, ReferenceValue] =
+    def parse(value: JsValue): Either[my.valerii_timakov.sgql.entity.Error, ReferenceValue[ID]] =
         value match
             case JsObject(fields) =>
                 fields.get("refId") match
-                    case Some(_refId) =>
-                        val refId = idType.parse(_refId)
-                        val res = ReferenceValue(refId, this)
-                        val refValue = fields.get("value")
-                            .map(v => referencedType.valueType.parseValue(v))
-                            .foreach(v => res.setRefValue(v)
-                        Right(res)
+                    case Some(refId) =>
+                        idType.parse(refId) match
+                            case Right(refId) =>
+                                val res = ReferenceValue[ID](refId, ReferenceType(this))
+                                fields.get("value") match
+                                    case Some(refValue) =>
+                                        val refEntityTypeRes:  Either[ValueParseError, EntityType[ID, _, _]] = referencedType match
+                                            case entityType: EntityType[ID, _, _] =>
+                                                Right(entityType)
+                                            case entitySuperType: EntitySuperType[ID, _, _] => fields.get("type") match
+                                                case Some(JsString(valueEntityTypeName)) =>
+                                                    TypesMap.getTypeByName(valueEntityTypeName) match
+                                                        case Some(entityType: EntityType[ID, _, _]) =>
+                                                            if (entitySuperType.hasChild(entityType))
+                                                                Right(entityType)
+                                                            else
+                                                                Left(new ValueParseError(name, value.toString, s"wrong refEntityType: " +
+                                                                    s"$valueEntityTypeName - not a subType of ${entitySuperType.name}"))
+                                                case Some(typeUnconditional) =>
+                                                    Left(new ValueParseError(name, value.toString, s"wrong refEntityType format: $typeUnconditional"))
+                                                case None =>
+                                                    Left(new ValueParseError(name, value.toString, "no refEntityType when refValue is present"))
+                                        refEntityTypeRes match
+                                            case Right(refEntityType) =>
+                                                refEntityType.parseEntity(refId, refValue) match
+                                                    case Right(refValue) =>
+                                                        res.setRefValue(refValue)
+                                                        Right(res)
+                                                    case Left(error) =>
+                                                        Left(error)
+                                            case Left(error) =>
+                                                Left(error)
+                                    case None =>
+                                        Right(res)
+                            case Left(error) => 
+                                Left(error)                        
                     case None =>
                         Left(new ValueParseError(name, value.toString, "no refId"))
             case _ =>
                 Left(new ValueParseError(name, value.toString, "wrong reference format"))
     override def toString: String = s"TypeReferenceDefinition(ref[${referencedType.name}])"
+    
+object TypeReferenceDefinition:
+    def apply[ID <: FilledEntityId[_, ID]](
+                                              referencedType: AbstractEntityType[_, _, _],
+                                              refTypeName: String
+                                          ): TypeReferenceDefinition[ID] =
+        referencedType match
+            case referencedType: AbstractEntityType[ID, _, _] =>
+                TypeReferenceDefinition(referencedType)
+            case _ =>
+                throw new ConsistencyException(s"Not correct reference ID in type: $referencedType! " +
+                    s"Error is impossible - analise if it was thrown! Type: $refTypeName")
 
-final case class TypeBackReferenceDefinition(
+final case class TypeBackReferenceDefinition[ID <: FilledEntityId[_, ID]](
                                                 //reference to abstract type to make it possible to reference to any concrete nested type
-                                                referencedType: AbstractObjectEntityType,
+                                                referencedType: AbstractObjectEntityType[ID, _],
                                                 refField: String
-                                            ) extends FieldValueTypeDefinition[BackReferenceValue], ReferenceDefinition[BackReferenceValue]:
-    lazy val idType: AbstractEntityIdTypeDefinition[?] = referencedType.valueType.idType
+                                            ) extends FieldValueTypeDefinition[BackReferenceValue[ID]], ReferenceDefinition[ID, BackReferenceValue[ID]]:
+    lazy val idType: EntityIdTypeDefinition[ID] = referencedType.valueType.idType
     override def name: String = referencedType.name + "." + refField + "[]"
-    def toJson(value: BackReferenceValue): JsValue = ???
-    def parse(value: JsValue): Either[ValueParseError, BackReferenceValue] = ???
+    def toJson(value: BackReferenceValue[ID]): JsValue =
+        JsObject(
+            "refId" -> value.value.toJson,
+            "refType" -> JsString(referencedType.name),
+            "value" -> value.refValueOpt.map(v => JsArray(v.map(_.toJson).toVector)).getOrElse(JsNull),
+        )
+    def parse(value: JsValue): Either[Error, BackReferenceValue[ID]] = value match
+        case JsObject(fields) =>
+            fields.get("refId") match
+                case Some(refId) =>
+                    idType.parse(refId) match
+                        case Right(refId) =>
+                            val res = BackReferenceValue[ID](refId, BackReferenceType(this))
+                            fields.get("value") match
+                                case Some(refValue) =>
+                                    val refEntityTypeRes:  Either[Error, EntityType[ID, _, _]] = referencedType match
+                                        case entityType: EntityType[ID, _, _] =>
+                                            Right(entityType)
+                                        case entitySuperType: EntitySuperType[ID, _, _] => fields.get("type") match
+                                            case Some(JsString(valueEntityTypeName)) =>
+                                                TypesMap.getTypeByName(valueEntityTypeName) match
+                                                    case Some(entityType: EntityType[ID, _, _]) =>
+                                                        if (entitySuperType.hasChild(entityType))
+                                                            Right(entityType)
+                                                        else
+                                                            Left(new ValueParseError(name, value.toString, s"wrong refEntityType: " +
+                                                                s"$valueEntityTypeName - not a subType of ${entitySuperType.name}"))
+                                            case Some(typeUnconditional) =>
+                                                Left(new ValueParseError(name, value.toString, s"wrong refEntityType format: $typeUnconditional"))
+                                            case None =>
+                                                Left(new ValueParseError(name, value.toString, "no refEntityType when refValue is present"))
+                                    refEntityTypeRes match
+                                        case Right(refEntityType) =>
+                                            val refValues: Either[Error, Seq[Entity[ID, _, _]]] = refValue match
+                                                case JsArray(refValues) =>
+                                                    boundary {
+                                                        Right(refValues.map(refValueJs =>
+                                                            refEntityType.parseEntity(refId, refValueJs) match
+                                                                case Right(refValue) =>
+                                                                    refValue
+                                                                case Left(error) =>
+                                                                    break( Left(error) )
+                                                        ))                                                    
+                                                    }
+                                                case _ =>
+                                                    Left(new ValueParseError(name, value.toString, "wrong back reference value format"))
+                                            refValues match
+                                                case Right(refValues) =>
+                                                    res.setRefValue(refValues)
+                                                    Right(res)
+                                                case Left(error) =>
+                                                    Left(error)
+                                case None =>
+                                    Right(res)
+                        case Left(error) =>
+                            Left(error)
+                case None =>
+                    Left(new ValueParseError(name, value.toString, "no refId"))
+        case _ =>
+            Left(new ValueParseError(name, value.toString, "wrong back reference format"))
+
     override def toString: String = s"TypeReferenceDefinition(ref[${referencedType.name}], $refField)"
 
+object TypeBackReferenceDefinition:
+    def apply[ID <: FilledEntityId[_, ID]](
+                                              referencedType: AbstractEntityType[_, _, _], 
+                                              refField: String, 
+                                              refTypeName: String
+                                          ): TypeBackReferenceDefinition[ID] =
+        referencedType match
+            case referencedType: AbstractObjectEntityType[ID, _] =>
+                TypeBackReferenceDefinition(referencedType, refField)
+            case _ =>
+                throw new ConsistencyException("Only object types could be referenced by back reference! " +
+                    s"Type $refTypeName is trying to be referenced by $refField!")
 
-sealed abstract trait AbstractRootPrimitiveTypeDefinition:
+
+final case class SimpleObjectTypeDefinition[ID <: FilledEntityId[_, ID]](
+                                        private var _fields: Map[String, FieldTypeDefinition[_]],
+                                        parent: Option[ObjectEntitySuperType[ID, _]]
+                                    ) extends FieldValueTypeDefinition[SimpleObjectValue[ID]], FieldsContainer:
+    private var initiated = false
+
+    def fields: Map[String, FieldTypeDefinition[_]] = _fields
+
+    def setChildren(fieldsValues: Map[String, FieldTypeDefinition[_]]): Unit =
+        if (initiated) throw new TypeReinitializationException
+        _fields = fieldsValues
+        initiated = true
+
+    lazy val allFields: Map[String, FieldTypeDefinition[_]] =
+        _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldTypeDefinition[_]])
+
+    override def toString: String = parent.map(_.name).getOrElse("") + "{" +
+        fields.map(f => s"${f._1}: ${f._2}").mkString(", ") + "}"
+
+    def idTypeOpt: Option[EntityIdTypeDefinition[ID]] = parent.map(_.valueType.idType)
+
+    def toJson(value: SimpleObjectValue[ID]): JsValue = JsObject(
+        "id" -> value.id.map(_.toJson).getOrElse(JsNull),
+        "value" -> JsObject(value.value.map(v => v._1 -> v._2.toJson))
+    )
+
+    def parse(value: JsValue): Either[Error, SimpleObjectValue[ID]] =
+        value match
+            case JsObject(topFields) =>
+                val id: Either[Error, Option[ID]] = topFields.get("id") match
+                    case Some(idValue) =>
+                        idTypeOpt match
+                            case Some(idType) =>
+                                idType.parse(idValue) match
+                                    case Right(id) =>
+                                        Right(Some(id))
+                                    case Left(error) =>
+                                        Left(ValueParseError(name, value.toString, error.message))
+                            case None =>
+                                Left(ValueParseError(name, value.toString, "No ID type for object"))
+                    case None =>
+                        Right(None)
+
+                val parsedFields: Either[Error, Map[String, EntityValue]] =
+                    topFields.get("value") match
+                        case Some(JsObject(fields)) =>
+                            boundary {
+                                Right(fields.map {
+                                    case (fieldName, fieldValue) =>
+                                        _fields.get(fieldName) match
+                                            case Some(fieldType) =>
+                                                fieldType.valueType.parse(fieldValue) match
+                                                    case Right(parsedValue) =>
+                                                        fieldName -> parsedValue
+                                                    case Left(error) =>
+                                                        break(Left(error))
+                                            case None =>
+                                                break(Left(ValueParseError(name, value.toString, s"Field $fieldName not " +
+                                                    s"found in simple object definition!")))
+                                })
+                            }
+                        case None =>
+                            Left(ValueParseError(name, value.toString, "No value field in object"))
+
+                id.flatMap(id => parsedFields.map(fields => SimpleObjectValue(id, fields, SimpleObjectType(this))))
+            case _ =>
+                Left(ValueParseError(name, value.toString, "not an object"))
+
+object SimpleObjectTypeDefinition:
+    def apply[ID <: FilledEntityId[_, ID]](
+                                              parent: Option[ObjectEntitySuperType[_, _]],
+                                              fields: Map[String, FieldTypeDefinition[_]],
+                                          ): SimpleObjectTypeDefinition[ID] =
+        parent match
+            case parentWithCorrectId: Some[ObjectEntitySuperType[ID, _]] =>
+                SimpleObjectTypeDefinition(fields, parentWithCorrectId)
+            case None =>
+                SimpleObjectTypeDefinition(fields, None)
+            case _ =>
+                throw new ConsistencyException(s"Not correct ID in simple object parent type: $parent! " +
+                    s"Error is impossible - analise if it was thrown!")
+
+
+
+
+
+sealed trait AbstractRootPrimitiveTypeDefinition:
     def name: String
 
-sealed abstract case class RootPrimitiveTypeDefinition[V <: RootPrimitiveValue[?, V]](name: String)
+sealed abstract case class RootPrimitiveTypeDefinition[V <: RootPrimitiveValue[_, V]](name: String)
             extends AbstractRootPrimitiveTypeDefinition,  ItemValueTypeDefinition[V]:
     def parse(value: String): Either[ValueParseError, V] =
         try {
@@ -353,35 +568,35 @@ object BooleanTypeDefinition extends RootPrimitiveTypeDefinition[BooleanValue]("
 object DateTypeDefinition extends RootPrimitiveTypeDefinition[DateValue]("Date"):
     override def toJson(value: DateValue): JsValue = JsString(GlobalSerializationData.json.serialize(value.value))
     def parse(value: JsValue): Either[ValueParseError, DateValue] =
-        parseFormattedString[LocalDate, DateValue, ValueParseError](value, GlobalSerializationData.json.parseDate,
+        parseFormattedString[LocalDate, DateValue](value, GlobalSerializationData.json.parseDate,
             DateValue.apply, rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
     protected override def parseInner(value: String): DateValue = DateValue(LocalDate.parse(value))
 
 object DateTimeTypeDefinition extends RootPrimitiveTypeDefinition[DateTimeValue]("DateTime"):
     override def toJson(value: DateTimeValue): JsValue = JsString(GlobalSerializationData.json.serialize(value.value))
     def parse(value: JsValue): Either[ValueParseError, DateTimeValue] =
-        parseFormattedString[LocalDateTime, DateTimeValue, ValueParseError](value, GlobalSerializationData.json.parseDateTime,
+        parseFormattedString[LocalDateTime, DateTimeValue](value, GlobalSerializationData.json.parseDateTime,
             DateTimeValue.apply, rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
     protected override def parseInner(value: String): DateTimeValue = DateTimeValue(LocalDateTime.parse(value))
 
 object TimeTypeDefinition extends RootPrimitiveTypeDefinition[TimeValue]("Time"):
     override def toJson(value: TimeValue): JsValue = JsString(GlobalSerializationData.json.serialize(value.value))
     def parse(value: JsValue): Either[ValueParseError, TimeValue] =
-        parseFormattedString[LocalTime, TimeValue, ValueParseError](value, GlobalSerializationData.json.parseTime, 
+        parseFormattedString[LocalTime, TimeValue](value, GlobalSerializationData.json.parseTime, 
             TimeValue.apply, rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
     protected override def parseInner(value: String): TimeValue = TimeValue(LocalTime.parse(value))
 
 object UUIDTypeDefinition extends RootPrimitiveTypeDefinition[UUIDValue]("UUID"):
     override def toJson(value: UUIDValue): JsValue = JsString(value.value.toString)
     def parse(value: JsValue): Either[ValueParseError, UUIDValue] =
-        parseFormattedString[UUID, UUIDValue, ValueParseError](value, UUID.fromString, UUIDValue.apply,
+        parseFormattedString[UUID, UUIDValue](value, UUID.fromString, UUIDValue.apply,
             rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
     protected override def parseInner(value: String): UUIDValue = UUIDValue(java.util.UUID.fromString(value))
 
 object BinaryTypeDefinition extends RootPrimitiveTypeDefinition[BinaryValue]("Binary"):
     override def toJson(value: BinaryValue): JsValue = JsString(Base64.rfc2045().encodeToString(value.value, false))
     def parse(value: JsValue): Either[ValueParseError, BinaryValue] =
-        parseFormattedString[Array[Byte], BinaryValue, ValueParseError](value, Base64.rfc2045().decode, BinaryValue.apply,
+        parseFormattedString[Array[Byte], BinaryValue](value, Base64.rfc2045().decode, BinaryValue.apply,
             rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
     protected override def parseInner(value: String): BinaryValue = BinaryValue(Base64.rfc2045().decode(value))
 
@@ -402,16 +617,16 @@ object FixedStringTypeDefinition extends AbstractRootPrimitiveTypeDefinition:
     val name = "FixedString"
 
 trait FieldsContainer:
-    def fields: Map[String, FieldTypeDefinition[?]]
-    def allFields: Map[String, FieldTypeDefinition[?]]
-    def idTypeOpt: Option[AbstractEntityIdTypeDefinition[?]]
+    def fields: Map[String, FieldTypeDefinition[_]]
+    def allFields: Map[String, FieldTypeDefinition[_]]
+    def idTypeOpt: Option[EntityIdTypeDefinition[_]]
 
-private def parseWholeNumber[V <: RootPrimitiveValue[?, ?] | EntityId[?, ?], E <: ValueParseError | IdParseError](
+private def parseWholeNumber[V <: RootPrimitiveValue[_, _] | EntityId[_, _]](
                                                             value: JsValue,
                                                             rangeCheker: Long => Boolean,
                                                             valueWrapper: Long => V,
-                                                            errorGenerator: String => Left[E, V],
-                                                        ): Either[E, V] =
+                                                            errorGenerator: String => Left[ValueParseError, V],
+                                                        ): Either[ValueParseError, V] =
     value match
         case JsNumber(valueInner) =>
             if (valueInner.isWhole)
@@ -421,52 +636,52 @@ private def parseWholeNumber[V <: RootPrimitiveValue[?, ?] | EntityId[?, ?], E <
         case _ =>
             errorGenerator(" not a number")
 
-private def parseDecimalNumber[V <: RootPrimitiveValue[?, ?], E <: ValueParseError | IdParseError](
+private def parseDecimalNumber[V <: RootPrimitiveValue[_, _]](
                                                             value: JsValue,
                                                             rangeCheker: BigDecimal => Boolean,
                                                             valueWrapper: BigDecimal => V,
-                                                            errorGenerator: String => Left[E, V],
-                                                             ): Either[E, V] =
+                                                            errorGenerator: String => Left[ValueParseError, V],
+                                                             ): Either[ValueParseError, V] =
     value match
         case JsNumber(valueInner) =>
             wrappNumberInRange(valueInner, rangeCheker, valueWrapper, errorGenerator)
         case _ =>
             errorGenerator("not a number")
 
-private def wrappNumberInRange[P, V <: RootPrimitiveValue[?, ?] | EntityId[?, ?], E <: ValueParseError | IdParseError](
+private def wrappNumberInRange[P, V <: RootPrimitiveValue[_, _] | EntityId[_, _]](
                                                   value: P,
                                                   rangeCheker: P => Boolean,
                                                   valueWrapper: P => V,
-                                                  errorGenerator: String => Left[E, V],
-                                             ): Either[E, V] =
+                                                  errorGenerator: String => Left[ValueParseError, V],
+                                             ): Either[ValueParseError, V] =
         if (rangeCheker(value))
             Right(valueWrapper(value))
         else
             errorGenerator("out of range")
 
-private def parseString[E <: ValueParseError | IdParseError](
+private def parseString(
                                                     value: JsValue,
-                                                    errorGenerator: String => Left[E, String]
-                                                        ): Either[E, String] =
+                                                    errorGenerator: String => Left[ValueParseError, String]
+                                                        ): Either[ValueParseError, String] =
     value match
         case JsString(data) => Right(data)
         case _ => errorGenerator("not a JSON string")
 
-private def parseFormattedString[T, V <: RootPrimitiveValue[?, ?] | EntityId[?, ?], E <: ValueParseError | IdParseError](
+private def parseFormattedString[T, V <: RootPrimitiveValue[_, _] | EntityId[_, _]](
                                                         value: JsValue,
                                                         exceptionalParser: String => T,
                                                         valueWrapper: T => V,
-                                                        errorGenerator: String => Left[E, T],
-                                                    ): Either[E, V] =
-    parseString(value, errorGenerator.asInstanceOf[String => Left[E, String]])
+                                                        errorGenerator: String => Left[ValueParseError, T],
+                                                    ): Either[ValueParseError, V] =
+    parseString(value, errorGenerator.asInstanceOf[String => Left[ValueParseError, String]])
         .map(data => wrappExceptionalParser(exceptionalParser)(data, errorGenerator))
         .flatMap(identity)
         .map(valueWrapper)
 
 
-private def wrappExceptionalParser[T, E <: ValueParseError | IdParseError](parser: String => T): 
-                        (String, String => Left[E, T]) => Either[E, T] =
-    (value: String, errorGenerator: String => Left[E, T]) =>
+private def wrappExceptionalParser[T](parser: String => T): 
+                        (String, String => Left[ValueParseError, T]) => Either[ValueParseError, T] =
+    (value: String, errorGenerator: String => Left[ValueParseError, T]) =>
         try {
             Right(parser(value))
         } catch {
@@ -474,51 +689,40 @@ private def wrappExceptionalParser[T, E <: ValueParseError | IdParseError](parse
         }
 
 
-final case class SimpleObjectTypeDefinition(
-                                               private var _fields: Map[String, FieldTypeDefinition[?]],
-                                               parent: Option[ObjectEntitySuperType]
-                                           ) extends FieldValueTypeDefinition[SimpleObjectValue], FieldsContainer:
-    private var initiated = false
-    def fields: Map[String, FieldTypeDefinition[?]] = _fields
-    def setChildren(fieldsValues: Map[String, FieldTypeDefinition[?]]): Unit =
-        if (initiated) throw new TypeReinitializationException
-        _fields = fieldsValues
-        initiated = true
-    lazy val allFields: Map[String, FieldTypeDefinition[?]] =
-        _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldTypeDefinition[?]])
-    override def toString: String = parent.map(_.name).getOrElse("") + "{" +
-        fields.map(f => s"${f._1}: ${f._2}").mkString(", ") + "}"
-    def idTypeOpt: Option[AbstractEntityIdTypeDefinition[?]] = parent.map(_.valueType.idType)
-    def toJson(value: SimpleObjectValue): JsValue = ???
-    def parse(value: JsValue): Either[ValueParseError, SimpleObjectValue] = ???
-
-sealed trait EntityTypeDefinition[VT <: Entity[VT, V], V <: ValueTypes] extends AbstractTypeDefinition:
-    def idType: EntityIdTypeDefinition[?]
-    def parent: Option[EntitySuperType]
+sealed trait EntityTypeDefinition[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractTypeDefinition:
+    def idType: EntityIdTypeDefinition[ID]
+    def parent: Option[EntitySuperType[ID, _, V]]
     def parseValue(data: JsValue): Either[ValueParseError, V]
     def toJson(value: V): JsValue
 
-final case class CustomPrimitiveTypeDefinition(
-    parentNode: Either[(EntityIdTypeDefinition[?], RootPrimitiveTypeDefinition[?]), PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition]]
-) extends EntityTypeDefinition[CustomPrimitiveValue, RootPrimitiveValue[?, ?]]:
-    @tailrec def rootType: RootPrimitiveTypeDefinition[?] = this.parentNode match
+final case class CustomPrimitiveTypeDefinition[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
+    parentNode: Either[(EntityIdTypeDefinition[ID], RootPrimitiveTypeDefinition[V]), PrimitiveEntitySuperType[ID, _, V]]
+) extends EntityTypeDefinition[ID, VT, V]:
+    @tailrec def rootType: RootPrimitiveTypeDefinition[V] = this.parentNode match
         case Left((_, root)) => root
         case Right(parent) => parent.valueType.rootType
-    lazy val idType: EntityIdTypeDefinition[?] = parentNode.fold(_._1, _.valueType.idType)
-    lazy val parent: Option[PrimitiveEntitySuperType[CustomPrimitiveTypeDefinition]] = parentNode.toOption
+    lazy val idType: EntityIdTypeDefinition[ID] = parentNode.fold(_._1, _.valueType.idType)
+    lazy val parent: Option[PrimitiveEntitySuperType[ID, _, V]] = parentNode.toOption
 
-    def toJson(value: RootPrimitiveValue[?, ?]): JsValue = 
+    def toJson(value: V): JsValue =
         value.toJson
-    def parseValue(data: JsValue): Either[ValueParseError, RootPrimitiveValue[?, ?]] =
+    def parseValue(data: JsValue): Either[ValueParseError, V] =
         rootType.parse(data)
+
+object CustomPrimitiveTypeDefinition:
+    @tailrec
+    def apply[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
+        parentNode: Either[(EntityIdTypeDefinition[ID], RootPrimitiveTypeDefinition[V]), PrimitiveEntitySuperType[ID, _, V]]
+    ): CustomPrimitiveTypeDefinition[ID, VT, V] =
+        CustomPrimitiveTypeDefinition(parentNode)
 
 object ArrayTypeDefinition:
     val name = "Array"
 
-final case class ArrayTypeDefinition(
+final case class ArrayTypeDefinition[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
     private var _elementTypes: Option[Set[ArrayItemTypeDefinition]],
-    idOrParent: Either[EntityIdTypeDefinition[?], ArrayEntitySuperType]
-) extends EntityTypeDefinition[ArrayValue, Seq[ItemValue]]:
+    idOrParent: Either[EntityIdTypeDefinition[ID], ArrayEntitySuperType[ID, _]]
+) extends EntityTypeDefinition[ID, VT, Seq[ItemValue]]:
     def elementTypes: Set[ArrayItemTypeDefinition] = _elementTypes
         .getOrElse(throw new WrongStateExcetion("Array element types not initialized!"))
     def setChildren(elementTypesValues: Set[ArrayItemTypeDefinition]): Unit =
@@ -527,8 +731,8 @@ final case class ArrayTypeDefinition(
     lazy val allElementTypes: Map[String, ArrayItemTypeDefinition] =
         elementTypes.map(v => v.name -> v).toMap ++ parent.map(_.valueType.allElementTypes).getOrElse(Map.empty[String, ArrayItemTypeDefinition])
 
-    lazy val idType: EntityIdTypeDefinition[?] = idOrParent.fold(identity, _.valueType.idType)
-    lazy val parent: Option[ArrayEntitySuperType] = idOrParent.toOption
+    lazy val idType: EntityIdTypeDefinition[ID] = idOrParent.fold(identity, _.valueType.idType)
+    lazy val parent: Option[ArrayEntitySuperType[ID, _]] = idOrParent.toOption
 
     def toJson(value: Seq[ItemValue]): JsValue =
         if (allElementTypes.size == 1)
@@ -577,7 +781,7 @@ final case class ArrayTypeDefinition(
                 }
             case _ => Left(new ValueParseError("Array", data.toString, " not an array"))
 
-case class ArrayItemTypeDefinition(valueType: ItemValueTypeDefinition[?]):
+case class ArrayItemTypeDefinition(valueType: ItemValueTypeDefinition[_]):
     def name: String = valueType.name
     override def toString: String = name
 
@@ -588,21 +792,21 @@ object ObjectTypeDefinition:
 
 
 
-final case class ObjectTypeDefinition(
-    private var _fields: Map[String, FieldTypeDefinition[?]],
-    idOrParent: Either[EntityIdTypeDefinition[?], ObjectEntitySuperType]
-) extends EntityTypeDefinition[ObjectValue, Map[String, EntityValue]], FieldsContainer:
+final case class ObjectTypeDefinition[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
+    private var _fields: Map[String, FieldTypeDefinition[_]],
+    idOrParent: Either[EntityIdTypeDefinition[ID], ObjectEntitySuperType[ID, _]]
+) extends EntityTypeDefinition[ID, VT, Map[String, EntityValue]], FieldsContainer:
     private var initiated = false
-    def fields: Map[String, FieldTypeDefinition[?]] = _fields
-    def setChildren(fieldsValues: Map[String, FieldTypeDefinition[?]]): Unit =
+    def fields: Map[String, FieldTypeDefinition[_]] = _fields
+    def setChildren(fieldsValues: Map[String, FieldTypeDefinition[_]]): Unit =
         if (initiated) throw new TypeReinitializationException
         _fields = fieldsValues
         initiated = true
-    lazy val allFields: Map[String, FieldTypeDefinition[?]] =
-        _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldTypeDefinition[?]])
-    lazy val idType: EntityIdTypeDefinition[?] = idOrParent.fold(identity, _.valueType.idType)
-    lazy val parent: Option[ObjectEntitySuperType] = idOrParent.toOption
-    def idTypeOpt: Option[AbstractEntityIdTypeDefinition[?]] = Some(idType)
+    lazy val allFields: Map[String, FieldTypeDefinition[_]] =
+        _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldTypeDefinition[_]])
+    lazy val idType: EntityIdTypeDefinition[ID] = idOrParent.fold(identity, _.valueType.idType)
+    lazy val parent: Option[ObjectEntitySuperType[ID, _]] = idOrParent.toOption
+    def idTypeOpt: Option[EntityIdTypeDefinition[ID]] = Some(idType)
 
     def toJson(value: Map[String, EntityValue]): JsValue = JsObject(value.map {
         case (fieldName, fieldValue) => fieldName -> fieldValue.toJson
@@ -629,7 +833,7 @@ final case class ObjectTypeDefinition(
 
 
 
-val idTypesMap = Map[String, AbstractEntityIdTypeDefinition[?]](
+val idTypesMap = Map[String, AbstractEntityIdTypeDefinition[_]](
     ByteIdTypeDefinition.name -> ByteIdTypeDefinition,
     ShortIdTypeDefinition.name -> ShortIdTypeDefinition,
     IntIdTypeDefinition.name -> IntIdTypeDefinition,
