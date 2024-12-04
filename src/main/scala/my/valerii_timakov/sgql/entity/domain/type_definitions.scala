@@ -710,11 +710,10 @@ final case class CustomPrimitiveTypeDefinition[ID <: EntityId[_, ID], VT <: Cust
         rootType.parse(data)
 
 object CustomPrimitiveTypeDefinition:
-    @tailrec
     def apply[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
         parentNode: Either[(EntityIdTypeDefinition[ID], RootPrimitiveTypeDefinition[V]), PrimitiveEntitySuperType[ID, _, V]]
     ): CustomPrimitiveTypeDefinition[ID, VT, V] =
-        CustomPrimitiveTypeDefinition(parentNode)
+        new CustomPrimitiveTypeDefinition(parentNode)
 
 object ArrayTypeDefinition:
     val name = "Array"
