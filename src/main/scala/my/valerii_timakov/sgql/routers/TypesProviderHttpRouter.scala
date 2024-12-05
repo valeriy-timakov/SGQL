@@ -23,7 +23,6 @@ class TypesProviderHttpRouter(
                              ):
 
     import akka.actor.typed.scaladsl.AskPattern.*
-    import my.valerii_timakov.sgql.entity.json.*
     implicit val timeout: Timeout = Timeout(5.seconds)
 
     val route: Route =
@@ -44,14 +43,14 @@ class TypesProviderHttpRouter(
                         case None =>
                             complete(StatusCodes.NotFound)
                         case Some(typeDefinition: AbstractEntityType[_, _, _]) =>
-                            complete(StatusCodes.OK, typeDefinition)
+                            complete(StatusCodes.OK, typeDefinition.toJson)
                     }
                 }
             } ~
             pathEnd {
                 get {
                     val result: Future[Seq[AbstractEntityType[_, _, _]]] = appActor ? GetAll.apply
-                    onSuccess(result)(types => complete(StatusCodes.OK, types))
+                    onSuccess(result)(types => complete(StatusCodes.OK, AbstractEntityType.toJson(types)))
                 }
             }
         }

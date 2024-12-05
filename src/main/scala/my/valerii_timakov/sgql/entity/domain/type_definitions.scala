@@ -43,6 +43,7 @@ object GlobalSerializationData:
 
 sealed abstract class AbstractEntityIdTypeDefinition[V <: EntityId[_, V]]:
     def name: String
+    def toJson(): JsValue = JsString(name)
 
 
 sealed abstract class EntityIdTypeDefinition[V <: EntityId[_, V]](val name: String) extends AbstractEntityIdTypeDefinition[V]:
@@ -107,7 +108,40 @@ case class FixedStringIdTypeDefinition(length: Int) extends EntityIdTypeDefiniti
 case object FixedStringIdTypeDefinition extends AbstractEntityIdTypeDefinition[FixedStringId]:
     val name = "FixedString"
 
-sealed trait AbstractTypeDefinition
+sealed trait AbstractTypeDefinition:
+    def toJson: JsValue = this match
+        case CustomPrimitiveTypeDefinition(idOrParentType) =>
+            val parentName = idOrParentType.toOption.map(_.name).orElse(
+                    idOrParentType.left.toOption.map(_._2.name))
+                .map(JsString.apply)
+                .getOrElse(JsNull)
+            JsObject(
+                "type" -> JsString("CustomPrimitive"),
+                "parent" -> parentName,
+                //                "id" -> idOrParentType.left.toOption.map(_._1.toJson).getOrElse(JsNull)
+            )
+        case RootPrimitiveTypeDefinition(name) => JsString(name)
+        case ArrayTypeDefinition(elementsType, parentType) => JsObject(
+            "type" -> JsString("Array"),
+            "parent" -> parentType.map(p => JsString(p.name)).getOrElse(JsNull),
+            "elements" -> JsArray(elementsType.getOrElse(Set.empty).map(v => JsString(v.name)).toVector))
+        case ObjectTypeDefinition(fields, parentType) => JsObject(
+            "type" -> JsString("Object"),
+            "parent" -> parentType.map(p => JsString(p.name)).getOrElse(JsNull),
+            "fields" -> JsObject(fields.map((fieldName, fieldType) => fieldName -> fieldType.valueType.toJson)))
+        case TypeReferenceDefinition(referencedType) => JsObject(
+            "type" -> JsString("Reference"),
+            "referencedType" -> JsString(referencedType.name))
+        case TypeBackReferenceDefinition(referencedType, refField) => JsObject(
+            "type" -> JsString("BackReference"),
+            "referencedType" -> JsString(referencedType.name),
+            "refField" -> JsString(refField))
+        case SimpleObjectTypeDefinition(fields, parent) => JsObject(
+            "type" -> JsString("SimpleObject"),
+            "parent" -> parent.map(p => JsString(p.name)).getOrElse(JsNull),
+            "fields" -> JsObject(fields.map((fieldName, fieldType) => fieldName -> fieldType.valueType.toJson)))
+
+
 
 sealed trait FieldValueTypeDefinition[V <: EntityValue] extends AbstractTypeDefinition:
     def toJson(value: V): JsValue
