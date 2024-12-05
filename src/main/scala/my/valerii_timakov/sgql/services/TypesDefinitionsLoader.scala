@@ -105,12 +105,12 @@ class TypesDefinitionsLoaderImpl(conf: Config) extends TypesDefinitionsLoader:
                             objDef.fields.foreach((fieldName, fieldDef) =>
                                 fieldDef.valueType match
                                     case TypeBackReferenceDefinition(backReferencedType, refFieldName) =>
-                                        val refFieldDef = backReferencedType.valueType.fields.getOrElse(fieldName,
+                                        val refFieldDef = backReferencedType.valueType.fields.getOrElse(refFieldName,
                                             throw new ConsistencyException(s"Field $fieldName not found in back " +
                                                 s"referenced type ${backReferencedType.name}!"))
                                         refFieldDef.valueType match
                                             case TypeReferenceDefinition(referencedType) =>
-                                                if (referencedType.getId != entityType.getId)
+                                                if (referencedType.name != entityType.name)
                                                     throw new ConsistencyException(s"Found reference " +
                                                         s"${backReferencedType.name}.$refFieldName: refFieldDef$refFieldDef " +
                                                         s"in back referenced type does not reference to current type ${entityType.name}!")
