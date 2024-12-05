@@ -6,7 +6,7 @@ import my.valerii_timakov.sgql.entity.domain.types.EntityType
 import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId, EntityValue, ValueTypes}
 import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.exceptions.PersistenceRepositoryTypeNotFoundException
-import my.valerii_timakov.sgql.services.repositories.postres.PostgresCrudRepository
+import my.valerii_timakov.sgql.services.repositories.postres.{PostgresCrudRepository, Version}
 
 import scala.util.Try
 
@@ -29,7 +29,9 @@ trait CrudRepository:
 
     def find(entityType: EntityType[_, _, _], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Seq[Entity[_, _, _]]]
 
-    def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit
+    def init(typesDefinitionsProvider: TypesDefinitionProviderInitializer): Version
+
+    def setTypesDefinitionsProvider(typesDefinitionsProvider: TypesDefinitionProvider): Unit
 
 
 

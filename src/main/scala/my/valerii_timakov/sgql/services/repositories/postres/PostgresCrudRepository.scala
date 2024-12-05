@@ -204,19 +204,19 @@ class PostgresCrudRepository(
     override def get(entityType: EntityType[_, _, _], id: EntityId[_, _], getFields: GetFieldsDescriptor): Try[Option[Entity[_, _, _]]] = ???
 
     override def find(entityType: EntityType[_, _, _], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity[_, _, _]]] = ???
-
-
-    def init(typesDefinitionsProvider: TypesDefinitionProvider): Unit =
-
+    
+    def setTypesDefinitionsProvider(typesDefinitionsProvider: TypesDefinitionProvider): Unit =
         this.typesDefinitionsProviderContainer = Some(typesDefinitionsProvider)
+    
+    def init(typesDefinitionsProvider: TypesDefinitionProviderInitializer): Version =
 
         initConnectionPoolAndTypesSchema()
 
         dbUtils.init()
 
-        currentTypesToTablesMap = typesDefinitionsProvider.getTypesToTalesMap
+        currentTypesToTablesMap = typesDefinitionsProvider.typesToTablesMap
 
-        DB.localTx(implicit session =>
+        val version = DB.localTx(implicit session =>
             val lastVersion = dbUtils.getLatestVersion
             lastVersion.foreach(version =>
                 previousTypesToTablesMap = dbUtils.getTypesToTablesMap(version.id)
@@ -225,11 +225,14 @@ class PostgresCrudRepository(
             savedTablesIdsMap = saveTypesToTablesMap(currentTypesToTablesMap, version)
             renameChangedTables(version)
             createOrMigrateTables(typesDefinitionsProvider.getAllPersistenceData, version)
+            version
         )
+
+        version
 
     private def initConnectionPoolAndTypesSchema() =
 
-        val typesSchemaParam = if typesSchemaName != null then s"_currentSchema=$typesSchemaName" else ""
+        val typesSchemaParam = if typesSchemaName != null then s"?currentSchema=$typesSchemaName" else ""
         Class.forName("org.postgresql.Driver")
         ConnectionPool.singleton(s"jdbc:postgresql://${connectionConf.getString("host")}:" +
             s"${connectionConf.getInt("port")}/${connectionConf.getString("database")}$typesSchemaParam",

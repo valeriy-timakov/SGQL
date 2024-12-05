@@ -4,6 +4,7 @@ import akka.actor.typed.{ActorRef, ActorSystem}
 import com.typesafe.config.{Config, ConfigFactory}
 import my.valerii_timakov.sgql.actors.MainActor
 import my.valerii_timakov.sgql.entity.domain.type_definitions.GlobalSerializationData
+import my.valerii_timakov.sgql.entity.domain.types.GlobalTypesMap
 import my.valerii_timakov.sgql.routers.{CrudHttpRouter, TypesProviderHttpRouter}
 import my.valerii_timakov.sgql.services.*
 
@@ -20,16 +21,18 @@ import scala.language.postfixOps
 
     GlobalSerializationData.initJson(conf.getConfig("serialization.json"))
 
-    implicit lazy val typesDefinitionsLoader: TypesDefinitionsLoader = TypesDefinitionsLoaderImpl(conf.getConfig("type-definitions"))
-    implicit lazy val typesPersistenceConfigLoader: PersistenceConfigLoader = PersistenceConfigLoaderImpl(conf.getConfig("persistence"))
-    lazy val typesDefinitionProvider: TypesDefinitionProvider = TypesDefinitionProvider.create
+    val typesDefinitionsLoader: TypesDefinitionsLoader = TypesDefinitionsLoaderImpl(conf.getConfig("type-definitions"))
+    val typesPersistenceConfigLoader: PersistenceConfigLoader = PersistenceConfigLoaderImpl(conf.getConfig("persistence"))
+    lazy val typesDefinitionProviderInitializer: TypesDefinitionProviderInitializer = 
+        TypesDefinitionProvider.loadInitializer(typesDefinitionsLoader, typesPersistenceConfigLoader)
     val typeNameMaxLength = conf.getInt("type-definitions.type-name-max-length").toShort
     val fieldMaxLength = conf.getInt("type-definitions.field-max-length").toShort
     lazy val crudRepository = CrudRepositoriesFactory.createRopository(conf.getConfig("persistence"), typeNameMaxLength, fieldMaxLength)
-    crudRepository.init(typesDefinitionProvider)
+    val version = crudRepository.init(typesDefinitionProviderInitializer)
     lazy val messageSource: MessageSource =  MessageSourceImpl()
-
-
+    val typesDefinitionProvider = typesDefinitionProviderInitializer.init(version.hash, GlobalTypesMap)
+    crudRepository.setTypesDefinitionsProvider(typesDefinitionProvider)
+    
     implicit val system: ActorSystem[MainActor.Message] = ActorSystem(MainActor(crudRepository, typesDefinitionProvider), "main-system")
     implicit val executionContextExecutor: ExecutionContextExecutor = system.executionContext
     val mainActor: ActorRef[MainActor.Message] = system

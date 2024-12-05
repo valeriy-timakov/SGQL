@@ -6,7 +6,7 @@ import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.domain.type_definitions.LongTypeDefinition.name
 import my.valerii_timakov.sgql.entity.{Error, TypesConsistencyError, ValueParseError}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BackReferenceValue, BinaryValue, BooleanValue, ByteId, ByteValue, CustomPrimitiveValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, Entity, EntityId, EntityValue, FilledEntityId, FixedStringId, FixedStringValue, FloatValue, IntId, IntValue, ItemValue, LongId, LongValue, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, ShortIntValue, SimpleObjectValue, StringId, StringValue, TimeValue, UUIDId, UUIDValue, ValueTypes}
-import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, ArrayEntitySuperType, BackReferenceType, EntitySuperType, EntityType, ObjectEntitySuperType, PrimitiveEntitySuperType, ReferenceType, SimpleObjectType, TypesMap}
+import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, ArrayEntitySuperType, BackReferenceType, EntitySuperType, EntityType, ObjectEntitySuperType, PrimitiveEntitySuperType, ReferenceType, SimpleObjectType, GlobalTypesMap}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, TypeReinitializationException, WrongStateExcetion}
 import spray.json.{JsArray, JsBoolean, JsNull, JsNumber, JsObject, JsString, JsValue}
 
@@ -43,7 +43,7 @@ object GlobalSerializationData:
 
 sealed abstract class AbstractEntityIdTypeDefinition[V <: EntityId[_, V]]:
     def name: String
-    def toJson(): JsValue = JsString(name)
+    def toJson: JsValue = JsString(name)
 
 
 sealed abstract class EntityIdTypeDefinition[V <: EntityId[_, V]](val name: String) extends AbstractEntityIdTypeDefinition[V]:
@@ -181,7 +181,7 @@ final case class TypeReferenceDefinition[ID <: FilledEntityId[_, ID]](
                                                 Right(entityType)
                                             case entitySuperType: EntitySuperType[ID, _, _] => fields.get("type") match
                                                 case Some(JsString(valueEntityTypeName)) =>
-                                                    TypesMap.getTypeByName(valueEntityTypeName) match
+                                                    GlobalTypesMap.getTypeByName(valueEntityTypeName) match
                                                         case Some(entityType: EntityType[ID, _, _]) =>
                                                             if (entitySuperType.hasChild(entityType))
                                                                 Right(entityType)
@@ -251,13 +251,17 @@ final case class TypeBackReferenceDefinition[ID <: FilledEntityId[_, ID]](
                                             Right(entityType)
                                         case entitySuperType: EntitySuperType[ID, _, _] => fields.get("type") match
                                             case Some(JsString(valueEntityTypeName)) =>
-                                                TypesMap.getTypeByName(valueEntityTypeName) match
+                                                GlobalTypesMap.getTypeByName(valueEntityTypeName) match
                                                     case Some(entityType: EntityType[ID, _, _]) =>
                                                         if (entitySuperType.hasChild(entityType))
                                                             Right(entityType)
                                                         else
                                                             Left(new ValueParseError(name, value.toString, s"wrong refEntityType: " +
                                                                 s"$valueEntityTypeName - not a subType of ${entitySuperType.name}"))
+                                                    case Some(typeUnconditional) =>
+                                                        Left(new ValueParseError(name, value.toString, s"found refEntityType is not EntityType: $typeUnconditional"))
+                                                    case None =>
+                                                        Left(new ValueParseError(name, value.toString, s"refEntityType not found by name: $valueEntityTypeName"))
                                             case Some(typeUnconditional) =>
                                                 Left(new ValueParseError(name, value.toString, s"wrong refEntityType format: $typeUnconditional"))
                                             case None =>
@@ -283,6 +287,8 @@ final case class TypeBackReferenceDefinition[ID <: FilledEntityId[_, ID]](
                                                     Right(res)
                                                 case Left(error) =>
                                                     Left(error)
+                                        case Left(error) =>
+                                            Left(error)
                                 case None =>
                                     Right(res)
                         case Left(error) =>

@@ -7,19 +7,26 @@ import my.valerii_timakov.sgql.exceptions.{ConsistencyException, WrongStateExcet
 import spray.json.{JsArray, JsObject, JsString, JsValue}
 
 import scala.annotation.tailrec
+import scala.jdk.CollectionConverters._
 
 
 private class TypesMaps(
                            val runVersion: Short,
-                           val byNameMap: java.util.Map[String, AbstractNamedType] = new java.util.HashMap(),
-                           val byIdMap: java.util.Map[Long, AbstractNamedType] = new java.util.HashMap(),
+                           val byNameMap: java.util.Map[String, AbstractEntityType[_, _, _]] = new java.util.HashMap(),
+                           val byIdMap: java.util.Map[Long, AbstractEntityType[_, _, _]] = new java.util.HashMap(),
                        )
 
-object TypesMap:
+trait GlobalTypesMap:
+    def init(types: Seq[AbstractEntityType[_, _, _]], version: Short): Unit
+    def getTypeByName(name: String): Option[AbstractEntityType[_, _, _]]
+    def getTypeById(id: Long): Option[AbstractEntityType[_, _, _]]
+    def getAllTypes: Seq[AbstractEntityType[_, _, _]]
+
+object GlobalTypesMap extends GlobalTypesMap:
     private var maps: Option[TypesMaps] = None
     private final val VERSION_SHIFT = 64-16
 
-    def init(types: Seq[AbstractNamedType], version: Short): Unit =
+    def init(types: Seq[AbstractEntityType[_, _, _]], version: Short): Unit =
         if maps.nonEmpty then throw new ConsistencyException("Types already initialized!")
         maps = Some(new TypesMaps(version,
             new java.util.HashMap(types.size),
@@ -27,15 +34,18 @@ object TypesMap:
         ))
         addTypes(types)
 
-    private def byNameMap: java.util.Map[String, AbstractNamedType] = maps.getOrElse(throw new WrongStateExcetion("TypesMap not initialized!")).byNameMap
-    private def byIdMap: java.util.Map[Long, AbstractNamedType] = maps.getOrElse(throw new WrongStateExcetion("TypesMap not initialized!")).byIdMap
-    private def runVersion: Short = maps.getOrElse(throw new WrongStateExcetion("TypesMap not initialized!")).runVersion
+    private def byNameMap: java.util.Map[String, AbstractEntityType[_, _, _]] = 
+        maps.getOrElse(throw new WrongStateExcetion("TypesMap not initialized!")).byNameMap
+    private def byIdMap: java.util.Map[Long, AbstractEntityType[_, _, _]] = 
+        maps.getOrElse(throw new WrongStateExcetion("TypesMap not initialized!")).byIdMap
+    private def runVersion: Short = 
+        maps.getOrElse(throw new WrongStateExcetion("TypesMap not initialized!")).runVersion
 
-    def getTypeByName(name: String): Option[AbstractNamedType] = Option(byNameMap.get(name))
-    def getTypeById(id: Long): Option[AbstractNamedType] = Option(byIdMap.get(id))
-    def getAllTypes: Set[AbstractNamedType] = byNameMap.values().toArray(Array.empty[AbstractNamedType]).toSet
+    def getTypeByName(name: String): Option[AbstractEntityType[_, _, _]] = Option(byNameMap.get(name))
+    def getTypeById(id: Long): Option[AbstractEntityType[_, _, _]] = Option(byIdMap.get(id))
+    lazy val getAllTypes: Seq[AbstractEntityType[_, _, _]] = byNameMap.values().asScala.toSeq
 
-    def addTypes(types: Seq[AbstractNamedType]): Unit =
+    def addTypes(types: Seq[AbstractEntityType[_, _, _]]): Unit =
         types.foreach(tmpType => {
             if byNameMap.containsKey(tmpType.name) then throw new ConsistencyException(s"Type ${tmpType.name} already exists!")
             val id = (byIdMap.size + 1) | (runVersion.toLong << VERSION_SHIFT)
