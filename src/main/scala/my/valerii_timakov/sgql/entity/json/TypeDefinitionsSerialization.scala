@@ -1,6 +1,7 @@
 package my.valerii_timakov.sgql.entity.json
 
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractEntityType, AbstractRootPrimitiveTypeDefinition, AbstractTypeDefinition, ArrayEntitySuperType, ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntitySuperType, EntityType, EntityTypeDefinition, IntIdTypeDefinition, LongIdTypeDefinition, ObjectEntitySuperType, ObjectTypeDefinition, PrimitiveEntitySuperType, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractRootPrimitiveTypeDefinition, AbstractTypeDefinition, ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityTypeDefinition, IntIdTypeDefinition, LongIdTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition}
+import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, ArrayEntitySuperType, EntitySuperType, EntityType, ObjectEntitySuperType, PrimitiveEntitySuperType}
 import spray.json.{JsArray, JsNull, JsObject, JsString, JsValue, RootJsonFormat, deserializationError, enrichAny}
 
 def abstractEntityType2json(typeDef: AbstractEntityType[_, _, _]): JsValue =

@@ -4,7 +4,8 @@ import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import my.valerii_timakov.sgql.entity.{AbstractTypeError, Error, TypeNotFountError}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BinaryValue, Entity, EntityId, EntityValue}
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityType, EntityIdTypeDefinition, EntitySuperType, EntityType}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.EntityIdTypeDefinition
+import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, EntitySuperType, EntityType}
 import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.services.{CrudRepository, TypesDefinitionProvider}
 import spray.json.JsValue
