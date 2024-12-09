@@ -14,6 +14,7 @@ sealed trait EntityId[T, V <: EntityId[T, V]]:
     def serialize: String
     def typeDefinition: EntityIdTypeDefinition[V]
     def toJson: JsValue = typeDefinition.toJson(this.asInstanceOf[V])
+    def value: T
 //object EmptyId extends EntityId:
 //    override def serialize: String = "()"
 sealed trait FilledEntityId[T, V <: FilledEntityId[T, V]] extends EntityId[T, V]

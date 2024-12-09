@@ -25,7 +25,6 @@ class CrudHttpRouter(
                     ):
 
     import akka.actor.typed.scaladsl.AskPattern.*
-    import my.valerii_timakov.sgql.entity.json.*
     implicit val timeout: Timeout = Timeout(5.seconds)
 
     val route: Route =

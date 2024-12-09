@@ -43,7 +43,7 @@ class CrudActor(
                                     case Left(error) =>
                                         Left(error)
                                     case Right(entity) =>
-                                        Right(repository.update(entityType, entity))
+                                        Right(repository.update(entity))
                     }
                 }
                 this

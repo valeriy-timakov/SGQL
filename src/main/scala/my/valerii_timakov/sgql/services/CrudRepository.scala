@@ -11,9 +11,9 @@ import my.valerii_timakov.sgql.services.repositories.postres.{PostgresCrudReposi
 import scala.util.Try
 
 object CrudRepositoriesFactory:
-    def createRopository(conf: Config, typeNameMaxLength: Short, fieldMaxLength: Short): CrudRepository =
+    def createRopository(conf: Config, typesMapper: TypesToPersistenceMapper, typeNameMaxLength: Short, fieldMaxLength: Short): CrudRepository =
         if conf.hasPath("postgres") then
-            new PostgresCrudRepository(conf.getConfig("postgres"), conf, typeNameMaxLength, fieldMaxLength)
+            new PostgresCrudRepository(conf.getConfig("postgres"), conf, typesMapper, typeNameMaxLength, fieldMaxLength)
         else
             throw new PersistenceRepositoryTypeNotFoundException
 
@@ -21,7 +21,7 @@ object CrudRepositoriesFactory:
 trait CrudRepository:
     def create(entityType: EntityType[_, _, _], data: ValueTypes): Try[Entity[_, _, _]]
 
-    def update(entityType: EntityType[_, _, _], entity: Entity[_, _, _]): Try[Option[Unit]]
+    def update(entity: Entity[_, _, _]): Try[Option[Unit]]
 
     def delete(entityType: EntityType[_, _, _], id: EntityId[_, _]): Try[Option[Unit]]
 

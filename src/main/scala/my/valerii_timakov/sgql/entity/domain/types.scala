@@ -32,7 +32,13 @@ object GlobalTypesMap extends GlobalTypesMap:
             new java.util.HashMap(types.size),
             new java.util.HashMap(types.size)
         ))
-        addTypes(types)
+        types.foreach(tmpType => {
+            if byNameMap.containsKey(tmpType.name) then throw new ConsistencyException(s"Type ${tmpType.name} already exists!")
+            val id = (byIdMap.size + 1) | (runVersion.toLong << VERSION_SHIFT)
+            tmpType.initId(id)
+            byNameMap.put(tmpType.name, tmpType)
+            byIdMap.put(id, tmpType)
+        })
 
     private def byNameMap: java.util.Map[String, AbstractEntityType[_, _, _]] = 
         maps.getOrElse(throw new WrongStateExcetion("TypesMap not initialized!")).byNameMap
@@ -45,14 +51,6 @@ object GlobalTypesMap extends GlobalTypesMap:
     def getTypeById(id: Long): Option[AbstractEntityType[_, _, _]] = Option(byIdMap.get(id))
     lazy val getAllTypes: Seq[AbstractEntityType[_, _, _]] = byNameMap.values().asScala.toSeq
 
-    def addTypes(types: Seq[AbstractEntityType[_, _, _]]): Unit =
-        types.foreach(tmpType => {
-            if byNameMap.containsKey(tmpType.name) then throw new ConsistencyException(s"Type ${tmpType.name} already exists!")
-            val id = (byIdMap.size + 1) | (runVersion.toLong << VERSION_SHIFT)
-            tmpType.initId(id)
-            byNameMap.put(tmpType.name, tmpType)
-            byIdMap.put(id, tmpType)
-        })
 
 
 sealed trait AbstractType:

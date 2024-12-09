@@ -22,12 +22,14 @@ import scala.language.postfixOps
     GlobalSerializationData.initJson(conf.getConfig("serialization.json"))
 
     val typesDefinitionsLoader: TypesDefinitionsLoader = TypesDefinitionsLoaderImpl(conf.getConfig("type-definitions"))
-    val typesPersistenceConfigLoader: PersistenceConfigLoader = PersistenceConfigLoaderImpl(conf.getConfig("persistence"))
+    val typesPersistenceConfigLoader: PersistenceConfigLoader = PersistenceConfigLoaderImpl(
+        conf.getConfig("persistence"), TypesToPersistenceMapper)
     lazy val typesDefinitionProviderInitializer: TypesDefinitionProviderInitializer = 
         TypesDefinitionProvider.loadInitializer(typesDefinitionsLoader, typesPersistenceConfigLoader)
     val typeNameMaxLength = conf.getInt("type-definitions.type-name-max-length").toShort
     val fieldMaxLength = conf.getInt("type-definitions.field-max-length").toShort
-    lazy val crudRepository = CrudRepositoriesFactory.createRopository(conf.getConfig("persistence"), typeNameMaxLength, fieldMaxLength)
+    lazy val crudRepository = CrudRepositoriesFactory.createRopository(conf.getConfig("persistence"), 
+        TypesToPersistenceMapper, typeNameMaxLength, fieldMaxLength)
     val version = crudRepository.init(typesDefinitionProviderInitializer)
     lazy val messageSource: MessageSource =  MessageSourceImpl()
     val typesDefinitionProvider = typesDefinitionProviderInitializer.init(version.hash, GlobalTypesMap)
