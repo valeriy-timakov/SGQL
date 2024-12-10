@@ -10,7 +10,7 @@ import akka.util.Timeout
 import my.valerii_timakov.sgql.actors.CrudActor
 import my.valerii_timakov.sgql.actors.CrudActor.*
 import my.valerii_timakov.sgql.entity.Error
-import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityValue}
+import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId, EntityValue}
 import my.valerii_timakov.sgql.services.MessageSource
 import spray.json.{JsArray, JsValue}
 
@@ -98,15 +98,15 @@ class CrudHttpRouter(
             pathEnd {
                 post {
                     entity(as [JsValue]) { requestEntity =>
-                        val result: Future[Either[Error, Try[Entity[_, _, _]]]] =
+                        val result: Future[Either[Error, Try[EntityId[_, _]]]] =
                             appActor ? (CreateMessage(objectType, requestEntity, _))
                         onSuccess(result) {
                             case Left(error) =>
                                 complete(StatusCodes.BadRequest, messageSource.getMessage(error.message, Language("en")))
                             case Right(Failure(exception)) =>
                                 complete(StatusCodes.InternalServerError, exception.getMessage)
-                            case Right(Success(entity)) =>
-                                complete(StatusCodes.OK, entity.toJson)
+                            case Right(Success(id)) =>
+                                complete(StatusCodes.OK, id.toJson)
                         }
                     }
                 }

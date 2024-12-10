@@ -122,7 +122,7 @@ object CrudActor:
     sealed trait CrudMessage extends MainActor.Message
 
     final case class CreateMessage(entityTypeName: String, data: JsValue,
-                                   replyTo: ActorRef[Either[Error, Try[Entity[_, _, _]]]]) extends CrudMessage
+                                   replyTo: ActorRef[Either[Error, Try[EntityId[_, _]]]]) extends CrudMessage
 
     final case class UpdateMessage(entityTypeName: String, id: String, data: JsValue,
                                    replyTo: ActorRef[Either[Error, Try[Option[Unit]]]]) extends CrudMessage

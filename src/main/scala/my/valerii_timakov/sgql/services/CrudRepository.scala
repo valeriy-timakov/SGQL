@@ -19,7 +19,7 @@ object CrudRepositoriesFactory:
 
 
 trait CrudRepository:
-    def create(entityType: EntityType[_, _, _], data: ValueTypes): Try[Entity[_, _, _]]
+    def create(entityType: EntityType[_, _, _], data: ValueTypes): Try[EntityId[_, _]]
 
     def update(entity: Entity[_, _, _]): Try[Option[Unit]]
 

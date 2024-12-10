@@ -308,7 +308,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Short, fie
             .single.apply()
         }
         
-    def addTableColumn(tableItemId: Long, fieldName: String, columnName: String, columnType: String): Unit =
+    def addTableColumn(tableItemId: Long, columnName: String, columnType: String, fieldName: String): Unit =
         DB.autoCommit { implicit session =>
             SQL(
                 s"""INSERT INTO $utilsSchemaName.${trc.getString(TABLE_COLUNS_TABLE_NAME)} (
@@ -318,7 +318,7 @@ class PostgresDBInitUtils(persistenceConf: Config, typeNameMaxLength: Short, fie
                     ${trc.getString(FIELD_NAME_COLUMN)}
                 ) VALUES (?, ?, ?, ?)"""
             )
-            .bind(tableItemId, fieldName, columnName, columnType)
+            .bind(tableItemId, columnName, columnType, fieldName)
             .update.apply()
         }
 
