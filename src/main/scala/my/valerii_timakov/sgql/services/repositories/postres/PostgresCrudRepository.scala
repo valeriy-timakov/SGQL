@@ -1,8 +1,9 @@
 package my.valerii_timakov.sgql.services.repositories.postres
 
 import com.typesafe.config.Config
+import my.valerii_timakov.sgql.entity.domain.type_definitions.FixedStringIdTypeDefinition
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, ArrayEntityType, CustomPrimitiveEntityType, EntitySuperType, EntityType, ObjectEntitySuperType, ObjectEntityType, ReferenceType, RootPrimitiveType}
-import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, CustomPrimitiveValue, Entity, EntityId, EntityValue, ItemValue, ObjectValue, ReferenceValue, RootPrimitiveValue, SimpleObjectValue, ValueTypes}
+import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, ByteId, CustomPrimitiveValue, Entity, EntityId, EntityValue, FilledEntityId, FixedStringId, IntId, ItemValue, LongId, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, SimpleObjectValue, StringId, UUIDId, ValueTypes}
 import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, DbTableMigrationException, NotInitializedException}
 import my.valerii_timakov.sgql.services.{ValuePersistenceDataFinal, *}
@@ -10,8 +11,16 @@ import my.valerii_timakov.sgql.services.{ValuePersistenceDataFinal, *}
 import scala.util.{Failure, Success, Try}
 import scalikejdbc.*
 
+import java.sql.ResultSet
+import java.util.UUID
 import scala.annotation.tailrec
 import scala.collection.mutable
+
+implicit val uuidTypeBinder: TypeBinder[UUID] = TypeBinder[UUID](
+    (rs: ResultSet, colIdx: Int) => UUID.fromString(rs.getString(colIdx))
+)(
+    (rs: ResultSet, colName: String) => UUID.fromString(rs.getString(colName))
+)
 
 class PostgresCrudRepository(
                                 connectionConf: Config,
@@ -31,183 +40,243 @@ class PostgresCrudRepository(
         if typesDefinitionsProviderContainer.isEmpty then throw NotInitializedException("PostgresCrudRepository", "typesDefinitionsProvider")
         typesDefinitionsProviderContainer.get
 
-    override def create(entityType: EntityType[_, _, _], data: ValueTypes): Try[EntityId[_, _]] = ???
-//        val persistenceData = typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
-//            throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
-//        persistenceData match
-//            case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
-//                val id = DB.autoCommit { implicit session =>
-//                    SQL(
-//                        s"""INSERT INTO $typesSchemaName.$tableName (
-//                            ${esc(idColumn.columnName)},
-//                            ${esc(valueColumn.columnName)}
-//                        ) VALUES (_, _)"""
-//                    )
-//                    .bind(data.id, data.value)
-//                    .updateAndReturnGeneratedKey(esc(idColumn.columnName)).apply()
-//                }
-//                Success(Entity(entityType, id, data))
-//        DB.autoCommit { implicit session =>
-//            SQL(
-//                s"""INSERT INTO $utilsSchemaName.${trc.getString(TYPES_TO_TABLES_MAP_TABLE_NAME)} (
-//                        ${trc.getString(TYPE_NAME_COLUMN)},
-//                        ${trc.getString(TABLE_NAME_COLUMN)},
-//                        ${trc.getString(VERSION_REF_COLUMN)}
-//                    ) VALUES (_, _)"""
-//            )
-//            .bind(typeName, tableName, versionId)
-//            .updateAndReturnGeneratedKey(trc.getString(ID_COLUMN_NAME)).apply()
-//        }
+
+    override def create(entityType: EntityType[_, _, _], data: ValueTypes): Try[EntityId[_, _]] =
+        DB.autoCommit { implicit session =>
+            create(entityType, data)(session)
+        }
 
     override def update(entity: Entity[_, _, _]): Try[Option[Unit]] =
-        def updatePrimitive(
-            tableName: String,
-            idColumnName: String,
+        DB.autoCommit { implicit session =>
+            update(entity)(session)
+        }
+
+    override def delete(entityType: EntityType[_, _, _], id: EntityId[_, _]): Try[Option[Unit]] =
+        DB.autoCommit { implicit session =>
+            delete(entityType, id)(session)
+        }
+
+    def create(entityType: EntityType[_, _, _], data: ValueTypes)(implicit session: DBSession): Try[EntityId[_, _]] =
+        
+        def insertPrimitiveValue(
+            tableName: String, 
+            idColumn:  PrimitiveValuePersistenceDataFinal, 
             valueColumnName: String,
-            id: EntityId[_, _],
-            value: RootPrimitiveValue[_, _],
-        ): Int =
-            DB.autoCommit { implicit session =>
-                SQL(s"""
-                    UPDATE $typesSchemaName.$tableName
-                    SET ${esc(valueColumnName)} = ?
-                    WHERE ${esc(idColumnName)} = ?
-                """)
-                .bind(value.value, id.value)
-                .update.apply()
-            }
-
-        def getColumnsValuesAndRestFields(
-                                filedValues: List[(String, EntityValue)],
-                                fieldsPersistenceData: Map[String, ValuePersistenceDataFinal]
-                            ): (List[(String, Any)], List[(String, EntityValue)]) =
-            val res = filedValues.map { (fieldName, fieldValue) =>
-                fieldsPersistenceData.get(fieldName) match
-                    case Some(fieldPersistenceData) =>
-                        (fieldValue, fieldPersistenceData) match
-                            case (prim: RootPrimitiveValue[_, _], PrimitiveValuePersistenceDataFinal(columnName, _, isNullable)) =>
-                                (List((columnName, prim.value)), Nil)
-                            case (value: ReferenceValue[_], fieldPersData: ReferenceValuePersistenceDataFinal) =>
-                                (List((fieldPersData.columnName, value.refId)), Nil)
-                            case (SimpleObjectValue(id, subFields, _), SimpleObjectValuePersistenceDataFinal(parentPersOpt, fieldsPers)) =>
-                                val parentData = 
-                                    id. map{ id =>
-                                        val parentPers = parentPersOpt.getOrElse(throw new ConsistencyException("Parent is not defined!")) 
-                                        (parentPers.columnName, id)                                            
-                                    }
-                                val fieldsData: (List[(String, Any)], List[(String, EntityValue)]) = getColumnsValuesAndRestFields(subFields.toList, fieldsPers)
-                                (fieldsData._1 ++ parentData.toList, fieldsData._2)
-                            case _ => throw new ConsistencyException(s"Field value is of not known type, or found pesistent " +
-                                s"data not compatible! Value: $fieldValue. Persistence data: $fieldPersistenceData")
-                    case None =>
-                        (Nil, List((fieldName, fieldValue)))
-            }
-            (
-                res.flatMap(_._1),
-                res.flatMap(_._2)
-            )
-
-        def getColumnsValues(
-            filedValues: List[(String, EntityValue)],
+            value: Any
+        ): EntityId[_, _] =
+            SQL(s"""
+                INSERT INTO $typesSchemaName.$tableName (${esc(valueColumnName)}) VALUES (?) 
+                RETURNING ${esc(idColumn.columnName)}
+            """)
+                .bind(value)
+                .map(getIdValueMapper(idColumn))
+                .single
+                .apply()
+                .getOrElse(throw new ConsistencyException("Id is not returned!"))
+            
+        def insertObjectValue(
+            tableName: String,
+            idColumn: PrimitiveValuePersistenceDataFinal,
+            filedValuesMap: Map[String, EntityValue], 
             fieldsPersistenceData: Map[String, ValuePersistenceDataFinal],
             parent: Option[ObjectEntitySuperType[_, _]],
-            tableName: String,
-            idColumnName: String,
-        ): List[(String, String, List[(String, Any)])] =
-            val (columnsValues, restFields) = getColumnsValuesAndRestFields(filedValues, fieldsPersistenceData)
-            if (restFields.isEmpty)
-                List((tableName, idColumnName, columnsValues))
-            else
-                parent match
-                    case None =>
-                        throw new ConsistencyException(s"Fields ${restFields.map(_._1).mkString(", ")} are not found in " +
-                            s"type ${entity.typeDefinition.name} and there is no parent of those type!")
-                    case Some(parent) =>
-                        getEntityPersistendeData(parent) match
-                            case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, _) =>
-                                List((tableName, idColumnName, columnsValues)) ++
-                                    getColumnsValues(restFields, fields, parent.valueType.parent, tableName, idColumn.columnName)
-                            case _ => throw new ConsistencyException("Parent is not Object!")
+            typeName: String,
+        ): EntityId[_, _] =
+            getColumnsValues(filedValuesMap.toList, fieldsPersistenceData, parent, tableName, idColumn, typeName, 0)
+                .sortBy(_._4)(Ordering[Byte].reverse)
+                .foldRight(None)((tableData: (String, PrimitiveValuePersistenceDataFinal, List[(String, Any)], Byte), idOpt: Option[EntityId[_, _]]) =>
+                    val id = (idOpt, tableData) match
+                        case (None, (tableName, idColumn, columnsNameValues, _)) =>
+                            val (columnNames, columnValues) = columnsNameValues.unzip
+                            insertObjectPartValueAndGenerateId(tableName, columnNames, columnValues, idColumn)
+                        case(Some(id), (tableName, idColumn, columnsNameValues, _)) =>
+                            val (columnNames, columnValues) = columnsNameValues.unzip
+                            insertObjectPartValueWithId(tableName, columnNames :+ idColumn.columnName,
+                                columnValues :+ id.value, idColumn)
+                            id
+                    Some(id)
+                )
+                .getOrElse(throw new ConsistencyException("Id is not returned!"))
 
-        def splitValuesByTypes(values: Seq[ItemValue], persData: ArrayTypePersistenceDataFinal): Map[ItemTypePersistenceDataFinal, Seq[Any]] =
-            values.map {
-                case pv: RootPrimitiveValue[_, _] => (
-                    persData.itemsMap.getOrElse(typesMapper.getValueFieldType(pv.typeDefinition.valueType),
-                        throw new ConsistencyException(s"Item value type is not found! ${pv.typeDefinition.valueType}")),
-                    pv.value
-                )
-                case rv: ReferenceValue[_] => (
-                    persData.itemsMap.getOrElse(typesMapper.getIdFieldType(rv.typeDefinition.valueType.idType),
-                        throw new ConsistencyException(s"Item id type is not found! ${rv.typeDefinition.valueType.idType}")),
-                    rv.refId.value
-                )
-            }.groupMap(_._1)(_._2)
+        def insertArrayValues(typeName: String, values: Seq[ItemValue], persData: ArrayTypePersistenceDataFinal): EntityId[_, _] =
+            val id = getNextId(typeName, persData.idType)
+            splitValuesByTypes(values, persData).foreach { case (persData, items) =>
+                    val valuesLine = items.zipWithIndex.map { case (v, i) => s"VALUES ( :id, :v$i )" }.mkString(", ")
+                    val params = items.zipWithIndex.map { case (v, i) => s"v$i" -> v }
+                    val res = SQL(
+                        s"""INSERT INTO $typesSchemaName.${persData.tableName}
+                                ( ${esc(persData.idColumn.columnName)}, ${esc(persData.valueColumn.columnName)} )
+                                $valuesLine"""
+                    )
+                        .bindByName(params :+ "id" -> id.value: _*)
+                        .update.apply()
+                    mapColColuntResult(res, s"Multiple entities updated for id: $id!", items.size)
+                }
+            id
+            
+        def insertObjectPartValueAndGenerateId(
+            tableName: String, 
+            columnNames: List[String], 
+            columnValues: List[Any], 
+            idColumn: PrimitiveValuePersistenceDataFinal
+        ): EntityId[_, _] =
+            SQL(s"""
+                INSERT INTO $typesSchemaName.$tableName
+                (${columnNames.map(colName => s"${esc(colName)}" ).mkString(", ")})
+                VALUES (${columnNames.map(_ => '?' ).mkString(", ")})
+                RETURNING ${esc(idColumn.columnName)}
+            """)
+                .bind(columnValues: _*)
+                .map(getIdValueMapper(idColumn))
+                .single
+                .apply()
+                .getOrElse(throw new ConsistencyException("Id is not returned!"))
+            
+        def insertObjectPartValueWithId(
+            tableName: String,
+            columnNamesExt: List[String],
+            columnValuesExt: List[Any],
+            idColumn: PrimitiveValuePersistenceDataFinal
+        ): Unit =
+            val res = SQL(s"""
+                INSERT INTO $typesSchemaName.$tableName
+                (${columnNamesExt.map(colName => s"${esc(colName)}" ).mkString(", ")})
+                VALUES (${columnNamesExt.map(_ => '?' ).mkString(", ")})
+            """)
+                .bind(columnValuesExt: _*)
+                .update
+                .apply()
+            mapColColuntResult(res, s"Multiple entities inserted for $columnValuesExt!", 1)
+
+        def getNextId(typeName: String, idType: PersistenceFieldType): EntityId[_, _] =
+            val generateNextNumericValueFunc = s"nextval('${getSequenceName(typeName)}')"
+            val generateNextValueFunc = idType match
+                case LongFieldType => () => generateNextNumericValueFunc
+                case IntFieldType => () => generateNextNumericValueFunc
+                case ShortIntFieldType => () => generateNextNumericValueFunc
+                case ByteFieldType => () => generateNextNumericValueFunc
+                case UUIDFieldType => () => generateRandomUUIDFunc
+                case StringFieldType(_) => s"$stringIdAutoGenerationFunction"
+                case FixedStringFieldType(len) => s"LPAD($stringIdAutoGenerationFunction, $len, '0')"
+                case _ => throw new ConsistencyException(s"Id type $idType is not supported!")
+            val sequenceName = getSequenceName(typeName)
+            SQL(s"SELECT nextval('$sequenceName')")
+                .map(getIdValueMapper(idType, 1))
+                .single
+                .apply()
+                .getOrElse(throw new ConsistencyException(s"Id od sequence for type $typeName is not returned!"))
+
+        Try {
+            val persistenceData = getEntityPersistendeData(entityType)
+            (data, entityType, persistenceData) match
+                case (
+                    value: RootPrimitiveValue[_, _],
+                    CustomPrimitiveEntityType(_, _),
+                    PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn)
+                ) =>
+                    insertPrimitiveValue(tableName, idColumn, valueColumn.columnName, value.value)
+                case (
+                    filedValuesMap:  Map[String, EntityValue],
+                    ObjectEntityType(_, valueType),
+                    ObjectTypePersistenceDataFinal(tableName, idColumn, fieldsPersistenceData, parentPersistenceData)
+                ) =>
+                    insertObjectValue(tableName, idColumn, filedValuesMap, fieldsPersistenceData, valueType.parent, entityType.name)
+                case (
+                    values: Seq[ItemValue],
+                    ArrayEntityType(typeName, _),
+                    persData: ArrayTypePersistenceDataFinal
+                ) =>
+                    insertArrayValues(typeName, values, persData)
+                case _ => throw new ConsistencyException(s"Entity value $data is of not known type $entityType, or " +
+                    s"persistence data  $persistenceData not compatible!")
+        }
+
+    def update(entity: Entity[_, _, _])(implicit session: DBSession): Try[Option[Unit]] =
+
+        def updatePrimitiveValue(
+                                    tableName: String,
+                                    idColumn: PrimitiveValuePersistenceDataFinal,
+                                    valueColumn: PrimitiveValuePersistenceDataFinal,
+                                    id: EntityId[_, _],
+                                    value: RootPrimitiveValue[_, _]
+                                ): Option[Unit]=
+            val res =
+                SQL(s"""
+                UPDATE $typesSchemaName.$tableName
+                SET ${esc(valueColumn.columnName)} = ?
+                WHERE ${esc(idColumn.columnName)} = ?
+            """)
+                .bind(value.value, id.value)
+                .update.apply()
+            mapColColuntResult(res, s"Multiple entities updated for id: ${entity.id}!")
+
+        def updateObjectValue(
+                                tableName: String,
+                                idColumn: PrimitiveValuePersistenceDataFinal,
+                                entityType: ObjectEntityType[_, _],
+                                fieldsPersistenceData: Map[String, ValuePersistenceDataFinal],
+                                filedValuesMap: Map[String, EntityValue]
+                            ): Option[Unit]=
+            getColumnsValues(filedValuesMap.toList, fieldsPersistenceData, entityType.valueType.parent,
+                tableName, idColumn, entityType.name, 0)
+                .map { case (tableName, idColumn, columnsValues, _) =>
+                    val res = SQL(s"""
+                                        UPDATE $typesSchemaName.$tableName
+                                        SET ${columnsValues.map { case (columnName, _) => s"${esc(columnName)} = ?" }.mkString(", ")}
+                                        WHERE ${esc(idColumn.columnName)} = ?
+                                    """)
+                        .bind(columnsValues.map(_._2) :+ entity.id.value: _*)
+                        .update.apply()
+                    mapColColuntResult(res,  s"Multiple entities updated for id: ${entity.id}!")
+                }
+                .fold(Some(()))( (acc, res) => if acc.isDefined then res else None )
+
+        def updateArrayValues(
+                                 persData: ArrayTypePersistenceDataFinal,
+                                 id: EntityId[_, _],
+                                 values: Seq[ItemValue]
+                             ): Option[Unit]=
+            val tmpData = splitValuesByTypes(values, persData)
+            tmpData.map { case (persData, items) =>
+                    SQL("DELETE FROM $typesSchemaName.${persData.tableName} WHERE ${esc(persData.idColumn.columnName)} = ?")
+                        .bind(id.value)
+                        .update.apply()
+                    val valuesLine = items.zipWithIndex.map{ case (v, i) => s"VALUES ( :id, :v$i )"}.mkString(", ")
+                    val params = items.zipWithIndex.map { case (v, i) => s"v$i" -> v }
+                    val res = SQL(
+                        s"""INSERT INTO $typesSchemaName.${persData.tableName}
+                                    ( ${esc(persData.idColumn.columnName)}, ${esc(persData.valueColumn.columnName)} )
+                                    $valuesLine"""
+                    )
+                        .bindByName(params :+ "id" -> id.value: _*)
+                        .update.apply()
+                    mapColColuntResult(res,  s"Multiple entities updated for id: ${entity.id}!", items.size)
+                }
+                .fold(Some(()))( (acc, res) => if acc.isDefined then res else None )
 
         Try {
             val persistenceData = getEntityPersistendeData(entity.typeDefinition)
             (entity, persistenceData) match
                 case (
-                        CustomPrimitiveValue(id, value, _),
-                        PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn)
-                    ) =>
-                        val res =
-                            DB.autoCommit { implicit session =>
-                                SQL(s"""
-                                    UPDATE $typesSchemaName.$tableName
-                                    SET ${esc(valueColumn.columnName)} = ?
-                                    WHERE ${esc(idColumn.columnName)} = ?
-                                """)
-                                    .bind(value.value, id.value)
-                                    .update.apply()
-                            }
-                        mapColColuntResult(res, s"Multiple entities updated for id: ${entity.id}!")
+                    CustomPrimitiveValue(id, value, _),
+                    PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn)
+                ) =>
+                    updatePrimitiveValue(tableName, idColumn, valueColumn, id, value)
                 case (
-                        ObjectValue(id, filedValuesMap, entityType),
-                        ObjectTypePersistenceDataFinal(tableName, idColumn, fieldsPersistenceData, parentPersistenceData)
-                    ) =>
-                        DB.autoCommit { implicit session =>
-                            getColumnsValues(filedValuesMap.toList, fieldsPersistenceData, entityType.valueType.parent,
-                                        tableName, idColumn.columnName)
-                                .map { case (tableName, idColumnName, columnsValues) =>
-                                    val res = SQL(s"""
-                                            UPDATE $typesSchemaName.$tableName
-                                            SET ${columnsValues.map { case (columnName, _) => s"${esc(columnName)} = ?" }.mkString(", ")}
-                                            WHERE ${esc(idColumnName)} = ?
-                                        """)
-                                        .bind(columnsValues.map(_._2) :+ entity.id.value: _*)
-                                        .update.apply()
-                                    mapColColuntResult(res,  s"Multiple entities updated for id: ${entity.id}!")
-                                }
-                                .fold(Some(()))( (acc, res) => if acc.isDefined then res else None )
-                        }
+                    ObjectValue(_, filedValuesMap, entityType),
+                    ObjectTypePersistenceDataFinal(tableName, idColumn, fieldsPersistenceData, _)
+                ) =>
+                    updateObjectValue(tableName, idColumn, entityType, fieldsPersistenceData, filedValuesMap)
                 case (
-                        ArrayValue(id, values, definition),
-                        persData: ArrayTypePersistenceDataFinal
-                    ) =>
-                        val tmpData = splitValuesByTypes(values, persData)
-                        DB.autoCommit { implicit session =>
-                            tmpData.map { case (persData, items) =>
-                                SQL("DELETE FROM $typesSchemaName.${persData.tableName} WHERE ${esc(persData.idColumn.columnName)} = ?")
-                                    .bind(id.value)
-                                    .update.apply()
-                                val valuesLine = items.zipWithIndex.map{ case (v, i) => s"VALUES ( :id, :v$i )"}.mkString(", ")
-                                val params = items.zipWithIndex.map { case (v, i) => s"v$i" -> v }
-                                val res = SQL(
-                                    s"""INSERT INTO $typesSchemaName.${persData.tableName}
-                                        ( ${esc(persData.idColumn.columnName)}, ${esc(persData.valueColumn.columnName)} )
-                                        $valuesLine"""
-                                )
-                                .bindByName(params :+ "id" -> id.value: _*)
-                                .update.apply()
-                                mapColColuntResult(res,  s"Multiple entities updated for id: ${entity.id}!", items.size)
-                            }
-                            .fold(Some(()))( (acc, res) => if acc.isDefined then res else None )
-                        }
+                    ArrayValue(id, values, _),
+                    persData: ArrayTypePersistenceDataFinal
+                ) =>
+                    updateArrayValues(persData, id, values)
                 case _ => throw new ConsistencyException(s"Entity value is of not known type, or persistence data not " +
                     s"compatible! Entity: $entity. Persistence data: $persistenceData")
         }
 
-    override def delete(entityType: EntityType[_, _, _], id: EntityId[_, _]): Try[Option[Unit]] =
+    def delete(entityType: EntityType[_, _, _], id: EntityId[_, _])(implicit session: DBSession): Try[Option[Unit]] =
         Try {
             val persistenceData = getEntityPersistendeData(entityType)
             val tableData = persistenceData match
@@ -215,22 +284,12 @@ class PostgresCrudRepository(
                     (tableName, idColumn.columnName)
                 case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
                     (tableName, idColumn.columnName)
-            mapColColuntResult( DB.autoCommit { implicit session =>
+            mapColColuntResult(
                 SQL(s"""DELETE FROM $typesSchemaName.${tableData._1} WHERE ${esc(tableData._2)} = ?""")
                     .bind(true, id)
-                    .update.apply()
-            },  s"Multiple entities archived for id: $id!")
+                    .update.apply(),
+                s"Multiple entities archived for id: $id!")
         }
-        
-    private def mapColColuntResult(count: Int, nonUniqueErrorMessage: String, expectedCount: Int = 1): Option[Unit] =
-        if count == 0 then None
-        else if count == 1 then Some(())
-        else throw new ConsistencyException(nonUniqueErrorMessage)
-
-    private def getEntityPersistendeData(entityType: AbstractEntityType[_, _, _]) = {
-        typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
-            throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
-    }
 
     override def get(entityType: EntityType[_, _, _], id: EntityId[_, _], getFields: GetFieldsDescriptor): Try[Option[Entity[_, _, _]]] = ???
 
@@ -260,6 +319,173 @@ class PostgresCrudRepository(
         )
 
         version
+
+    private val specificIdTypes: Map[PersistenceFieldType, Set[String]] = Map(
+        LongFieldType -> Set("BIGSERIAL", "SERIAL8"),
+        IntFieldType -> Set("SERIAL", "SERIAL4"),
+        ShortIntFieldType -> Set("SMALLSERIAL", "SERIAL2"),
+    )
+
+    private val availableTypes: Map[PersistenceFieldType, Set[String]] = Map(
+        BLOBFieldType -> Set("BYTEA"),
+        DoubleFieldType -> Set("FLOAT8", "DOUBLE PRECISION"),
+        FloatFieldType -> Set("FLOAT4", "REAL"),
+        DecimalFieldType -> Set("NUMERIC", "DECIMAL"),
+        LongFieldType -> Set("BIGINT", "INT8"),
+        IntFieldType -> Set("INTEGER", "INT", "INT4"),
+        ShortIntFieldType -> Set("SMALLINT", "INT2"),
+        ByteFieldType -> Set("SMALLINT", "INT2"),
+        BooleanFieldType -> Set("BOOLEAN", "BOOL"),
+        FixedStringFieldType -> Set("CHARACTER", "CHAR"),
+        StringFieldType -> Set("VARCHAR", "CHARACTER VARYING"),
+        DateFieldType -> Set("DATE"),
+        TextFieldType -> Set("TEXT"),
+        TimeFieldType -> Set("TIME"),
+        TimeWithTimeZoneFieldType -> Set("TIMETZ", "TIME WITH TIME ZONE"),
+        DateTimeFieldType -> Set("TIMESTAMP"),
+        DateTimeWithTimeZoneFieldType -> Set("TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"),
+        UUIDFieldType -> Set("UUID"),
+    )
+
+    private val generateRandomUUIDFunc = "uuid_generate_v4()"
+
+    private final val DB_KEYWORDS_SET = Set("ALL", "ANALYSE", "ANALYZE", "AND", "ANY", "ARRAY", "AS", "ASC", "ASYMMETRIC",
+        "AUTHORIZATION", "BINARY", "BOTH", "CASE", "CAST", "CHECK", "COLLATE", "COLUMN", "CONSTRAINT", "CREATE",
+        "CURRENT_DATE", "CURRENT_ROLE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "CURRENT_USER", "DEFAULT", "DEFERRABLE",
+        "DESC", "DISTINCT", "DO", "ELSE", "END", "EXCEPT", "FALSE", "FOR", "FOREIGN", "FREEZE", "FROM", "FULL", "GRANT",
+        "GROUP", "HAVING", "ILIKE", "IN", "INITIALLY", "INNER", "INTERSECT", "INTO", "IS", "ISNULL", "JOIN", "LEADING",
+        "LEFT", "LIKE", "LIMIT", "LOCALTIME", "LOCALTIMESTAMP", "NATURAL", "NEW", "NOT", "NOTNULL", "NULL", "OFF", "OFFSET",
+        "ON", "ONLY", "OR", "ORDER", "OUTER", "OVERLAPS", "PLACING", "PRIMARY", "REFERENCES", "RETURNING", "RIGHT",
+        "SELECT", "SESSION_USER", "SIMILAR", "SOME", "SYMMETRIC", "TABLE", "THEN", "TO", "TRAILING", "TRUE", "UNION",
+        "UNIQUE", "USER", "USING", "VERBOSE", "WHEN", "WHERE", "WINDOW", "WITH", "BIGINT", "BIT", "BOOLEAN", "CHAR",
+        "CHARACTER", "DOUBLE", "FLOAT", "INT", "INTEGER", "INTERVAL", "NATIONAL", "NUMERIC", "REAL", "SERIAL", "SMALLINT",
+        "TEXT", "TIMESTAMP", "UUID", "VARCHAR", "VARYING", "ADD", "ALTER", "DROP", "EXISTS", "EXPLAIN", "INDEX", "INSERT",
+        "INHERITS", "LANGUAGE", "LISTEN", "LOAD", "LOCK", "MOVE", "PREPARE", "REASSIGN", "REINDEX", "RELEASE", "RESET",
+        "REVOKE", "ROLLBACK", "SAVEPOINT", "SECURITY", "SEQUENCE", "SET", "SHOW", "TABLESPACE", "TRUNCATE", "UNLISTEN",
+        "UPDATE", "VACUUM", "VALUES", "VIEW")
+
+    private val integerTypes = Set(LongFieldType, IntFieldType, ShortIntFieldType, ByteFieldType)
+
+    private val typesSchemaName = connectionConf.getString("schema")
+    private val primaryKeySuffix = persistenceConf.getString("primary-key-suffix")
+    private val foreignKeySuffix = persistenceConf.getString("foreign-key-suffix")
+    private val archivedColumnNameSuffix = persistenceConf.getString("archived-column-name-suffix")
+    private val sequenceSuffix = persistenceConf.getString("sequence-suffix")
+    private val stringIdAutoGenerationFunction = persistenceConf.getString("string-id-auto-generation")
+
+    private var typesPersistenceData: Map[AbstractEntityType[_, _, _], TypePersistenceData] = Map()
+
+
+    private def getIdValueMapper(idType: PersistenceFieldType, pos: Int): WrappedResultSet => FilledEntityId[_, _] =
+        (rs: WrappedResultSet) => idType match
+            case LongFieldType => LongId(rs.long(pos))
+            case IntFieldType => IntId(rs.int(pos))
+            case ShortIntFieldType => ShortIntId(rs.short(pos))
+            case ByteFieldType => ByteId(rs.byte(pos))
+            case UUIDFieldType => UUIDId(rs.get[UUID](pos))
+            case StringFieldType => StringId(rs.string(pos))
+            case idType: FixedStringFieldType =>
+                FixedStringId(rs.string(pos), FixedStringIdTypeDefinition(idType.length))
+            case _ => throw new ConsistencyException(s"Id type $idType is not supported!")
+
+    private def getIdValueMapper(idColumn: PrimitiveValuePersistenceDataFinal): WrappedResultSet => FilledEntityId[_, _] =
+        (rs: WrappedResultSet) => idColumn.columnType match
+            case LongFieldType => LongId(rs.long(idColumn.columnName))
+            case IntFieldType => IntId(rs.int(idColumn.columnName))
+            case ShortIntFieldType => ShortIntId(rs.short(idColumn.columnName))
+            case ByteFieldType => ByteId(rs.byte(idColumn.columnName))
+            case UUIDFieldType => UUIDId(rs.get[UUID](idColumn.columnName))
+            case StringFieldType => StringId(rs.string(idColumn.columnName))
+            case idType: FixedStringFieldType =>
+                FixedStringId(rs.string(idColumn.columnName), FixedStringIdTypeDefinition(idType.length))
+            case _ => throw new ConsistencyException(s"Id type ${idColumn.columnType} is not supported!")
+
+
+    private def getColumnsValuesAndRestFields(
+                                                 filedValues: List[(String, EntityValue)],
+                                                 fieldsPersistenceData: Map[String, ValuePersistenceDataFinal]
+                                             ): (List[(String, Any)], List[(String, EntityValue)]) =
+        val res = filedValues.map { (fieldName, fieldValue) =>
+            fieldsPersistenceData.get(fieldName) match
+                case Some(fieldPersistenceData) =>
+                    (fieldValue, fieldPersistenceData) match
+                        case (prim: RootPrimitiveValue[_, _], PrimitiveValuePersistenceDataFinal(columnName, _, isNullable)) =>
+                            (List((columnName, prim.value)), Nil)
+                        case (value: ReferenceValue[_], fieldPersData: ReferenceValuePersistenceDataFinal) =>
+                            (List((fieldPersData.columnName, value.refId)), Nil)
+                        case (SimpleObjectValue(id, subFields, _), SimpleObjectValuePersistenceDataFinal(parentPersOpt, fieldsPers)) =>
+                            val parentData =
+                                id.map { id =>
+                                    val parentPers = parentPersOpt.getOrElse(throw new ConsistencyException("Parent is not defined!"))
+                                    (parentPers.columnName, id)
+                                }
+                            val fieldsData: (List[(String, Any)], List[(String, EntityValue)]) = getColumnsValuesAndRestFields(subFields.toList, fieldsPers)
+                            (fieldsData._1 ++ parentData.toList, fieldsData._2)
+                        case _ => throw new ConsistencyException(s"Field value is of not known type, or found pesistent " +
+                            s"data not compatible! Value: $fieldValue. Persistence data: $fieldPersistenceData")
+                case None =>
+                    (Nil, List((fieldName, fieldValue)))
+        }
+        (
+            res.flatMap(_._1),
+            res.flatMap(_._2)
+        )
+
+    private def getColumnsValues(
+                                    filedValues: List[(String, EntityValue)],
+                                    fieldsPersistenceData: Map[String, ValuePersistenceDataFinal],
+                                    parent: Option[ObjectEntitySuperType[_, _]],
+                                    tableName: String,
+                                    idColumnName: PrimitiveValuePersistenceDataFinal,
+                                    typeName: String,
+                                    level: Byte,
+                                ): List[(String, PrimitiveValuePersistenceDataFinal, List[(String, Any)], Byte)] =
+        val (columnsValues, restFields) = getColumnsValuesAndRestFields(filedValues, fieldsPersistenceData)
+        if (restFields.isEmpty)
+            List((tableName, idColumnName, columnsValues, level))
+        else
+            parent match
+                case None =>
+                    throw new ConsistencyException(s"Fields ${restFields.map(_._1).mkString(", ")} are not found in " +
+                        s"type $typeName and there is no parent of those type!")
+                case Some(parent) =>
+                    getEntityPersistendeData(parent) match
+                        case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, _) =>
+                            List((tableName, idColumnName, columnsValues, level)) ++
+                                getColumnsValues(restFields, fields, parent.valueType.parent, tableName,
+                                    idColumn, typeName, (level + 1).toByte)
+                        case _ => throw new ConsistencyException("Parent is not Object!")
+
+
+    private def splitValuesByTypes(
+                                      values: Seq[ItemValue],
+                                      persData: ArrayTypePersistenceDataFinal
+                                  ): Map[ItemTypePersistenceDataFinal, Seq[Any]] =
+        values.map {
+            case pv: RootPrimitiveValue[_, _] => (
+                persData.itemsMap.getOrElse(typesMapper.getValueFieldType(pv.typeDefinition.valueType),
+                    throw new ConsistencyException(s"Item value type is not found! ${pv.typeDefinition.valueType}")),
+                pv.value
+            )
+            case rv: ReferenceValue[_] => (
+                persData.itemsMap.getOrElse(typesMapper.getIdFieldType(rv.typeDefinition.valueType.idType),
+                    throw new ConsistencyException(s"Item id type is not found! ${rv.typeDefinition.valueType.idType}")),
+                rv.refId.value
+            )
+        }.groupMap(_._1)(_._2)
+
+    private def getSequenceName(typeName: String): String = esc(typeName + sequenceSuffix)
+
+    private def mapColColuntResult(count: Int, nonUniqueErrorMessage: String, expectedCount: Int): Option[Unit] =
+        if count == 0 then None
+        else if count == 1 then Some(())
+        else throw new ConsistencyException(nonUniqueErrorMessage)
+
+    private def getEntityPersistendeData(entityType: AbstractEntityType[_, _, _]) = {
+        typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
+            throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
+    }
+
 
     private def initConnectionPoolAndTypesSchema() =
 
@@ -297,48 +523,6 @@ class PostgresCrudRepository(
             )
         }
 
-    private val specificIdTypes: Map[PersistenceFieldType, Set[String]] = Map(
-        LongFieldType -> Set("BIGSERIAL", "SERIAL8"),
-        IntFieldType -> Set("SERIAL", "SERIAL4"),
-        ShortIntFieldType -> Set("SMALLSERIAL", "SERIAL2"),
-    )
-
-    private val availableTypes: Map[PersistenceFieldType, Set[String]] = Map(
-        BLOBFieldType -> Set("BYTEA"),
-        DoubleFieldType -> Set("FLOAT8", "DOUBLE PRECISION"),
-        FloatFieldType -> Set("FLOAT4", "REAL"),
-        DecimalFieldType -> Set("NUMERIC", "DECIMAL"),
-        LongFieldType -> Set("BIGINT", "INT8"),
-        IntFieldType -> Set("INTEGER", "INT", "INT4"),
-        ShortIntFieldType -> Set("SMALLINT", "INT2"),
-        ByteFieldType -> Set("SMALLINT", "INT2"),
-        BooleanFieldType -> Set("BOOLEAN", "BOOL"),
-        FixedStringFieldType -> Set("CHARACTER", "CHAR"),
-        StringFieldType -> Set("VARCHAR", "CHARACTER VARYING"),
-        DateFieldType -> Set("DATE"),
-        TextFieldType -> Set("TEXT"),
-        TimeFieldType -> Set("TIME"),
-        TimeWithTimeZoneFieldType -> Set("TIMETZ", "TIME WITH TIME ZONE"),
-        DateTimeFieldType -> Set("TIMESTAMP"),
-        DateTimeWithTimeZoneFieldType -> Set("TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"),
-        UUIDFieldType -> Set("UUID"),
-    )
-
-    private final val DB_KEYWORDS_SET = Set("ALL", "ANALYSE", "ANALYZE", "AND", "ANY", "ARRAY", "AS", "ASC", "ASYMMETRIC",
-        "AUTHORIZATION", "BINARY", "BOTH", "CASE", "CAST", "CHECK", "COLLATE", "COLUMN", "CONSTRAINT", "CREATE",
-        "CURRENT_DATE", "CURRENT_ROLE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "CURRENT_USER", "DEFAULT", "DEFERRABLE",
-        "DESC", "DISTINCT", "DO", "ELSE", "END", "EXCEPT", "FALSE", "FOR", "FOREIGN", "FREEZE", "FROM", "FULL", "GRANT",
-        "GROUP", "HAVING", "ILIKE", "IN", "INITIALLY", "INNER", "INTERSECT", "INTO", "IS", "ISNULL", "JOIN", "LEADING",
-        "LEFT", "LIKE", "LIMIT", "LOCALTIME", "LOCALTIMESTAMP", "NATURAL", "NEW", "NOT", "NOTNULL", "NULL", "OFF", "OFFSET",
-        "ON", "ONLY", "OR", "ORDER", "OUTER", "OVERLAPS", "PLACING", "PRIMARY", "REFERENCES", "RETURNING", "RIGHT",
-        "SELECT", "SESSION_USER", "SIMILAR", "SOME", "SYMMETRIC", "TABLE", "THEN", "TO", "TRAILING", "TRUE", "UNION",
-        "UNIQUE", "USER", "USING", "VERBOSE", "WHEN", "WHERE", "WINDOW", "WITH", "BIGINT", "BIT", "BOOLEAN", "CHAR",
-        "CHARACTER", "DOUBLE", "FLOAT", "INT", "INTEGER", "INTERVAL", "NATIONAL", "NUMERIC", "REAL", "SERIAL", "SMALLINT",
-        "TEXT", "TIMESTAMP", "UUID", "VARCHAR", "VARYING", "ADD", "ALTER", "DROP", "EXISTS", "EXPLAIN", "INDEX", "INSERT",
-        "INHERITS", "LANGUAGE", "LISTEN", "LOAD", "LOCK", "MOVE", "PREPARE", "REASSIGN", "REINDEX", "RELEASE", "RESET",
-        "REVOKE", "ROLLBACK", "SAVEPOINT", "SECURITY", "SEQUENCE", "SET", "SHOW", "TABLESPACE", "TRUNCATE", "UNLISTEN",
-        "UPDATE", "VACUUM", "VALUES", "VIEW")
-
     private def esc(name: String): String =
         if DB_KEYWORDS_SET.contains(name.toUpperCase) then s""""$name""""
         else name
@@ -358,13 +542,6 @@ class PostgresCrudRepository(
         specificIdTypes.get(persistenceType)
             .orElse(availableTypes.get(persistenceType))
             .exists(_.contains(dbTypeName.toUpperCase))
-
-    private val typesSchemaName = connectionConf.getString("schema")
-    private val primaryKeySuffix = persistenceConf.getString("primary-key-suffix")
-    private val foreignKeySuffix = persistenceConf.getString("foreign-key-suffix")
-    private val archivedColumnNameSuffix = persistenceConf.getString("archived-column-name-suffix")
-
-    private var typesPersistenceData: Map[AbstractEntityType[_, _, _], TypePersistenceData] = Map()
 
     private class RefData(
         val tableName: String,
@@ -419,9 +596,12 @@ class PostgresCrudRepository(
             val pkSql = if isArray then "" else s",\n CONSTRAINT ${esc(tableName + primaryKeySuffix)} PRIMARY KEY (${esc(idColumn.columnName)})"
             val idType = if isArray then getFieldType(idColumn.columnType) else getIdFieldType(idColumn.columnType)
             val valueType = getFieldType(valueColumnType)
+            val idAutogenerator = getIdAutoGenerator(idColumn.columnType)
+            val idAutogeneratorSql = if idAutogenerator.isEmpty then "" else s" DEFAULT $idAutogenerator"
+
             SQL(s"""
                 CREATE TABLE ${esc(tableName)} (
-                    ${esc(idColumn.columnName)} $idType NOT NULL,
+                    ${esc(idColumn.columnName)} $idType NOT NULL $idAutogeneratorSql,
                     ${esc(valueColumnName)} $valueType NOT NULL
                     $pkSql
                 )
@@ -431,6 +611,12 @@ class PostgresCrudRepository(
             dbUtils.addTableColumn(tableId, idColumn.columnName, idType, "id")
             dbUtils.addTableColumn(tableId, valueColumnName, valueType, "value")
 
+        def getIdAutoGenerator(columnType: PersistenceFieldType): String =
+            columnType match
+                case UUIDFieldType => generateRandomUUIDFunc
+                case StringFieldType(_) => s"$stringIdAutoGenerationFunction"
+                case FixedStringFieldType(len) => s"LPAD($stringIdAutoGenerationFunction, $len, '0')"
+                case _ => ""
 
         def renameColumn(tableName: String, prevColumnName: String, newColumnName: String): Unit =
             SQL(s"""
@@ -450,19 +636,20 @@ class PostgresCrudRepository(
                 ALTER TABLE ${esc(tableName)} DROP CONSTRAINT ${esc(keyName)} $cascadeSql
             """).execute.apply()
 
-        def createPrimaryKey(tableName: String, columnName: String): Unit =
+        def createPrimaryKeyExecute(tableName: String, columnName: String): Unit =
             SQL(s"""
                 ALTER TABLE ${esc(tableName)} ADD CONSTRAINT ${esc(tableName + primaryKeySuffix)} PRIMARY KEY (${esc(columnName)})
             """).execute.apply()
 
-        def addPrimaryKeyColumn(tableName: String, columnName: String, columnType: String, isArray: Boolean): Unit =
-            addColumn(tableName, columnName, columnType, false)
-            if !isArray then createPrimaryKey(tableName, columnName)
-
         def addColumn(tableName: String, columnName: String, columnType: String, isNullable: Boolean, default: String = ""): Unit =
             val defaultSql = if default.isEmpty then "" else s" DEFAULT $default"
             SQL(s"""
-                ALTER TABLE ${esc(tableName)} ADD COLUMN ${esc(columnName)} $columnType ${if isNullable then " " else "NOT NULL"}$defaultSql
+                ALTER TABLE ${esc(tableName)} ADD COLUMN ${esc(columnName)} $columnType ${if isNullable then "" else "NOT NULL"} $defaultSql
+            """).execute.apply()
+
+        def addDefaultValue(tableName: String, columnName: String, default: String): Unit =
+            SQL(s"""
+                ALTER TABLE ${esc(tableName)} ALTER COLUMN ${esc(columnName)} SET DEFAULT $default
             """).execute.apply()
 
         def createObjectValueTable(
@@ -475,10 +662,12 @@ class PostgresCrudRepository(
                 s"${esc(columnName)} $columnType ${if isNullable then "" else "NOT NULL"}"
             }.mkString(", ")
             val idColumnType = getIdFieldType(idColumn.columnType)
+            val idAutogenerator = getIdAutoGenerator(idColumn.columnType)
+            val idAutogeneratorSql = if idAutogenerator.isEmpty then "" else s" DEFAULT $idAutogenerator"
 
             SQL(s"""
                 CREATE TABLE ${esc(tableName)} (
-                    ${esc(idColumn.columnName)} $idColumnType NOT NULL,
+                    ${esc(idColumn.columnName)} $idColumnType NOT NULL idAutogeneratorSql,
                     $fieldsSql
                     CONSTRAINT ${esc(tableName + primaryKeySuffix)} PRIMARY KEY (${esc(idColumn.columnName)})
                 )
@@ -500,44 +689,79 @@ class PostgresCrudRepository(
             idColumn: PrimitiveValuePersistenceDataFinal,
             existingColumns: Map[String, ColumnData],
             isArray: Boolean,
+            idAutogenerator: String,
         ): Unit =
+
+            def addPrimaryKeyColumn(
+                                   tableName: String,
+                                   idColumn: PrimitiveValuePersistenceDataFinal,
+                                   isArray: Boolean,
+                                   prevColumnName: String,
+                                   default: String = ""
+                               ): Unit =
+                val columnType: String = getIdFieldType(idColumn.columnType)
+                addColumn(tableName, idColumn.columnName, columnType, false, default)
+                if (!isArray)
+                    createPrimaryKeyExecute(tableName, idColumn.columnName)
+                    dbUtils.addPrimaryKeyAlteringData(tableName, prevColumnName, idColumn.columnName, version.id)
+
+            def replacePKOnDifferentType(
+                                            pkColumn: String,
+                                            pkData: PrimaryKeyData,
+                                            existingIdColumnData: Option[ColumnData],
+                                            preprocess: Boolean => Unit
+                                        ): Unit =
+                val isSameTypeCheckFn = if isArray then isSameType _ else isSameIdType _
+                val isDifferentType = !isSameTypeCheckFn(idColumn.columnType, existingColumns(pkColumn).columnType)
+                if (isDifferentType) dropPrimaryKey(pkData)
+                preprocess(isDifferentType)
+                if (isDifferentType)
+                    addPrimaryKeyColumn(tableName, idColumn, isArray, pkColumn, idAutogenerator)
+                else if (idAutogenerator.nonEmpty && !existingIdColumnData.exists(_.defaultValue.exists(_.contains(idAutogenerator))))
+                    addDefaultValue(tableName, idColumn.columnName, idAutogenerator)
+
+
+            def replacePrimaryKey(pk: PrimaryKeyData, oldIdColumnName: String, existingIdColumnData: Option[ColumnData]): Unit =
+                dropPrimaryKey(pk)
+                if (!isArray)
+                    createPrimaryKeyExecute(tableName, idColumn.columnName)
+                    dbUtils.addPrimaryKeyAlteringData(tableName, oldIdColumnName, idColumn.columnName, version.id)
+                    if (idAutogenerator.nonEmpty && !existingIdColumnData.exists(_.defaultValue.exists(_.contains(idAutogenerator))))
+                        addDefaultValue(tableName, idColumn.columnName, idAutogenerator)
+
+            def createPrimaryKey(existingIdColumnData: Option[ColumnData]): Unit =
+                createPrimaryKeyExecute(tableName, idColumn.columnName)
+                dbUtils.addPrimaryKeyAlteringData(tableName, null, idColumn.columnName, version.id)
+                if (idAutogenerator.nonEmpty && !existingIdColumnData.exists(_.defaultValue.exists(_.contains(idAutogenerator))))
+                    addDefaultValue(tableName, idColumn.columnName, idAutogenerator)
+
             val pkDataOption = metadataUtils.getTablePrimaryKeys(tableName)
-            if pkDataOption.forall(_.columnNames.size <= 1) then
+            if (pkDataOption.forall(_.columnNames.size <= 1))
                 try
-                    if existingColumns.contains(idColumn.columnName) then
-                        if pkDataOption.isDefined then
-                            val pkData = pkDataOption.get
-                            val pkColumn = pkData.columnNames.head
-                            if pkColumn == idColumn.columnName then
-                                val isSameTypeCheckFn = if isArray then isSameType _ else isSameIdType _
-                                if !isSameTypeCheckFn(idColumn.columnType, existingColumns(pkColumn).columnType) then
-                                    //ignoring else - ID column with PK of same type already exists - no actions
-                                    dropPrimaryKey(pkData)
-                                    renameColumn(tableName, pkColumn, getRenamedArchivedColumnName(pkColumn, existingColumns))
-                                    addPrimaryKeyColumn(tableName, idColumn.columnName, getIdFieldType(idColumn.columnType), isArray)
-                                    if !isArray then dbUtils.addPrimaryKeyAlteringData(tableName, pkColumn, idColumn.columnName, version.id)
-                            else
-                                dropPrimaryKey(pkData)
-                                if (!isArray)
-                                    createPrimaryKey(tableName, idColumn.columnName)
-                                    dbUtils.addPrimaryKeyAlteringData(tableName, pkColumn, idColumn.columnName, version.id)
-                        else if (!isArray)
-                            createPrimaryKey(tableName, idColumn.columnName)
-                            dbUtils.addPrimaryKeyAlteringData(tableName, null, idColumn.columnName, version.id)
-                    else if pkDataOption.isEmpty then
-                        addPrimaryKeyColumn(tableName, idColumn.columnName, getIdFieldType(idColumn.columnType), isArray)
-                        if !isArray then dbUtils.addPrimaryKeyAlteringData(tableName, null, idColumn.columnName, version.id)
-                    else
+                    val existingIdColumnData = existingColumns.get(idColumn.columnName)
+                    if (pkDataOption.isDefined)
                         val pkData = pkDataOption.get
                         val pkColumn = pkData.columnNames.head
-                        val isSameTypeCheckFn = if isArray then isSameType _ else isSameIdType _
-                        if isSameTypeCheckFn(idColumn.columnType, existingColumns(pkColumn).columnType) then
-                            renameColumn(tableName, pkColumn, idColumn.columnName)
+                        if (existingIdColumnData.isDefined)
+                            if (pkColumn == idColumn.columnName)
+                                replacePKOnDifferentType(pkColumn, pkData, existingIdColumnData,
+                                    if (_) renameColumn(tableName, pkColumn, getRenamedArchivedColumnName(pkColumn, existingColumns))
+                                )
+                            else
+                                replacePrimaryKey(pkData, pkColumn, existingIdColumnData)
                         else
-                            dropPrimaryKey(pkData)
-                            addPrimaryKeyColumn(tableName, idColumn.columnName, getIdFieldType(idColumn.columnType), isArray)
-                            if !isArray then dbUtils.addPrimaryKeyAlteringData(tableName, pkColumn, idColumn.columnName, version.id)
+                            replacePKOnDifferentType(pkColumn, pkData, existingIdColumnData, isDifferentType =>
+                                if (!isDifferentType) renameColumn(tableName, pkColumn, idColumn.columnName)
+                            )
+                    else
+                        if (existingIdColumnData.isDefined)
+                            if (!isArray)
+                                createPrimaryKey(existingIdColumnData)
+                        else
+                            addPrimaryKeyColumn(tableName, idColumn, isArray, null, idAutogenerator)
+
                     dbUtils.addTableColumn(savedTablesIdsMap(tableName), idColumn.columnName, getIdFieldType(idColumn.columnType), "id")
+
                 catch
                     case e: Exception => throw DbTableMigrationException(tableName, e)
             else
@@ -571,8 +795,9 @@ class PostgresCrudRepository(
             valueColumnType: PersistenceFieldType,
             isArray: Boolean,
         ): Unit =
+            val idAutogenerator = getIdAutoGenerator(idColumn.columnType)
             val existingColumns: Map[String, ColumnData] =  metadataUtils.getTableColumnsDataMap(tableName)
-            checkAndFixExistingTableIdColumn(tableName, idColumn, existingColumns, isArray)
+            checkAndFixExistingTableIdColumn(tableName, idColumn, existingColumns, isArray, idAutogenerator)
             checkAndFixExistingTableValueColumn(tableName, valueColumnName, valueColumnType, false, 
                 existingColumns, "value")
 
@@ -608,9 +833,10 @@ class PostgresCrudRepository(
             fields: Map[String, ValuePersistenceDataFinal],
             existingColumnsOption: Option[Map[String, ColumnData]] = None, 
         ): Unit =
-            val existingColumns: Map[String, ColumnData] = existingColumnsOption.getOrElse( 
+            val idAutogenerator = getIdAutoGenerator(idColumn.columnType)
+            val existingColumns: Map[String, ColumnData] = existingColumnsOption.getOrElse(
                 metadataUtils.getTableColumnsDataMap(tableName) )
-            checkAndFixExistingTableIdColumn(tableName, idColumn, existingColumns, false)
+            checkAndFixExistingTableIdColumn(tableName, idColumn, existingColumns, false, idAutogenerator)
             checkAndFixExistingSimpleObjectValueTable(tableName, fields, None, existingColumns, None)
 
         def getFieldsColumsData(
@@ -645,7 +871,12 @@ class PostgresCrudRepository(
                         else checkAndFixExistingSingleValueTable(tableName, idColumn, valueColumn.columnName,
                             valueColumn.columnType, false)
                     Nil
-                case ArrayTypePersistenceDataFinal(items, _) =>
+                case ArrayTypePersistenceDataFinal(items, idType, typeName) =>
+                    if (integerTypes.contains(idType))
+                        SQL(s"""
+                            CREATE SEQUENCE IF NOT EXISTS ${getSequenceName(typeName)}
+                                START WITH 1  INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+                        """.stripMargin).execute.apply()
                     items.view.flatMap {
                         case ItemTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
                             val (valueColumnName, valueColumnType, refData) = valueColumn match

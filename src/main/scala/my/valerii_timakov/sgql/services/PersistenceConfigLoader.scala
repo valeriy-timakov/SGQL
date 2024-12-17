@@ -120,6 +120,7 @@ case class ItemTypePersistenceDataFinal(
 case class ArrayTypePersistenceDataFinal(
     items: Set[ItemTypePersistenceDataFinal],
     idType: PersistenceFieldType,
+    typeName: String,
 ) extends TypePersistenceDataFinal:
     if items.map(_.idColumn.columnType).exists(_ != idType)
         then throw new ConsistencyException(s"Array ID types has are different! Types: $idType")
@@ -558,7 +559,9 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
                         et.valueType, 
                         typeName)
                 )
-            ), getIdFieldType(valueType.idType)
+            ), 
+            getIdFieldType(valueType.idType), 
+            typeName
         )
 
     private def convertPrimitiveToArrayItemData(valueType: ArrayTypeDefinition[_, _], typeName: String, tableName: Option[String], idColumn: Option[PrimitiveValuePersistenceData], valueColumn: Option[PrimitiveValuePersistenceData]) = {

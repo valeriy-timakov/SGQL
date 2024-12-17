@@ -48,7 +48,7 @@ final case class StringFieldType(maxLength: Int) extends PersistenceFieldType("s
 
 object StringFieldType extends PersistenceFieldType("string")
 
-final case class FixedStringFieldType(maxLength: Int) extends PersistenceFieldType("fixed_string"):
+final case class FixedStringFieldType(length: Int) extends PersistenceFieldType("fixed_string"):
     override def getType: PersistenceFieldType = StringFieldType
 
 object FixedStringFieldType extends PersistenceFieldType("string")
