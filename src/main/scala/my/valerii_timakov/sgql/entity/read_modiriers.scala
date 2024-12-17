@@ -3,9 +3,11 @@ package my.valerii_timakov.sgql.entity.read_modiriers
 import my.valerii_timakov.sgql.entity.domain.type_values.{EntityValue, ValueTypes}
 
 sealed trait GetFieldsDescriptor
-case class ObjectGetFieldsDescriptor(fields: Map[String, GetFieldsDescriptor])
-case class ListGetFieldsDescriptor(fields: GetFieldsDescriptor, limit: Int, offset: Int)
 case object AllGetFieldsDescriptor extends GetFieldsDescriptor
+case class ObjectGetFieldsDescriptor(fields: Seq[GetFieldsDescriptor]) extends GetFieldsDescriptor
+case class SingleGetFieldsDescriptor(fieldName: String) extends GetFieldsDescriptor
+case class ListGetFieldsDescriptor(repeatedField: GetFieldsDescriptor, limit: Option[Int], offset: Option[Int]) extends GetFieldsDescriptor
+case class SubObjectGetFieldsDescriptor(fieldName: String, subFields: Seq[GetFieldsDescriptor]) extends GetFieldsDescriptor
 
 sealed trait SearchCondition
 final case class EmptySearchCondition() extends SearchCondition

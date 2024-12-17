@@ -2,11 +2,11 @@ package my.valerii_timakov.sgql.actors
 
 import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import my.valerii_timakov.sgql.entity.{AbstractTypeError, Error, TypeNotFountError}
+import my.valerii_timakov.sgql.entity.{AbstractTypeError, Error, GetFieldsParseError, TypeNotFountError}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BinaryValue, Entity, EntityId, EntityValue}
 import my.valerii_timakov.sgql.entity.domain.type_definitions.EntityIdTypeDefinition
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, EntitySuperType, EntityType}
-import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AllGetFieldsDescriptor, GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.services.{CrudRepository, TypesDefinitionProvider}
 import spray.json.JsValue
 
@@ -94,7 +94,7 @@ class CrudActor(
             case Right(id) =>
                 idMapper(id)
                 
-    private def parseGetFieldsDescriptor[Res](getFields: Option[String], entityType: EntityType[_, _, _])
+    private def parseGetFieldsDescriptor[Res](getFields: Option[List[String]], entityType: EntityType[_, _, _])
                                              (getFieldsDescriptorMapper: GetFieldsDescriptor => Either[Error, Try[Res]])
     : Either[Error, Try[Res]] =
         typesDefinitionProvider.parseGetFieldsDescriptor(getFields, entityType) match
@@ -130,8 +130,8 @@ object CrudActor:
     final case class DeleteMessage(entityTypeName: String, id: String, 
                                    replyTo: ActorRef[Either[Error, Try[Option[Unit]]]]) extends CrudMessage
 
-    final case class GetMessage(entityTypeName: String, id: String, getFieldsQuery: Option[String], 
+    final case class GetMessage(entityTypeName: String, id: String, getFieldsQuery: Option[List[String]], 
                                 replyTo: ActorRef[Either[Error, Try[Option[Entity[_, _, _]]]]]) extends CrudMessage
 
-    final case class SearchMessage(entityTypeName: String, searchQuery: Option[String], getFieldsQuery: Option[String], 
+    final case class SearchMessage(entityTypeName: String, searchQuery: Option[String], getFieldsQuery: Option[List[String]], 
                                  replyTo: ActorRef[Either[Error, Try[Seq[Entity[_, _, _]]]]]) extends CrudMessage

@@ -17,7 +17,7 @@ trait TypesDefinitionProvider:
     def getAllTypes: Seq[AbstractEntityType[_, _, _]]
     def getPersistenceData(name: String): Option[TypePersistenceDataFinal]
     def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal]
-    def parseGetFieldsDescriptor(descriptor: Option[String], entityType: AbstractEntityType[_, _, _]):
+    def parseGetFieldsDescriptor(descriptor: Option[List[String]], entityType: AbstractEntityType[_, _, _]):
         Try[Either[GetFieldsParseError, GetFieldsDescriptor]]
     def parseSearchCondition(condition: Option[String], entityType: AbstractEntityType[_, _, _]):
         Try[Either[SearchConditionParseError, SearchCondition]]
@@ -56,5 +56,13 @@ class TypesDefinitionProviderImpl(
     def getAllTypes: Seq[AbstractEntityType[_, _, _]] = globalTypesMap.getAllTypes
     def getPersistenceData(name: String): Option[TypePersistenceDataFinal] = typesPersistenceData.get(name)
     def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal] = typesPersistenceData
-    def parseGetFieldsDescriptor(descriptor: Option[String], entityType: AbstractEntityType[_, _, _]): Try[Either[GetFieldsParseError, GetFieldsDescriptor]] = Success(Right(AllGetFieldsDescriptor))
+    def parseGetFieldsDescriptor(
+                                    descriptor: Option[List[String]], 
+                                    entityType: AbstractEntityType[_, _, _]
+                                ): Try[Either[GetFieldsParseError, GetFieldsDescriptor]] =
+        descriptor match
+            case Some(fields) => 
+                Success(Right(GetFieldsDescriptor(fields)))
+            case None => 
+                Success(Right(AllGetFieldsDescriptor))
     def parseSearchCondition(condition: Option[String], entityType: AbstractEntityType[_, _, _]): Try[Either[SearchConditionParseError, SearchCondition]] = ???

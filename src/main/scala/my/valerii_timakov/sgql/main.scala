@@ -38,9 +38,9 @@ import scala.language.postfixOps
     implicit val system: ActorSystem[MainActor.Message] = ActorSystem(MainActor(crudRepository, typesDefinitionProvider), "main-system")
     implicit val executionContextExecutor: ExecutionContextExecutor = system.executionContext
     val mainActor: ActorRef[MainActor.Message] = system
-    val crudHttpRouter = CrudHttpRouter(mainActor, system, messageSource)
+    val crudHttpRouter = CrudHttpRouter(mainActor, system, messageSource, conf.getConfig("http.protocol"))
     val typesProviderHttpRouter = TypesProviderHttpRouter(mainActor, system, messageSource)
-    val httpServer: HttpServer = new HttpServer(crudHttpRouter, typesProviderHttpRouter, conf.getConfig("http"))
+    val httpServer: HttpServer = new HttpServer(crudHttpRouter, typesProviderHttpRouter, conf.getConfig("http.connection"))
 
 
     def terminate(): Future[Unit] =
