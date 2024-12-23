@@ -6,7 +6,7 @@ import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, ArrayEnt
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, ByteId, CustomPrimitiveValue, Entity, EntityId, EntityValue, FilledEntityId, FixedStringId, IntId, ItemValue, LongId, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, SimpleObjectValue, StringId, UUIDId, ValueTypes}
 import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, DbTableMigrationException, NotInitializedException}
-import my.valerii_timakov.sgql.services.{ValuePersistenceDataFinal, *}
+import my.valerii_timakov.sgql.services.{ItemTypePersistenceDataFinal, ValuePersistenceDataFinal, *}
 
 import scala.util.{Failure, Success, Try}
 import scalikejdbc.*
@@ -208,7 +208,7 @@ class PostgresCrudRepository(
             """)
                 .bind(value.value, id.value)
                 .update.apply()
-            mapColColuntResult(res, s"Multiple entities updated for id: ${entity.id}!")
+            mapColColuntResult(res, s"Multiple entities updated for id: ${entity.id}!", 1)
 
         def updateObjectValue(
                                 tableName: String,
@@ -227,7 +227,7 @@ class PostgresCrudRepository(
                                     """)
                         .bind(columnsValues.map(_._2) :+ entity.id.value: _*)
                         .update.apply()
-                    mapColColuntResult(res,  s"Multiple entities updated for id: ${entity.id}!")
+                    mapColColuntResult(res,  s"Multiple entities updated for id: ${entity.id}!", 1)
                 }
                 .fold(Some(()))( (acc, res) => if acc.isDefined then res else None )
 
@@ -238,7 +238,7 @@ class PostgresCrudRepository(
                              ): Option[Unit]=
             val tmpData = splitValuesByTypes(values, persData)
             tmpData.map { case (persData, items) =>
-                    SQL("DELETE FROM $typesSchemaName.${persData.tableName} WHERE ${esc(persData.idColumn.columnName)} = ?")
+                    SQL(s"DELETE FROM $typesSchemaName.${persData.tableName} WHERE ${esc(persData.idColumn.columnName)} = ?")
                         .bind(id.value)
                         .update.apply()
                     val valuesLine = items.zipWithIndex.map{ case (v, i) => s"VALUES ( :id, :v$i )"}.mkString(", ")
@@ -277,18 +277,29 @@ class PostgresCrudRepository(
         }
 
     def delete(entityType: EntityType[_, _, _], id: EntityId[_, _])(implicit session: DBSession): Try[Option[Unit]] =
-        Try {
-            val persistenceData = getEntityPersistendeData(entityType)
-            val tableData = persistenceData match
-                case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
-                    (tableName, idColumn.columnName)
-                case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
-                    (tableName, idColumn.columnName)
-            mapColColuntResult(
-                SQL(s"""DELETE FROM $typesSchemaName.${tableData._1} WHERE ${esc(tableData._2)} = ?""")
+        def deleteArrayValues(tablesData: Set[ItemTypePersistenceDataFinal]): Option[Unit] =
+            val res = tablesData.map(tableData =>
+                SQL(s"""DELETE FROM $typesSchemaName.${tableData.tableName} WHERE ${esc(tableData.idColumn.columnName)} = ?""")
                     .bind(true, id)
-                    .update.apply(),
-                s"Multiple entities archived for id: $id!")
+                    .update.apply()
+            ).sum
+            if (res == 0) 
+                None
+            else
+                Some(())
+        def deleteSingleValue(tableName: String, idColumnName: String): Option[Unit] =
+            val res = SQL(s"""DELETE FROM $typesSchemaName.$tableName WHERE ${esc(idColumnName)} = ?""")
+                .bind(true, id)
+                .update.apply()
+            mapColColuntResult(res, s"Multiple entities deleted for id: $id!", 1)
+        Try {
+            getEntityPersistendeData(entityType) match
+                case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
+                    deleteSingleValue(tableName, idColumn.columnName)
+                case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
+                    deleteSingleValue(tableName, idColumn.columnName)
+                case ArrayTypePersistenceDataFinal(items, _, _) =>
+                    deleteArrayValues(items)
         }
 
     override def get(entityType: EntityType[_, _, _], id: EntityId[_, _], getFields: GetFieldsDescriptor): Try[Option[Entity[_, _, _]]] = ???
