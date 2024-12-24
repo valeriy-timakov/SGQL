@@ -35,7 +35,7 @@ import scala.language.postfixOps
     val typesDefinitionProvider = typesDefinitionProviderInitializer.init(version.hash, GlobalTypesMap)
     crudRepository.setTypesDefinitionsProvider(typesDefinitionProvider)
     
-    implicit val system: ActorSystem[MainActor.Message] = ActorSystem(MainActor(crudRepository, typesDefinitionProvider), "main-system")
+    implicit val system: ActorSystem[MainActor.Message] = ActorSystem(MainActor(crudRepository, typesDefinitionProvider, conf), "main-system")
     implicit val executionContextExecutor: ExecutionContextExecutor = system.executionContext
     val mainActor: ActorRef[MainActor.Message] = system
     val crudHttpRouter = CrudHttpRouter(mainActor, system, messageSource, conf.getConfig("http.protocol"))

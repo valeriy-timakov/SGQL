@@ -3,11 +3,18 @@ package my.valerii_timakov.sgql.entity.read_modiriers
 import my.valerii_timakov.sgql.entity.domain.type_values.{EntityValue, ValueTypes}
 
 sealed trait GetFieldsDescriptor
-case object AllGetFieldsDescriptor extends GetFieldsDescriptor
-case class ObjectGetFieldsDescriptor(fields: Seq[GetFieldsDescriptor]) extends GetFieldsDescriptor
-case class SingleGetFieldsDescriptor(fieldName: String) extends GetFieldsDescriptor
-case class ListGetFieldsDescriptor(repeatedField: GetFieldsDescriptor, limit: Option[Int], offset: Option[Int]) extends GetFieldsDescriptor
-case class SubObjectGetFieldsDescriptor(fieldName: String, subFields: Seq[GetFieldsDescriptor]) extends GetFieldsDescriptor
+sealed trait RootGetFieldsDescriptor extends GetFieldsDescriptor
+sealed trait NestedGetFieldsDescriptor extends GetFieldsDescriptor
+sealed trait AbstractObjectGetFieldsDescriptor extends GetFieldsDescriptor:
+    def fields: Seq[NestedGetFieldsDescriptor]
+object AllGetFieldsDescriptor extends RootGetFieldsDescriptor, NestedGetFieldsDescriptor
+case class ObjectGetFieldsDescriptor(fields: Seq[NestedGetFieldsDescriptor]) 
+    extends RootGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor
+case class SingleGetFieldsDescriptor(fieldName: String) extends NestedGetFieldsDescriptor
+case class ListGetFieldsDescriptor(repeatedField: NestedGetFieldsDescriptor, limit: Option[Int], offset: Option[Int]) 
+    extends NestedGetFieldsDescriptor
+case class SubObjectGetFieldsDescriptor(fieldName: String, fields: Seq[NestedGetFieldsDescriptor]) 
+    extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor
 
 sealed trait SearchCondition
 final case class EmptySearchCondition() extends SearchCondition

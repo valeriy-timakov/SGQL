@@ -77,7 +77,7 @@ sealed abstract class AbstractNamedType extends AbstractType:
         this.id = Some(id)
     def getId: Long = id.getOrElse(throw new ConsistencyException(s"Type $name has no id yet!"))
 
-case class RootPrimitiveType[T, V <: RootPrimitiveValue[T, V]](valueType: RootPrimitiveTypeDefinition[V]) extends AbstractNamedType, ItemValueType
+case class RootPrimitiveType[T, V <: RootPrimitiveValue[T, V]](valueType: RootPrimitiveTypeDefinition[T, V]) extends AbstractNamedType, ItemValueType
 
 sealed abstract class AbstractEntityType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractNamedType:
     override def valueType: EntityTypeDefinition[ID, VT, V]
@@ -103,7 +103,7 @@ sealed abstract class EntityType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V],
     extends AbstractEntityType[ID, VT, V]:
     override def valueType: EntityTypeDefinition[ID, VT, V]
     def createEntity(id: EntityId[_, _], value: V): Either[TypesConsistencyError, Entity[ID, VT, V]]
-    def parseEntity(id: ID, valueData: JsValue): Either[my.valerii_timakov.sgql.entity.Error, Entity[ID, VT, V]] =
+    def parseEntity(id: ID, valueData: JsValue): Either[my.valerii_timakov.sgql.entity.SingleMessageError, Entity[ID, VT, V]] =
         valueType.parseValue(valueData).flatMap(createEntity(id, _))
     protected def checkId(id: EntityId[_, _]): Either[TypesConsistencyError, ID] =
         id match

@@ -1,10 +1,10 @@
 package my.valerii_timakov.sgql.services.repositories.postres
 
 import com.typesafe.config.Config
-import my.valerii_timakov.sgql.entity.domain.type_definitions.FixedStringIdTypeDefinition
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{FixedStringIdTypeDefinition, RootPrimitiveTypeDefinition}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, ArrayEntityType, CustomPrimitiveEntityType, EntitySuperType, EntityType, ObjectEntitySuperType, ObjectEntityType, ReferenceType, RootPrimitiveType}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, ByteId, CustomPrimitiveValue, Entity, EntityId, EntityValue, FilledEntityId, FixedStringId, IntId, ItemValue, LongId, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, SimpleObjectValue, StringId, UUIDId, ValueTypes}
-import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, SearchCondition}
+import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, RootGetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, DbTableMigrationException, NotInitializedException}
 import my.valerii_timakov.sgql.services.{ItemTypePersistenceDataFinal, ValuePersistenceDataFinal, *}
 
@@ -160,7 +160,7 @@ class PostgresCrudRepository(
                 case FixedStringFieldType(len) => s"LPAD($stringIdAutoGenerationFunction, $len, '0')"
                 case _ => throw new ConsistencyException(s"Id type $idType is not supported!")
             val sequenceName = getSequenceName(typeName)
-            SQL(s"SELECT nextval('$sequenceName')")
+            SQL(s"SELECT nextval('$typesSchemaName.$sequenceName')")
                 .map(getIdValueMapper(idType, 1))
                 .single
                 .apply()
@@ -283,7 +283,7 @@ class PostgresCrudRepository(
                     .bind(true, id)
                     .update.apply()
             ).sum
-            if (res == 0) 
+            if (res == 0)
                 None
             else
                 Some(())
@@ -296,15 +296,57 @@ class PostgresCrudRepository(
             getEntityPersistendeData(entityType) match
                 case PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
                     deleteSingleValue(tableName, idColumn.columnName)
-                case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
-                    deleteSingleValue(tableName, idColumn.columnName)
+                case persData: ObjectTypePersistenceDataFinal =>
+                    getAllObjectTables(Some(persData))
+                        .map((tableName, idColumnName) => deleteSingleValue(tableName, idColumnName))
+                        .fold(Some(()))( (acc, res) => if acc.isDefined then res else None )
                 case ArrayTypePersistenceDataFinal(items, _, _) =>
                     deleteArrayValues(items)
         }
 
-    override def get(entityType: EntityType[_, _, _], id: EntityId[_, _], getFields: GetFieldsDescriptor): Try[Option[Entity[_, _, _]]] = ???
+    override def get(entityType: EntityType[_, _, _], id: EntityId[_, _], getFields: RootGetFieldsDescriptor)(implicit session: DBSession): Try[Option[Entity[_, _, _]]] =
+//        def getItemExtractor(
+//                                pos: Int,
+//                                itemType: RootPrimitiveTypeDefinition[_, _],
+//                            ): WrappedResultSet => RootPrimitiveValue[_, _] =
+//            (rs: WrappedResultSet) => itemType.extract(rs, pos)
+        Try {
+            val persistenceData = getEntityPersistendeData(entityType)
+            (entityType, persistenceData) match
+                case (
+                    CustomPrimitiveEntityType(_, typeDef),
+                    PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn)
+                ) =>
+                    val value =
+                        SQL(
+                            s"""
+                           SELECT ${esc(valueColumn.columnName)}
+                           FROM $typesSchemaName.$tableName
+                           WHERE ${esc(idColumn.columnName)} = ?
+                        """)
+                            .bind(id.value)
+                            .map(rs => typeDef.rootType.extract(rs, 1))
+                            .single
+                            .apply()
+                            .flatten
+                    CustomPrimitiveValue(id, value, entityType)
+                case (
+                    ObjectEntityType(_, valueType),
+                    ObjectTypePersistenceDataFinal(tableName, idColumn, fieldsPersistenceData, parentPersistenceData)
+                ) =>
+                    //filedValuesMap:  Map[String, EntityValue],
+                    insertObjectValue(tableName, idColumn, filedValuesMap, fieldsPersistenceData, valueType.parent, entityType.name)
+                case (
+                    ArrayEntityType(typeName, _),
+                    persData: ArrayTypePersistenceDataFinal
+                ) =>
+                    //values: Seq[ItemValue],
+                    insertArrayValues(typeName, values, persData)
+                case _ => throw new ConsistencyException(s"Entity type $entityType is not known, or " +
+                    s"persistence data  $persistenceData not compatible!")
+        }
 
-    override def find(entityType: EntityType[_, _, _], query: SearchCondition, getFields: GetFieldsDescriptor): Try[Vector[Entity[_, _, _]]] = ???
+    override def find(entityType: EntityType[_, _, _], query: SearchCondition, getFields: RootGetFieldsDescriptor)(implicit session: DBSession): Try[Vector[Entity[_, _, _]]] = ???
     
     def setTypesDefinitionsProvider(typesDefinitionsProvider: TypesDefinitionProvider): Unit =
         this.typesDefinitionsProviderContainer = Some(typesDefinitionsProvider)
@@ -386,6 +428,13 @@ class PostgresCrudRepository(
 
     private var typesPersistenceData: Map[AbstractEntityType[_, _, _], TypePersistenceData] = Map()
 
+    @tailrec
+    private def getAllObjectTables(persDataOpt: Option[ParentTableReferenceFinal]): List[(String, String)] =
+        persDataOpt match
+            case None =>
+                Nil
+            case Some(persData) =>
+                List((persData.tableName, persData.idColumn.columnName)) :+ getAllObjectTables(persData.parent)
 
     private def getIdValueMapper(idType: PersistenceFieldType, pos: Int): WrappedResultSet => FilledEntityId[_, _] =
         (rs: WrappedResultSet) => idType match
@@ -489,7 +538,7 @@ class PostgresCrudRepository(
 
     private def mapColColuntResult(count: Int, nonUniqueErrorMessage: String, expectedCount: Int): Option[Unit] =
         if count == 0 then None
-        else if count == 1 then Some(())
+        else if count == expectedCount then Some(())
         else throw new ConsistencyException(nonUniqueErrorMessage)
 
     private def getEntityPersistendeData(entityType: AbstractEntityType[_, _, _]) = {
@@ -521,7 +570,7 @@ class PostgresCrudRepository(
 
         def renameTable(currTableName: String, newTableName: String): Unit =
             SQL(s"""
-                ALTER TABLE ${esc(currTableName)} RENAME TO ${esc(newTableName)}
+                ALTER TABLE $typesSchemaName.${esc(currTableName)} RENAME TO $typesSchemaName.${esc(newTableName)}
             """).execute.apply()
 
         val existingTableNames = metadataUtils.getTableNames(typesSchemaName)
@@ -593,7 +642,7 @@ class PostgresCrudRepository(
 
         def createForeignKey(tableName: String, columnName: String, refTableName: String, refColumnName: String): Unit =
             SQL(s"""
-                ALTER TABLE ${esc(tableName)} ADD CONSTRAINT ${esc(foreignKeyName(tableName, columnName, refTableName))}
+                ALTER TABLE $typesSchemaName.${esc(tableName)} ADD CONSTRAINT ${esc(foreignKeyName(tableName, columnName, refTableName))}
                     FOREIGN KEY (${esc(columnName)}) REFERENCES ${esc(refTableName)}(${esc(refColumnName)})
             """).execute.apply()
 
@@ -611,7 +660,7 @@ class PostgresCrudRepository(
             val idAutogeneratorSql = if idAutogenerator.isEmpty then "" else s" DEFAULT $idAutogenerator"
 
             SQL(s"""
-                CREATE TABLE ${esc(tableName)} (
+                CREATE TABLE $typesSchemaName.${esc(tableName)} (
                     ${esc(idColumn.columnName)} $idType NOT NULL $idAutogeneratorSql,
                     ${esc(valueColumnName)} $valueType NOT NULL
                     $pkSql
@@ -631,7 +680,7 @@ class PostgresCrudRepository(
 
         def renameColumn(tableName: String, prevColumnName: String, newColumnName: String): Unit =
             SQL(s"""
-                ALTER TABLE ${esc(tableName)} RENAME COLUMN ${esc(prevColumnName)} TO ${esc(newColumnName)}
+                ALTER TABLE $typesSchemaName.${esc(tableName)} RENAME COLUMN ${esc(prevColumnName)} TO ${esc(newColumnName)}
             """).execute.apply()
             dbUtils.addTableRenamingData(tableName, prevColumnName, newColumnName, version.id)
 
@@ -644,23 +693,23 @@ class PostgresCrudRepository(
         def dropConstraint(tableName: String, keyName: String, cascade: Boolean): Unit =
             val cascadeSql = if cascade then " CASCADE" else ""
             SQL(s"""
-                ALTER TABLE ${esc(tableName)} DROP CONSTRAINT ${esc(keyName)} $cascadeSql
+                ALTER TABLE $typesSchemaName.${esc(tableName)} DROP CONSTRAINT ${esc(keyName)} $cascadeSql
             """).execute.apply()
 
         def createPrimaryKeyExecute(tableName: String, columnName: String): Unit =
             SQL(s"""
-                ALTER TABLE ${esc(tableName)} ADD CONSTRAINT ${esc(tableName + primaryKeySuffix)} PRIMARY KEY (${esc(columnName)})
+                ALTER TABLE $typesSchemaName.${esc(tableName)} ADD CONSTRAINT ${esc(tableName + primaryKeySuffix)} PRIMARY KEY (${esc(columnName)})
             """).execute.apply()
 
         def addColumn(tableName: String, columnName: String, columnType: String, isNullable: Boolean, default: String = ""): Unit =
             val defaultSql = if default.isEmpty then "" else s" DEFAULT $default"
             SQL(s"""
-                ALTER TABLE ${esc(tableName)} ADD COLUMN ${esc(columnName)} $columnType ${if isNullable then "" else "NOT NULL"} $defaultSql
+                ALTER TABLE $typesSchemaName.${esc(tableName)} ADD COLUMN ${esc(columnName)} $columnType ${if isNullable then "" else "NOT NULL"} $defaultSql
             """).execute.apply()
 
         def addDefaultValue(tableName: String, columnName: String, default: String): Unit =
             SQL(s"""
-                ALTER TABLE ${esc(tableName)} ALTER COLUMN ${esc(columnName)} SET DEFAULT $default
+                ALTER TABLE $typesSchemaName.${esc(tableName)} ALTER COLUMN ${esc(columnName)} SET DEFAULT $default
             """).execute.apply()
 
         def createObjectValueTable(
@@ -677,7 +726,7 @@ class PostgresCrudRepository(
             val idAutogeneratorSql = if idAutogenerator.isEmpty then "" else s" DEFAULT $idAutogenerator"
 
             SQL(s"""
-                CREATE TABLE ${esc(tableName)} (
+                CREATE TABLE $typesSchemaName.${esc(tableName)} (
                     ${esc(idColumn.columnName)} $idColumnType NOT NULL idAutogeneratorSql,
                     $fieldsSql
                     CONSTRAINT ${esc(tableName + primaryKeySuffix)} PRIMARY KEY (${esc(idColumn.columnName)})
@@ -885,7 +934,7 @@ class PostgresCrudRepository(
                 case ArrayTypePersistenceDataFinal(items, idType, typeName) =>
                     if (integerTypes.contains(idType))
                         SQL(s"""
-                            CREATE SEQUENCE IF NOT EXISTS ${getSequenceName(typeName)}
+                            CREATE SEQUENCE IF NOT EXISTS $typesSchemaName.${getSequenceName(typeName)}
                                 START WITH 1  INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
                         """.stripMargin).execute.apply()
                     items.view.flatMap {
