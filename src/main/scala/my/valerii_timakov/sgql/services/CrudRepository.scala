@@ -4,7 +4,7 @@ package my.valerii_timakov.sgql.services
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.domain.types.EntityType
 import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId, EntityValue, ValueTypes}
-import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, RootGetFieldsDescriptor, SearchCondition}
+import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.exceptions.PersistenceRepositoryTypeNotFoundException
 import my.valerii_timakov.sgql.services.repositories.postres.{PostgresCrudRepository, Version}
 
@@ -25,9 +25,9 @@ trait CrudRepository:
 
     def delete(entityType: EntityType[_, _, _], id: EntityId[_, _]): Try[Option[Unit]]
 
-    def get(entityType: EntityType[_, _, _], id: EntityId[_, _], getFields: RootGetFieldsDescriptor): Try[Option[Entity[_, _, _]]]
+    def get(entityType: EntityType[_, _, _], id: EntityId[_, _], getFields: ObjectGetFieldsDescriptor): Try[Option[Entity[_, _, _]]]
 
-    def find(entityType: EntityType[_, _, _], query: SearchCondition, getFields: RootGetFieldsDescriptor): Try[Seq[Entity[_, _, _]]]
+    def find(entityType: EntityType[_, _, _], query: SearchCondition, getFields: ObjectGetFieldsDescriptor): Try[Seq[Entity[_, _, _]]]
 
     def init(typesDefinitionsProvider: TypesDefinitionProviderInitializer): Version
 

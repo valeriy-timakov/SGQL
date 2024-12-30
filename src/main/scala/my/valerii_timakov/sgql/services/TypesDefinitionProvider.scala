@@ -3,7 +3,7 @@ package my.valerii_timakov.sgql.services
 import my.valerii_timakov.sgql.entity
 import my.valerii_timakov.sgql.entity.{GetFieldsFieldValidateError, GetFieldsFieldsValidateError, GetFieldsParseError, SearchConditionParseError}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, GlobalTypesMap}
-import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, GetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, RootGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, GetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
 
 import scala.annotation.tailrec
 import scala.collection.immutable.Map
@@ -19,7 +19,7 @@ trait TypesDefinitionProvider:
     def getAllTypes: Seq[AbstractEntityType[_, _, _]]
     def getPersistenceData(name: String): Option[TypePersistenceDataFinal]
     def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal]
-    def validateGetFieldsDescriptor(descriptor: RootGetFieldsDescriptor, entityType: AbstractEntityType[_, _, _]):
+    def validateGetFieldsDescriptor(descriptor: ObjectGetFieldsDescriptor, entityType: AbstractEntityType[_, _, _]):
         Either[entity.Error, Unit]
     def parseSearchCondition(condition: Option[String], entityType: AbstractEntityType[_, _, _]):
         Try[Either[SearchConditionParseError, SearchCondition]]
@@ -59,11 +59,11 @@ class TypesDefinitionProviderImpl(
     def getPersistenceData(name: String): Option[TypePersistenceDataFinal] = typesPersistenceData.get(name)
     def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal] = typesPersistenceData
     def validateGetFieldsDescriptor(
-                                    descriptor: RootGetFieldsDescriptor,
+                                    descriptor: ObjectGetFieldsDescriptor,
                                     entityType: AbstractEntityType[_, _, _]
                                 ): Either[entity.Error, Unit] =
         descriptor match
-            case AllGetFieldsDescriptor =>
+            case ObjectGetFieldsDescriptor(Left(AllGetFieldsDescriptor)) =>
                 Right(Success(()))
             case descriptor: ObjectGetFieldsDescriptor =>
                 entityType match
@@ -78,11 +78,15 @@ class TypesDefinitionProviderImpl(
                                                descriptor: AbstractObjectGetFieldsDescriptor,
                                                entityType: AbstractObjectEntityType[_, _]
                                            ): Either[entity.Error, Unit] =
-        val res = descriptor.fields.map(fieldDescriptor => validateNestedGetFieldsDescriptor(fieldDescriptor, entityType))
-        if (res.contains(Left(_)))
-            Left( GetFieldsFieldsValidateError( res.collect({ case Left(error) => error } )) )
-        else
-            Right(Success(()))
+        descriptor.fields match 
+            case Left(AllGetFieldsDescriptor) =>
+                Right(Success(()))
+            case Right(fields) =>
+                val res = fields.map(fieldDescriptor => validateNestedGetFieldsDescriptor(fieldDescriptor, entityType))
+                if (res.contains(Left(_)))
+                    Left( GetFieldsFieldsValidateError( res.collect({ case Left(error) => error } )) )
+                else
+                    Right(Success(()))
 
     @tailrec
     private def validateNestedGetFieldsDescriptor(
@@ -91,13 +95,13 @@ class TypesDefinitionProviderImpl(
                                                  ): Either[entity.Error, Unit] =
         descriptor match
             case SingleGetFieldsDescriptor(fieldName) =>
-                if (entityType.valueType.fields.contains(fieldName))
+                if (entityType.valueType.allFields.contains(fieldName))
                     Right(Success(()))
                 else
                     Left(GetFieldsFieldValidateError(s"GetFieldDescriptor field $fieldName not present in corresponding " +
                         s"type $entityType!"))
             case descriptor: SubObjectGetFieldsDescriptor =>
-                entityType.valueType.fields.get(descriptor.fieldName)
+                entityType.valueType.allFields.get(descriptor.fieldName)
                     .map {
                         case objectFieldType: AbstractObjectEntityType[_, _] =>
                             validateObjectGetFieldsDescriptor(descriptor, objectFieldType)

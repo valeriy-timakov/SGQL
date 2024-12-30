@@ -3,18 +3,20 @@ package my.valerii_timakov.sgql.entity.read_modiriers
 import my.valerii_timakov.sgql.entity.domain.type_values.{EntityValue, ValueTypes}
 
 sealed trait GetFieldsDescriptor
-sealed trait RootGetFieldsDescriptor extends GetFieldsDescriptor
-sealed trait NestedGetFieldsDescriptor extends GetFieldsDescriptor
+sealed trait AllGetFieldsDescriptor extends GetFieldsDescriptor
+sealed trait NestedGetFieldsDescriptor extends GetFieldsDescriptor:
+    def fieldName: String
 sealed trait AbstractObjectGetFieldsDescriptor extends GetFieldsDescriptor:
-    def fields: Seq[NestedGetFieldsDescriptor]
-object AllGetFieldsDescriptor extends RootGetFieldsDescriptor, NestedGetFieldsDescriptor
-case class ObjectGetFieldsDescriptor(fields: Seq[NestedGetFieldsDescriptor]) 
-    extends RootGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor
-case class SingleGetFieldsDescriptor(fieldName: String) extends NestedGetFieldsDescriptor
-case class ListGetFieldsDescriptor(repeatedField: NestedGetFieldsDescriptor, limit: Option[Int], offset: Option[Int]) 
-    extends NestedGetFieldsDescriptor
-case class SubObjectGetFieldsDescriptor(fieldName: String, fields: Seq[NestedGetFieldsDescriptor]) 
+    def fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]]
+object AllGetFieldsDescriptor extends AllGetFieldsDescriptor
+case class ObjectGetFieldsDescriptor(fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]])
+    extends AbstractObjectGetFieldsDescriptor
+case class SubObjectGetFieldsDescriptor(fieldName: String, fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]])
     extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor
+case class SingleGetFieldsDescriptor(fieldName: String) extends NestedGetFieldsDescriptor
+case class ListGetFieldsDescriptor(repeatedField: NestedGetFieldsDescriptor, limit: Option[Int], offset: Option[Int]) extends NestedGetFieldsDescriptor:
+    def fieldName: String = repeatedField.fieldName
+case class AllInReferenceGetFieldsDescriptor(fieldName: String) extends NestedGetFieldsDescriptor
 
 sealed trait SearchCondition
 final case class EmptySearchCondition() extends SearchCondition
