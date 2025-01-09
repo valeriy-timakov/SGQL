@@ -52,7 +52,7 @@ class CrudHttpRouter(
             path(Segment) { objectId =>
                 get {
                     parameterMap { params =>
-                        val result: Future[Either[err.Error, Try[Option[Entity[_, _, _, _]]]]] =
+                        val result: Future[Either[err.Error, Try[Option[Entity[_, _, _]]]]] =
                             appActor ? (GetMessage(objectType, objectId, params.get(fieldsParamName), _))
                         onSuccess(result) {
                             case Left(error) =>
@@ -102,7 +102,7 @@ class CrudHttpRouter(
             path(searchPathPrefix) {
                 get {
                     parameterMap { params =>
-                        val result: Future[Either[err.Error, Try[Seq[Entity[_, _, _, _]]]]] =
+                        val result: Future[Either[err.Error, Try[Seq[Entity[_, _, _]]]]] =
                             appActor ? (SearchMessage(objectType, params.get(searchParamName), params.get(fieldsParamName), _))
                         onSuccess(result) {
                             case Left(error) =>

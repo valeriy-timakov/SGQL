@@ -41,22 +41,22 @@ class PostgresCrudRepository(
         typesDefinitionsProviderContainer.get
 
 
-    override def create(entityType: EntityType[_, _, _, _], data: ValueTypes): Try[EntityId[_, _]] =
+    override def create(entityType: EntityType[_, _, _], data: ValueTypes): Try[EntityId[_, _]] =
         DB.autoCommit { implicit session =>
             create(entityType, data)(session)
         }
 
-    override def update(entity: Entity[_, _, _, _]): Try[Option[Unit]] =
+    override def update(entity: Entity[_, _, _]): Try[Option[Unit]] =
         DB.autoCommit { implicit session =>
             update(entity)(session)
         }
 
-    override def delete(entityType: EntityType[_, _, _, _], id: EntityId[_, _]): Try[Option[Unit]] =
+    override def delete(entityType: EntityType[_, _, _], id: EntityId[_, _]): Try[Option[Unit]] =
         DB.autoCommit { implicit session =>
             delete(entityType, id)(session)
         }
 
-    def create(entityType: EntityType[_, _, _, _], data: ValueTypes)(implicit session: DBSession): Try[EntityId[_, _]] =
+    def create(entityType: EntityType[_, _, _], data: ValueTypes)(implicit session: DBSession): Try[EntityId[_, _]] =
         
         def insertPrimitiveValue(
             tableName: String, 
@@ -190,7 +190,7 @@ class PostgresCrudRepository(
                     s"persistence data  ${entityType.persistenceData} not compatible!")
         }
 
-    def update(entity: Entity[_, _, _, _])(implicit session: DBSession): Try[Option[Unit]] =
+    def update(entity: Entity[_, _, _])(implicit session: DBSession): Try[Option[Unit]] =
 
         def updatePrimitiveValue(
                                     tableName: String,
@@ -275,7 +275,7 @@ class PostgresCrudRepository(
                     s"compatible! Entity: $entity. Persistence data: $persistenceData")
         }
 
-    def delete(entityType: EntityType[_, _, _, _], id: EntityId[_, _])(implicit session: DBSession): Try[Option[Unit]] =
+    def delete(entityType: EntityType[_, _, _], id: EntityId[_, _])(implicit session: DBSession): Try[Option[Unit]] =
         def deleteArrayValues(tablesData: Set[ItemTypePersistenceDataFinal]): Option[Unit] =
             val res = tablesData.map(tableData =>
                 SQL(s"""DELETE FROM $typesSchemaName.${tableData.tableName} WHERE ${esc(tableData.idColumn.columnName)} = ?""")
@@ -303,7 +303,7 @@ class PostgresCrudRepository(
                     deleteArrayValues(items)
         }
 
-    override def get(entityType: EntityType[_, _, _, _], id: EntityId[_, _], getFields: ObjectGetFieldsDescriptor)(implicit session: DBSession): Try[Option[Entity[_, _, _, _]]] =
+    override def get(entityType: EntityType[_, _, _], id: EntityId[_, _], getFields: ObjectGetFieldsDescriptor)(implicit session: DBSession): Try[Option[Entity[_, _, _]]] =
 //        def getItemExtractor(
 //                                pos: Int,
 //                                itemType: RootPrimitiveTypeDefinition[_, _],
@@ -325,7 +325,7 @@ class PostgresCrudRepository(
             }.toList
         Try {
             val res = entityType match
-                case primType: CustomPrimitiveEntityType[_, _, _, _] =>
+                case primType: CustomPrimitiveEntityType[_, _, _] =>
                     val persData = primType.persistenceData
                     val value =
                         SQL(s"""
@@ -386,7 +386,7 @@ class PostgresCrudRepository(
             None
         }
 
-    override def find(entityType: EntityType[_, _, _, _], query: SearchCondition, getFields: ObjectGetFieldsDescriptor)(implicit session: DBSession): Try[Vector[Entity[_, _, _, _]]] = ???
+    override def find(entityType: EntityType[_, _, _], query: SearchCondition, getFields: ObjectGetFieldsDescriptor)(implicit session: DBSession): Try[Vector[Entity[_, _, _]]] = ???
     
     def setTypesDefinitionsProvider(typesDefinitionsProvider: TypesDefinitionProvider): Unit =
         this.typesDefinitionsProviderContainer = Some(typesDefinitionsProvider)
@@ -470,7 +470,7 @@ class PostgresCrudRepository(
     private val parentObjectReferenceSubfieldName = persistenceConf.getString("parent-object-reference-subfield-name")
     private val subobjectFieldsDelimiter = "."
 
-    private var typesPersistenceData: Map[AbstractEntityType[_, _, _, _], TypePersistenceData] = Map()
+    private var typesPersistenceData: Map[AbstractEntityType[_, _, _], TypePersistenceData] = Map()
 
     private case class GetDescriptorChainCell(currDsc: NestedGetFieldsDescriptor, parentDsc: Option[GetDescriptorChainCell] = None):
         lazy val fieldName: String = parentDsc.map(_.fieldName + subobjectFieldsDelimiter).getOrElse("") + currDsc.fieldName
@@ -750,7 +750,7 @@ class PostgresCrudRepository(
         else if count == expectedCount then Some(())
         else throw new ConsistencyException(nonUniqueErrorMessage)
 
-    private def getEntityPersistendeData(entityType: AbstractEntityType[_, _, _, _]) = {
+    private def getEntityPersistendeData(entityType: AbstractEntityType[_, _, _]) = {
         typesDefinitionsProvider.getPersistenceData(entityType.name).getOrElse(
             throw new ConsistencyException(s"Type persistence data not found for ${entityType.name}!"))
     }

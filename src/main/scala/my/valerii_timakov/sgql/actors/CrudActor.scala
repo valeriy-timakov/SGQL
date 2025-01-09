@@ -91,17 +91,17 @@ class CrudActor(
                 this
                 
     private def getType[Res](entityTypeName: String)
-                            (typeMapper: EntityType[_, _, _, _] => Either[entity.Error, Try[Res]])
+                            (typeMapper: EntityType[_, _, _] => Either[entity.Error, Try[Res]])
     : Either[entity.Error, Try[Res]] =
         typesDefinitionProvider.getType(entityTypeName) match
             case None =>
                 Left(TypeNotFountError(entityTypeName))
-            case Some(_: EntitySuperType[_, _, _, _]) =>
+            case Some(_: EntitySuperType[_, _, _]) =>
                 Left(AbstractTypeError(entityTypeName))
-            case Some(entityType: EntityType[_, _, _, _]) =>
+            case Some(entityType: EntityType[_, _, _]) =>
                 typeMapper(entityType)
                 
-    private def parseId[Res](entityType: EntityType[_, _, _, _], idStr: String)
+    private def parseId[Res](entityType: EntityType[_, _, _], idStr: String)
                             (idMapper: EntityId[_, _] => Either[entity.Error, Try[Res]])
     : Either[entity.Error, Try[Res]] =
         val idDef: EntityIdTypeDefinition[_] = entityType.valueType.idType
@@ -111,7 +111,7 @@ class CrudActor(
             case Right(id) =>
                 idMapper(id)
                 
-    private def parseAndProcessGetFieldsDescriptor[Res](getFields: Option[String], entityType: EntityType[_, _, _, _])
+    private def parseAndProcessGetFieldsDescriptor[Res](getFields: Option[String], entityType: EntityType[_, _, _])
                                              (getFieldsDescriptorMapper: ObjectGetFieldsDescriptor => Either[entity.Error, Try[Res]])
     : Either[entity.Error, Try[Res]] =
         val parsedDescriptorResult = parseGetFieldsDescriptor(getFields)
@@ -310,7 +310,7 @@ class CrudActor(
                 Right(Success(ObjectGetFieldsDescriptor(Right(fields.toList)), currPortionOpt))
     }
 
-    private def parseSearchCondition[Res](searchQuery: Option[String], entityType: EntityType[_, _, _, _])
+    private def parseSearchCondition[Res](searchQuery: Option[String], entityType: EntityType[_, _, _])
                                          (searchConditionMapper: SearchCondition => Either[entity.Error, Try[Res]])
     : Either[entity.Error, Try[Res]] =
         typesDefinitionProvider.parseSearchCondition(searchQuery, entityType) match
@@ -337,9 +337,9 @@ object CrudActor:
                                    replyTo: ActorRef[Either[entity.Error, Try[Option[Unit]]]]) extends CrudMessage
 
     final case class GetMessage(entityTypeName: String, id: String, getFieldsQuery: Option[String], 
-                                replyTo: ActorRef[Either[entity.Error, Try[Option[Entity[_, _, _, _]]]]]) extends CrudMessage
+                                replyTo: ActorRef[Either[entity.Error, Try[Option[Entity[_, _, _]]]]]) extends CrudMessage
 
     final case class SearchMessage(entityTypeName: String, searchQuery: Option[String], getFieldsQuery: Option[String], 
-                                 replyTo: ActorRef[Either[entity.Error, Try[Seq[Entity[_, _, _, _]]]]]) extends CrudMessage
+                                 replyTo: ActorRef[Either[entity.Error, Try[Seq[Entity[_, _, _]]]]]) extends CrudMessage
 
 

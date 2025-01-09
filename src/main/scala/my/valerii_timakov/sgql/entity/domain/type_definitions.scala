@@ -154,11 +154,11 @@ sealed trait ItemValueTypeDefinition[V <: ItemValue] extends FieldValueTypeDefin
 
 sealed trait ReferenceDefinition[ID <: EntityId[_, ID], V <: EntityValue] extends FieldValueTypeDefinition[V]:
     def idType: EntityIdTypeDefinition[ID]
-    def referencedType: AbstractEntityType[ID, _, _, _]
+    def referencedType: AbstractEntityType[ID, _, _]
     def name: String
 
 final case class TypeReferenceDefinition[ID <: FilledEntityId[_, ID]](
-                                                         referencedType: AbstractEntityType[ID, _, _, _],
+                                                         referencedType: AbstractEntityType[ID, _, _],
                                         ) extends ItemValueTypeDefinition[ReferenceValue[ID]], ReferenceDefinition[ID, ReferenceValue[ID]]:
     lazy val idType: EntityIdTypeDefinition[ID] = referencedType.valueType.idType
     override def name: String = referencedType.name
@@ -178,13 +178,13 @@ final case class TypeReferenceDefinition[ID <: FilledEntityId[_, ID]](
                                 val res = ReferenceValue[ID](refId, ReferenceType(this))
                                 fields.get("value") match
                                     case Some(refValue) =>
-                                        val refEntityTypeRes:  Either[ValueParseError, EntityType[ID, _, _, _]] = referencedType match
-                                            case entityType: EntityType[ID, _, _, _] =>
+                                        val refEntityTypeRes:  Either[ValueParseError, EntityType[ID, _, _]] = referencedType match
+                                            case entityType: EntityType[ID, _, _] =>
                                                 Right(entityType)
-                                            case entitySuperType: EntitySuperType[ID, _, _, _] => fields.get("type") match
+                                            case entitySuperType: EntitySuperType[ID, _, _] => fields.get("type") match
                                                 case Some(JsString(valueEntityTypeName)) =>
                                                     GlobalTypesMap.getTypeByName(valueEntityTypeName) match
-                                                        case Some(entityType: EntityType[ID, _, _, _]) =>
+                                                        case Some(entityType: EntityType[ID, _, _]) =>
                                                             if (entitySuperType.hasChild(entityType))
                                                                 Right(entityType)
                                                             else
@@ -216,11 +216,11 @@ final case class TypeReferenceDefinition[ID <: FilledEntityId[_, ID]](
     
 object TypeReferenceDefinition:
     def apply[ID <: FilledEntityId[_, ID]](
-                                              referencedType: AbstractEntityType[_, _, _, _],
+                                              referencedType: AbstractEntityType[_, _, _],
                                               refTypeName: String
                                           ): TypeReferenceDefinition[ID] =
         referencedType match
-            case referencedType: AbstractEntityType[ID, _, _, _] =>
+            case referencedType: AbstractEntityType[ID, _, _] =>
                 TypeReferenceDefinition(referencedType)
             case _ =>
                 throw new ConsistencyException(s"Not correct reference ID in type: $referencedType! " +
@@ -248,13 +248,13 @@ final case class TypeBackReferenceDefinition[ID <: FilledEntityId[_, ID]](
                             val res = BackReferenceValue[ID](refId, BackReferenceType(this))
                             fields.get("value") match
                                 case Some(refValue) =>
-                                    val refEntityTypeRes:  Either[SingleMessageError, EntityType[ID, _, _, _]] = referencedType match
-                                        case entityType: EntityType[ID, _, _, _] =>
+                                    val refEntityTypeRes:  Either[SingleMessageError, EntityType[ID, _, _]] = referencedType match
+                                        case entityType: EntityType[ID, _, _] =>
                                             Right(entityType)
-                                        case entitySuperType: EntitySuperType[ID, _, _, _] => fields.get("type") match
+                                        case entitySuperType: EntitySuperType[ID, _, _] => fields.get("type") match
                                             case Some(JsString(valueEntityTypeName)) =>
                                                 GlobalTypesMap.getTypeByName(valueEntityTypeName) match
-                                                    case Some(entityType: EntityType[ID, _, _, _]) =>
+                                                    case Some(entityType: EntityType[ID, _, _]) =>
                                                         if (entitySuperType.hasChild(entityType))
                                                             Right(entityType)
                                                         else
@@ -270,7 +270,7 @@ final case class TypeBackReferenceDefinition[ID <: FilledEntityId[_, ID]](
                                                 Left(new ValueParseError(name, value.toString, "no refEntityType when refValue is present"))
                                     refEntityTypeRes match
                                         case Right(refEntityType) =>
-                                            val refValues: Either[SingleMessageError, Seq[Entity[ID, _, _, _]]] = refValue match
+                                            val refValues: Either[SingleMessageError, Seq[Entity[ID, _, _]]] = refValue match
                                                 case JsArray(refValues) =>
                                                     boundary {
                                                         Right(refValues.map(refValueJs =>
@@ -304,7 +304,7 @@ final case class TypeBackReferenceDefinition[ID <: FilledEntityId[_, ID]](
 
 object TypeBackReferenceDefinition:
     def apply[ID <: FilledEntityId[_, ID]](
-                                              referencedType: AbstractEntityType[_, _, _, _], 
+                                              referencedType: AbstractEntityType[_, _, _], 
                                               refField: String, 
                                               refTypeName: String
                                           ): TypeBackReferenceDefinition[ID] =
@@ -629,20 +629,20 @@ private def wrappExceptionalParser[T](parser: String => T):
         }
 
 
-sealed trait EntityTypeDefinition[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V, P], V <: ValueTypes, P <: TypePersistenceDataFinal] extends AbstractTypeDefinition:
+sealed trait EntityTypeDefinition[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractTypeDefinition:
     def idType: EntityIdTypeDefinition[ID]
-    def parent: Option[EntitySuperType[ID, _, V, P]]
+    def parent: Option[EntitySuperType[ID, _, V]]
     def parseValue(data: JsValue): Either[ValueParseError, V]
     def toJson(value: V): JsValue
 
-final case class CustomPrimitiveTypeDefinition[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V, T], V <: RootPrimitiveValue[T, V], T](
-    parentNode: Either[(EntityIdTypeDefinition[ID], RootPrimitiveTypeDefinition[T, V]), PrimitiveEntitySuperType[ID, _, V, T]]
-) extends EntityTypeDefinition[ID, VT, V, PrimitiveTypePersistenceDataFinal]:
+final case class CustomPrimitiveTypeDefinition[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
+    parentNode: Either[(EntityIdTypeDefinition[ID], RootPrimitiveTypeDefinition[_, V]), PrimitiveEntitySuperType[ID, _, V]]
+) extends EntityTypeDefinition[ID, VT, V]:
     @tailrec def rootType: RootPrimitiveTypeDefinition[_, V] = this.parentNode match
         case Left((_, root)) => root
         case Right(parent) => parent.valueType.rootType
     lazy val idType: EntityIdTypeDefinition[ID] = parentNode.fold(_._1, _.valueType.idType)
-    lazy val parent: Option[PrimitiveEntitySuperType[ID, _, V, T]] = parentNode.toOption
+    lazy val parent: Option[PrimitiveEntitySuperType[ID, _, V]] = parentNode.toOption
 
     def toJson(value: V): JsValue =
         value.toJson
@@ -650,9 +650,9 @@ final case class CustomPrimitiveTypeDefinition[ID <: EntityId[_, ID], VT <: Cust
         rootType.parse(data)
 
 object CustomPrimitiveTypeDefinition:
-    def apply[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V, T], V <: RootPrimitiveValue[T, V], T](
-        parentNode: Either[(EntityIdTypeDefinition[ID], RootPrimitiveTypeDefinition[T, V]), PrimitiveEntitySuperType[ID, _, V, T]]
-    ): CustomPrimitiveTypeDefinition[ID, VT, V, T] =
+    def apply[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
+        parentNode: Either[(EntityIdTypeDefinition[ID], RootPrimitiveTypeDefinition[_, V]), PrimitiveEntitySuperType[ID, _, V]]
+    ): CustomPrimitiveTypeDefinition[ID, VT, V] =
         new CustomPrimitiveTypeDefinition(parentNode)
 
 object ArrayTypeDefinition:
@@ -661,7 +661,7 @@ object ArrayTypeDefinition:
 final case class ArrayTypeDefinition[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
     private var _elementTypes: Option[Set[ArrayItemTypeDefinition]],
     idOrParent: Either[EntityIdTypeDefinition[ID], ArrayEntitySuperType[ID, _]]
-) extends EntityTypeDefinition[ID, VT, Seq[ItemValue], ArrayTypePersistenceDataFinal]:
+) extends EntityTypeDefinition[ID, VT, Seq[ItemValue]]:
     def elementTypes: Set[ArrayItemTypeDefinition] = _elementTypes
         .getOrElse(throw new WrongStateExcetion("Array element types not initialized!"))
     def setChildren(elementTypesValues: Set[ArrayItemTypeDefinition]): Unit =
@@ -734,7 +734,7 @@ object ObjectTypeDefinition:
 final case class ObjectTypeDefinition[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     private var _fields: Map[String, FieldTypeDefinition[_]],
     idOrParent: Either[EntityIdTypeDefinition[ID], ObjectEntitySuperType[ID, _]]
-) extends EntityTypeDefinition[ID, VT, Map[String, EntityValue], ObjectTypePersistenceDataFinal], FieldsContainer:
+) extends EntityTypeDefinition[ID, VT, Map[String, EntityValue]], FieldsContainer:
     private var initiated = false
     def fields: Map[String, FieldTypeDefinition[_]] = _fields
     def setChildren(fieldsValues: Map[String, FieldTypeDefinition[_]]): Unit =
