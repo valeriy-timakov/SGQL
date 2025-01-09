@@ -233,7 +233,7 @@ object TypesToPersistenceMapper extends TypesToPersistenceMapper:
 
 trait PersistenceConfigLoader:
     def load(dataResourcePath: String,
-             typesDefinitionsMap: Map[String, AbstractEntityType[_, _, _]]): Map[String, TypePersistenceDataFinal]
+             typesDefinitionsMap: Map[String, AbstractEntityType[_, _, _, _]]): Map[String, TypePersistenceDataFinal]
     def getTypeToTableMap: Map[String, String]
 
 class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceMapper) extends PersistenceConfigLoader:
@@ -283,7 +283,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
 
     override def load(
         dataResourcePath: String,
-        typesDefinitionsMap: Map[String, AbstractEntityType[_, _, _]]
+        typesDefinitionsMap: Map[String, AbstractEntityType[_, _, _, _]]
     ): Map[String, TypePersistenceDataFinal] =
         val tdSource = Source.fromResource (dataResourcePath)
         PersistenceConfigParser.parse(StreamReader( tdSource.reader() )) match
@@ -304,7 +304,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
     private case class TypeNameData(name: String, subNames: List[String])
 
     private def mapTypeNamesToShortestUniqueNames(
-                                                     typesDefinitionsMap: Map[String, AbstractEntityType[_, _, _]],
+                                                     typesDefinitionsMap: Map[String, AbstractEntityType[_, _, _, _]],
                                                      persistenceDataMap: Map[String, AbstractTypePersistenceData]
     ): Map[String, String] =
         val originalNames = typesDefinitionsMap.keySet
@@ -467,15 +467,15 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
             pos -= 1
         None
 
-    private def mergeTypePersistenceData(typeDef: AbstractEntityType[_, _, _],
+    private def mergeTypePersistenceData(typeDef: AbstractEntityType[_, _, _, _],
                                          parsed: Option[AbstractTypePersistenceData]): TypePersistenceDataFinal =
         typeDef match
             case ot: ObjectEntityType[_, _] => mergeObjectTypePersistenceData(ot.name, ot.valueType, parsed)
             case ost: ObjectEntitySuperType[_, _] => mergeObjectTypePersistenceData(ost.name, ost.valueType, parsed)
             case at: ArrayEntityType[_, _] => mergeArrayTypePersistenceData(at.name, at.valueType, parsed)
             case ast: ArrayEntitySuperType[_, _] => mergeArrayTypePersistenceData(ast.name, ast.valueType, parsed)
-            case cpt: CustomPrimitiveEntityType[_, _, _] => mergePrimitiveTypePersistenceData(cpt.name, cpt.valueType, parsed)
-            case pst: PrimitiveEntitySuperType[_, _, _] => mergePrimitiveTypePersistenceData(pst.name, pst.valueType, parsed)
+            case cpt: CustomPrimitiveEntityType[_, _, _, _] => mergePrimitiveTypePersistenceData(cpt.name, cpt.valueType, parsed)
+            case pst: PrimitiveEntitySuperType[_, _, _, _] => mergePrimitiveTypePersistenceData(pst.name, pst.valueType, parsed)
             case _ => throw new TypesLoadExceptionException(s"Type ${typeDef.name} not supported")
 
 
@@ -590,7 +590,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
     }
 
     private def mergePrimitiveTypePersistenceData(typeName: String,
-                                                  valueType: CustomPrimitiveTypeDefinition[_, _, _],
+                                                  valueType: CustomPrimitiveTypeDefinition[_, _, _, _],
                                                   parsed: Option[AbstractTypePersistenceData]): TypePersistenceDataFinal =
 
         val parsedData = parsed
@@ -858,10 +858,10 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
             case _ => // do nothing
 
     private def checkTypeReferencePersistenceData(persistData: ValuePersistenceData,
-                                                  referencedType: AbstractEntityType[_, _, _],
+                                                  referencedType: AbstractEntityType[_, _, _, _],
                                                   itemDescriptionProvider: () => String): Unit =
         referencedType match
-            case ct: CustomPrimitiveEntityType[_, _, _] =>
+            case ct: CustomPrimitiveEntityType[_, _, _, _] =>
                 persistData match
                     case fieldPersistType: PrimitiveValuePersistenceData =>
                         checkRootPrimitiveAndPersistenceTypeConsistency(ct.valueType.rootType,
@@ -914,7 +914,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
                 fieldPersitenceData match
                     case primitivePersistenceData: PrimitiveValuePersistenceData =>
                         refType.referencedType.valueType match
-                            case customPrimitiveType: CustomPrimitiveTypeDefinition[_, _, _] =>
+                            case customPrimitiveType: CustomPrimitiveTypeDefinition[_, _, _, _] =>
                                 toPrimitivePersistenceDataFinal(customPrimitiveType.rootType, 
                                     primitivePersistenceData, fieldName, fieldType.isNullable,
                                     prefix, () => s"Field $fieldName of type $typeName")

@@ -4,29 +4,30 @@ import my.valerii_timakov.sgql.entity.TypesConsistencyError
 import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractTypeDefinition, ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityTypeDefinition, FieldValueTypeDefinition, ItemValueTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, CustomPrimitiveValue, Entity, EntityId, EntityValue, FilledEntityId, ItemValue, ObjectValue, RootPrimitiveValue, ValueTypes}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, WrongStateExcetion}
+import my.valerii_timakov.sgql.services.{ArrayTypePersistenceDataFinal, ObjectTypePersistenceDataFinal, PrimitiveTypePersistenceDataFinal, TypePersistenceDataFinal}
 import spray.json.{JsArray, JsObject, JsString, JsValue}
 
 import scala.annotation.tailrec
-import scala.jdk.CollectionConverters._
+import scala.jdk.CollectionConverters.*
 
 
 private class TypesMaps(
                            val runVersion: Short,
-                           val byNameMap: java.util.Map[String, AbstractEntityType[_, _, _]] = new java.util.HashMap(),
-                           val byIdMap: java.util.Map[Long, AbstractEntityType[_, _, _]] = new java.util.HashMap(),
+                           val byNameMap: java.util.Map[String, AbstractEntityType[_, _, _, _]] = new java.util.HashMap(),
+                           val byIdMap: java.util.Map[Long, AbstractEntityType[_, _, _, _]] = new java.util.HashMap(),
                        )
 
 trait GlobalTypesMap:
-    def init(types: Seq[AbstractEntityType[_, _, _]], version: Short): Unit
-    def getTypeByName(name: String): Option[AbstractEntityType[_, _, _]]
-    def getTypeById(id: Long): Option[AbstractEntityType[_, _, _]]
-    def getAllTypes: Seq[AbstractEntityType[_, _, _]]
+    def init(types: Seq[AbstractEntityType[_, _, _, _]], version: Short, typesPersistenceData: Map[String, TypePersistenceDataFinal]): Unit
+    def getTypeByName(name: String): Option[AbstractEntityType[_, _, _, _]]
+    def getTypeById(id: Long): Option[AbstractEntityType[_, _, _, _]]
+    def getAllTypes: Seq[AbstractEntityType[_, _, _, _]]
 
 object GlobalTypesMap extends GlobalTypesMap:
     private var maps: Option[TypesMaps] = None
     private final val VERSION_SHIFT = 64-16
 
-    def init(types: Seq[AbstractEntityType[_, _, _]], version: Short): Unit =
+    def init(types: Seq[AbstractEntityType[_, _, _, _]], version: Short, typesPersistenceData: Map[String, TypePersistenceDataFinal]): Unit =
         if maps.nonEmpty then throw new ConsistencyException("Types already initialized!")
         maps = Some(new TypesMaps(version,
             new java.util.HashMap(types.size),
@@ -36,20 +37,35 @@ object GlobalTypesMap extends GlobalTypesMap:
             if byNameMap.containsKey(tmpType.name) then throw new ConsistencyException(s"Type ${tmpType.name} already exists!")
             val id = (byIdMap.size + 1) | (runVersion.toLong << VERSION_SHIFT)
             tmpType.initId(id)
+            val persistenceData = typesPersistenceData.getOrElse(tmpType.name,
+                throw new ConsistencyException(s"Type ${tmpType.name} has no persistence data!"))
+            (tmpType, persistenceData) match
+                case (objectType: AbstractObjectEntityType[_, _], persistenceData: ObjectTypePersistenceDataFinal) =>
+                    objectType._persistenceData = Some(persistenceData)
+                case (primitiveType: CustomPrimitiveEntityType[_, _, _, _], persistenceData: PrimitiveTypePersistenceDataFinal) =>
+                    primitiveType._persistenceData = Some(persistenceData)
+                case (primitiveType: PrimitiveEntitySuperType[_, _, _, _], persistenceData: PrimitiveTypePersistenceDataFinal) =>
+                    primitiveType._persistenceData = Some(persistenceData)
+                case (arrayType: ArrayEntityType[_, _], persistenceData: ArrayTypePersistenceDataFinal) =>
+                    arrayType._persistenceData = Some(persistenceData)
+                case (arrayType: ArrayEntitySuperType[_, _], persistenceData: ArrayTypePersistenceDataFinal) =>
+                    arrayType._persistenceData = Some(persistenceData)
+                case _ =>
+                    throw new ConsistencyException(s"Type $tmpType and persistence data $persistenceData are not compatible!")
             byNameMap.put(tmpType.name, tmpType)
             byIdMap.put(id, tmpType)
         })
 
-    private def byNameMap: java.util.Map[String, AbstractEntityType[_, _, _]] = 
+    private def byNameMap: java.util.Map[String, AbstractEntityType[_, _, _, _]] =
         maps.getOrElse(throw new WrongStateExcetion("TypesMap not initialized!")).byNameMap
-    private def byIdMap: java.util.Map[Long, AbstractEntityType[_, _, _]] = 
+    private def byIdMap: java.util.Map[Long, AbstractEntityType[_, _, _, _]] =
         maps.getOrElse(throw new WrongStateExcetion("TypesMap not initialized!")).byIdMap
     private def runVersion: Short = 
         maps.getOrElse(throw new WrongStateExcetion("TypesMap not initialized!")).runVersion
 
-    def getTypeByName(name: String): Option[AbstractEntityType[_, _, _]] = Option(byNameMap.get(name))
-    def getTypeById(id: Long): Option[AbstractEntityType[_, _, _]] = Option(byIdMap.get(id))
-    lazy val getAllTypes: Seq[AbstractEntityType[_, _, _]] = byNameMap.values().asScala.toSeq
+    def getTypeByName(name: String): Option[AbstractEntityType[_, _, _, _]] = Option(byNameMap.get(name))
+    def getTypeById(id: Long): Option[AbstractEntityType[_, _, _, _]] = Option(byIdMap.get(id))
+    lazy val getAllTypes: Seq[AbstractEntityType[_, _, _, _]] = byNameMap.values().asScala.toSeq
 
 
 
@@ -79,14 +95,16 @@ sealed abstract class AbstractNamedType extends AbstractType:
 
 case class RootPrimitiveType[T, V <: RootPrimitiveValue[T, V]](valueType: RootPrimitiveTypeDefinition[T, V]) extends AbstractNamedType, ItemValueType
 
-sealed abstract class AbstractEntityType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractNamedType:
-    override def valueType: EntityTypeDefinition[ID, VT, V]
+sealed abstract class AbstractEntityType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V, P], V <: ValueTypes, P <: TypePersistenceDataFinal] extends AbstractNamedType:
+    private[types] var _persistenceData: Option[P] = None
+    lazy val persistenceData: P = _persistenceData.getOrElse(throw new ConsistencyException(s"Type $name has no persistence data!"))
+    override def valueType: EntityTypeDefinition[ID, VT, V, P]
     def toJson: JsValue =
         val kind = this match
-            case value: EntityType[_, _, _] => "EntityType"
+            case value: EntityType[_, _, _, _] => "EntityType"
             case value: ArrayEntitySuperType[_, _] => "ArrayEntitySuperType"
             case value: ObjectEntitySuperType[_, _] => "ObjectEntitySuperType"
-            case value: PrimitiveEntitySuperType[_, _, _] => "PrimitiveEntitySuperType"
+            case value: PrimitiveEntitySuperType[_, _, _, _] => "PrimitiveEntitySuperType"
         JsObject(
             "kind" -> JsString(kind),
             "name" -> JsString(name),
@@ -94,16 +112,16 @@ sealed abstract class AbstractEntityType[ID <: EntityId[_, ID], VT <: Entity[ID,
         )
         
 object AbstractEntityType:
-    def toJson(obj: Seq[AbstractEntityType[_, _, _]]): JsValue = JsArray(obj.map(_.toJson).toVector)
+    def toJson(obj: Seq[AbstractEntityType[_, _, _, _]]): JsValue = JsArray(obj.map(_.toJson).toVector)
 
-sealed trait AbstractObjectEntityType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]] extends AbstractEntityType[ID, VT, Map[String, EntityValue]]:
+sealed trait AbstractObjectEntityType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]] extends AbstractEntityType[ID, VT, Map[String, EntityValue], ObjectTypePersistenceDataFinal]:
     def valueType: ObjectTypeDefinition[ID, VT]
 
-sealed abstract class EntityType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes]
-    extends AbstractEntityType[ID, VT, V]:
-    override def valueType: EntityTypeDefinition[ID, VT, V]
-    def createEntity(id: EntityId[_, _], value: V): Either[TypesConsistencyError, Entity[ID, VT, V]]
-    def parseEntity(id: ID, valueData: JsValue): Either[my.valerii_timakov.sgql.entity.SingleMessageError, Entity[ID, VT, V]] =
+sealed abstract class EntityType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V, P], V <: ValueTypes, P <: TypePersistenceDataFinal]
+    extends AbstractEntityType[ID, VT, V, P]:
+    override def valueType: EntityTypeDefinition[ID, VT, V, P]
+    def createEntity(id: EntityId[_, _], value: V): Either[TypesConsistencyError, Entity[ID, VT, V, P]]
+    def parseEntity(id: ID, valueData: JsValue): Either[my.valerii_timakov.sgql.entity.SingleMessageError, Entity[ID, VT, V, P]] =
         valueType.parseValue(valueData).flatMap(createEntity(id, _))
     protected def checkId(id: EntityId[_, _]): Either[TypesConsistencyError, ID] =
         id match
@@ -120,50 +138,50 @@ sealed abstract class EntityType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V],
 //        "value" -> toJson(entity.value),
 //    )
 
-case class CustomPrimitiveEntityType[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
+case class CustomPrimitiveEntityType[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V, T], V <: RootPrimitiveValue[T, V], T](
     name: String,
-    valueType: CustomPrimitiveTypeDefinition[ID, VT, V],
-) extends EntityType[ID, VT, V]:
-    def createEntity(id: EntityId[_, _], value: V): Either[TypesConsistencyError, CustomPrimitiveValue[ID, VT, V]] =
+    valueType: CustomPrimitiveTypeDefinition[ID, VT, V, T],
+) extends EntityType[ID, VT, V, PrimitiveTypePersistenceDataFinal]:
+    def createEntity(id: EntityId[_, _], value: V): Either[TypesConsistencyError, CustomPrimitiveValue[ID, VT, V, T]] =
         checkId(id).map(id => CustomPrimitiveValue(id, value, this))
 
 case class ArrayEntityType[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
     name: String,
     valueType: ArrayTypeDefinition[ID, VT],
-) extends EntityType[ID, VT, Seq[ItemValue]]:
+) extends EntityType[ID, VT, Seq[ItemValue], ArrayTypePersistenceDataFinal]:
     def createEntity(id: EntityId[_, _], value: Seq[ItemValue]):  Either[TypesConsistencyError, ArrayValue[ID, VT]] =
         checkId(id).map(id => ArrayValue(id, value, this))
 
 case class ObjectEntityType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     name: String,
     valueType: ObjectTypeDefinition[ID, VT],
-) extends EntityType[ID, VT, Map[String, EntityValue]], AbstractObjectEntityType[ID, VT]:
+) extends EntityType[ID, VT, Map[String, EntityValue], ObjectTypePersistenceDataFinal], AbstractObjectEntityType[ID, VT]:
     def createEntity(id:EntityId[_, _], value: Map[String, EntityValue]):  Either[TypesConsistencyError, ObjectValue[ID, VT]] =
         checkId(id).map(id => ObjectValue(id, value, this))
 
-trait EntitySuperType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractEntityType[ID, VT, V]:
+trait EntitySuperType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V, P], V <: ValueTypes, P <: TypePersistenceDataFinal] extends AbstractEntityType[ID, VT, V, P]:
     def name: String
-    def valueType: EntityTypeDefinition[ID, VT, V]
+    def valueType: EntityTypeDefinition[ID, VT, V, P]
     @tailrec
-    final def hasChild(entityType: AbstractEntityType[ID, _, _]): Boolean =
+    final def hasChild(entityType: AbstractEntityType[ID, _, _, _]): Boolean =
         entityType.getId == getId || (entityType.valueType.parent match
                 case None => false
                 case Some(parent) => hasChild(parent)
             )
 
-case class PrimitiveEntitySuperType[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
+case class PrimitiveEntitySuperType[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V, T], V <: RootPrimitiveValue[T, V], T](
     name: String,
-    valueType: CustomPrimitiveTypeDefinition[ID, VT, V],
-) extends EntitySuperType[ID, VT, V]
+    valueType: CustomPrimitiveTypeDefinition[ID, VT, V, T],
+) extends EntitySuperType[ID, VT, V, PrimitiveTypePersistenceDataFinal]
 
 case class ArrayEntitySuperType[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
     name: String,
     valueType: ArrayTypeDefinition[ID, VT],
-) extends EntitySuperType[ID, VT, Seq[ItemValue]]
+) extends EntitySuperType[ID, VT, Seq[ItemValue], ArrayTypePersistenceDataFinal]
 
 case class ObjectEntitySuperType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     name: String,
     valueType: ObjectTypeDefinition[ID, VT],
-) extends EntitySuperType[ID, VT, Map[String, EntityValue]], AbstractObjectEntityType[ID, VT]
+) extends EntitySuperType[ID, VT, Map[String, EntityValue], ObjectTypePersistenceDataFinal], AbstractObjectEntityType[ID, VT]
 
 

@@ -15,13 +15,13 @@ trait TypesDefinitionProviderInitializer:
     def getAllPersistenceData: Seq[TypePersistenceDataFinal]
 
 trait TypesDefinitionProvider:
-    def getType(name: String): Option[AbstractEntityType[_, _, _]]
-    def getAllTypes: Seq[AbstractEntityType[_, _, _]]
+    def getType(name: String): Option[AbstractEntityType[_, _, _, _]]
+    def getAllTypes: Seq[AbstractEntityType[_, _, _, _]]
     def getPersistenceData(name: String): Option[TypePersistenceDataFinal]
     def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal]
-    def validateGetFieldsDescriptor(descriptor: ObjectGetFieldsDescriptor, entityType: AbstractEntityType[_, _, _]):
+    def validateGetFieldsDescriptor(descriptor: ObjectGetFieldsDescriptor, entityType: AbstractEntityType[_, _, _, _]):
         Either[entity.Error, Unit]
-    def parseSearchCondition(condition: Option[String], entityType: AbstractEntityType[_, _, _]):
+    def parseSearchCondition(condition: Option[String], entityType: AbstractEntityType[_, _, _, _]):
         Try[Either[SearchConditionParseError, SearchCondition]]
 
 object TypesDefinitionProvider:
@@ -39,28 +39,26 @@ object TypesDefinitionProvider:
 
 class TypesDefinitionProviderInitializerImpl(
                                                 val typesToTablesMap: Map[String, String],
-                                                typesDefinitionsMap: Map[String, AbstractEntityType[_, _, _]],
+                                                typesDefinitionsMap: Map[String, AbstractEntityType[_, _, _, _]],
                                                 typesPersistenceData: Map[String, TypePersistenceDataFinal],
 ) extends TypesDefinitionProviderInitializer:
 
     def init(version: Short, globalTypesMap: GlobalTypesMap): TypesDefinitionProvider =
-        globalTypesMap.init(typesDefinitionsMap.values.toSeq, version)
-        TypesDefinitionProviderImpl(typesPersistenceData, globalTypesMap)
+        globalTypesMap.init(typesDefinitionsMap.values.toSeq, version, typesPersistenceData)
+        TypesDefinitionProviderImpl(globalTypesMap)
 
     def getAllPersistenceData: Seq[TypePersistenceDataFinal] =
         typesPersistenceData.values.toSeq
 
-class TypesDefinitionProviderImpl(
-    typesPersistenceData: Map[String, TypePersistenceDataFinal],
-    globalTypesMap: GlobalTypesMap,
-) extends TypesDefinitionProvider:
-    def getType(name: String): Option[AbstractEntityType[_, _, _]] = globalTypesMap.getTypeByName(name)
-    def getAllTypes: Seq[AbstractEntityType[_, _, _]] = globalTypesMap.getAllTypes
-    def getPersistenceData(name: String): Option[TypePersistenceDataFinal] = typesPersistenceData.get(name)
-    def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal] = typesPersistenceData
+class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesDefinitionProvider:
+    def getType(name: String): Option[AbstractEntityType[_, _, _, _]] = globalTypesMap.getTypeByName(name)
+    def getAllTypes: Seq[AbstractEntityType[_, _, _, _]] = globalTypesMap.getAllTypes
+    def getPersistenceData(name: String): Option[TypePersistenceDataFinal] = globalTypesMap.getTypeByName(name).map(_.persistenceData)
+    def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal] =
+        globalTypesMap.getAllTypes.map(entityType => entityType.name -> entityType.persistenceData).toMap
     def validateGetFieldsDescriptor(
                                     descriptor: ObjectGetFieldsDescriptor,
-                                    entityType: AbstractEntityType[_, _, _]
+                                    entityType: AbstractEntityType[_, _, _, _]
                                 ): Either[entity.Error, Unit] =
         descriptor match
             case ObjectGetFieldsDescriptor(Left(AllGetFieldsDescriptor)) =>
@@ -72,7 +70,7 @@ class TypesDefinitionProviderImpl(
                     case _ =>
                         Left(GetFieldsParseError(s"Cannot use GetFieldsDescriptor $descriptor for non object type $entityType!"))
 
-    def parseSearchCondition(condition: Option[String], entityType: AbstractEntityType[_, _, _]): Try[Either[SearchConditionParseError, SearchCondition]] = ???
+    def parseSearchCondition(condition: Option[String], entityType: AbstractEntityType[_, _, _, _]): Try[Either[SearchConditionParseError, SearchCondition]] = ???
 
     private def validateObjectGetFieldsDescriptor(
                                                descriptor: AbstractObjectGetFieldsDescriptor,
