@@ -21,13 +21,13 @@ sealed trait OneValuePersistenceDataFinal extends ValuePersistenceDataFinal:
     def columnType: PersistenceFieldType
     override def columnNames: Seq[String] = Seq(columnName)
 
-case class PrimitiveValuePersistenceDataFinal(
+final case class PrimitiveValuePersistenceDataFinal(
     columnName: String,
     columnType: PersistenceFieldType,
     isNullable: Boolean,
 ) extends OneValuePersistenceDataFinal
 
-class ReferenceValuePersistenceDataFinal(
+final class ReferenceValuePersistenceDataFinal(
     val columnName: String,
     referenceTable: TableReference,
     val isNullable: Boolean,
@@ -44,7 +44,7 @@ class ParentTableReferenceFinal(referenceTable: TableReference):
 case class SimpleObjectValuePersistenceDataFinal(
     parent: Option[ReferenceValuePersistenceDataFinal],
     fields: Map[String, ValuePersistenceDataFinal],
-) extends ValuePersistenceDataFinal:
+) extends ValuePersistenceDataFinal, AbstractObjectPersistenceData:
     def this(fieldsAndParentPersistenceData: FieldsAndParentPersistenceData) =
         this(fieldsAndParentPersistenceData.parent, fieldsAndParentPersistenceData.fields)
     override def columnNames: Seq[String] = fields.values.flatMap(_.columnNames).toSeq
@@ -129,13 +129,16 @@ case class ArrayTypePersistenceDataFinal(
         TableReferenceDataWrapper(idType)
     lazy val itemsMap: Map[PersistenceFieldType, ItemTypePersistenceDataFinal] = 
         items.map(item => item.valueColumn.columnType -> item).toMap
+        
+sealed trait AbstractObjectPersistenceData:
+    def fields: Map[String, ValuePersistenceDataFinal]
 
 case class ObjectTypePersistenceDataFinal(
     tableName: String,
     idColumn: PrimitiveValuePersistenceDataFinal,
     fields: Map[String, ValuePersistenceDataFinal],
     parent: Option[ParentTableReferenceFinal],
-) extends TypePersistenceDataFinal:
+) extends TypePersistenceDataFinal, AbstractObjectPersistenceData:
     override def getReferenceData: TableReferenceDataWrapper =
         TableReferenceDataWrapper(tableName, idColumn, idColumn.columnType)
 

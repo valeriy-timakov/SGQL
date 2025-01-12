@@ -56,78 +56,78 @@ sealed abstract class ItemValue extends EntityValue:
 final case class EmptyValue(typeDefinition: FieldValueType) extends EntityValue:
     def toJson: JsValue = JsNull
 
-sealed abstract class RootPrimitiveValue[T, V <: RootPrimitiveValue[T, V]] extends ItemValue:
-    def value: T
-    override def typeDefinition: RootPrimitiveType[T, V]
+sealed abstract class RootPrimitiveValue[V <: RootPrimitiveValue[V]] extends ItemValue:
+    def value: Any
+    override def typeDefinition: RootPrimitiveType[V]
     
-final case class StringValue(value: String) extends RootPrimitiveValue[String, StringValue]:
-    def typeDefinition: RootPrimitiveType[String, StringValue] = RootPrimitiveType[String, StringValue](StringTypeDefinition)
+final case class StringValue(value: String) extends RootPrimitiveValue[StringValue]:
+    def typeDefinition: RootPrimitiveType[StringValue] = RootPrimitiveType[StringValue](StringTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class FixedStringValue(value: String, typeDef: FixedStringTypeDefinition) extends RootPrimitiveValue[String, FixedStringValue]:
+final case class FixedStringValue(value: String, typeDef: FixedStringTypeDefinition) extends RootPrimitiveValue[FixedStringValue]:
     if value == null then throw new IllegalArgumentException("FixedStringValue cannot be null!")
     if value == null then throw new IllegalArgumentException("FixedStringValue cannot have null type!")
     if value.length != typeDef.length then throw new IllegalArgumentException(
         s"FixedStringValue value must be of length ${typeDef.length}! Got: $value")
-    def typeDefinition: RootPrimitiveType[String, FixedStringValue] = RootPrimitiveType[String, FixedStringValue](typeDef)
+    def typeDefinition: RootPrimitiveType[FixedStringValue] = RootPrimitiveType[FixedStringValue](typeDef)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class ByteValue(value: Byte) extends RootPrimitiveValue[Byte, ByteValue]:
-    def typeDefinition: RootPrimitiveType[Byte, ByteValue] = RootPrimitiveType[Byte, ByteValue](ByteTypeDefinition)
+final case class ByteValue(value: Byte) extends RootPrimitiveValue[ByteValue]:
+    def typeDefinition: RootPrimitiveType[ByteValue] = RootPrimitiveType[ByteValue](ByteTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class ShortIntValue(value: Short) extends RootPrimitiveValue[Short, ShortIntValue]:
-    def typeDefinition: RootPrimitiveType[Short, ShortIntValue] = RootPrimitiveType[Short, ShortIntValue](ShortIntTypeDefinition)
+final case class ShortIntValue(value: Short) extends RootPrimitiveValue[ShortIntValue]:
+    def typeDefinition: RootPrimitiveType[ShortIntValue] = RootPrimitiveType[ShortIntValue](ShortIntTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class IntValue(value: Int) extends RootPrimitiveValue[Int, IntValue]:
-    def typeDefinition: RootPrimitiveType[Int, IntValue] = RootPrimitiveType(IntTypeDefinition)
+final case class IntValue(value: Int) extends RootPrimitiveValue[IntValue]:
+    def typeDefinition: RootPrimitiveType[IntValue] = RootPrimitiveType(IntTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class LongValue(value: Long) extends RootPrimitiveValue[Long, LongValue]:
-    def typeDefinition: RootPrimitiveType[Long, LongValue] = RootPrimitiveType(LongTypeDefinition)
+final case class LongValue(value: Long) extends RootPrimitiveValue[LongValue]:
+    def typeDefinition: RootPrimitiveType[LongValue] = RootPrimitiveType(LongTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
 
-final case class DecimalValue(value: BigDecimal) extends RootPrimitiveValue[BigDecimal, DecimalValue]:
+final case class DecimalValue(value: BigDecimal) extends RootPrimitiveValue[DecimalValue]:
     if value == null then throw new IllegalArgumentException("DecimalValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[BigDecimal, DecimalValue] = RootPrimitiveType(DecimalTypeDefinition)
+    def typeDefinition: RootPrimitiveType[DecimalValue] = RootPrimitiveType(DecimalTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class DoubleValue(value: Double) extends RootPrimitiveValue[Double, DoubleValue]:
-    def typeDefinition: RootPrimitiveType[Double, DoubleValue] = RootPrimitiveType(DoubleTypeDefinition)
+final case class DoubleValue(value: Double) extends RootPrimitiveValue[DoubleValue]:
+    def typeDefinition: RootPrimitiveType[DoubleValue] = RootPrimitiveType(DoubleTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class FloatValue(value: Float) extends RootPrimitiveValue[Float, FloatValue]:
-    def typeDefinition: RootPrimitiveType[Float, FloatValue] = RootPrimitiveType(FloatTypeDefinition)
+final case class FloatValue(value: Float) extends RootPrimitiveValue[FloatValue]:
+    def typeDefinition: RootPrimitiveType[FloatValue] = RootPrimitiveType(FloatTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class BooleanValue(value: Boolean) extends RootPrimitiveValue[Boolean, BooleanValue]:
-    def typeDefinition: RootPrimitiveType[Boolean, BooleanValue] = RootPrimitiveType(BooleanTypeDefinition)
+final case class BooleanValue(value: Boolean) extends RootPrimitiveValue[BooleanValue]:
+    def typeDefinition: RootPrimitiveType[BooleanValue] = RootPrimitiveType(BooleanTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class DateValue(value: LocalDate) extends RootPrimitiveValue[LocalDate, DateValue]:
+final case class DateValue(value: LocalDate) extends RootPrimitiveValue[DateValue]:
     if value == null then throw new IllegalArgumentException("DateValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[LocalDate, DateValue] = RootPrimitiveType(DateTypeDefinition)
+    def typeDefinition: RootPrimitiveType[DateValue] = RootPrimitiveType(DateTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class DateTimeValue(value: LocalDateTime) extends RootPrimitiveValue[LocalDateTime, DateTimeValue]:
+final case class DateTimeValue(value: LocalDateTime) extends RootPrimitiveValue[DateTimeValue]:
     if value == null then throw new IllegalArgumentException("DateTimeValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[LocalDateTime, DateTimeValue] = RootPrimitiveType(DateTimeTypeDefinition)
+    def typeDefinition: RootPrimitiveType[DateTimeValue] = RootPrimitiveType(DateTimeTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class TimeValue(value: LocalTime) extends RootPrimitiveValue[LocalTime, TimeValue]:
+final case class TimeValue(value: LocalTime) extends RootPrimitiveValue[TimeValue]:
     if value == null then throw new IllegalArgumentException("TimeValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[LocalTime, TimeValue] = RootPrimitiveType(TimeTypeDefinition)
+    def typeDefinition: RootPrimitiveType[TimeValue] = RootPrimitiveType(TimeTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class UUIDValue(value: UUID) extends RootPrimitiveValue[UUID, UUIDValue]:
+final case class UUIDValue(value: UUID) extends RootPrimitiveValue[UUIDValue]:
     if value == null then throw new IllegalArgumentException("UUIDValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[UUID, UUIDValue] = RootPrimitiveType(UUIDTypeDefinition)
+    def typeDefinition: RootPrimitiveType[UUIDValue] = RootPrimitiveType(UUIDTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     
-final case class BinaryValue(value: Array[Byte]) extends RootPrimitiveValue[Array[Byte], BinaryValue]:
+final case class BinaryValue(value: Array[Byte]) extends RootPrimitiveValue[BinaryValue]:
     if value == null then throw new IllegalArgumentException("BinaryValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[Array[Byte], BinaryValue] = RootPrimitiveType(BinaryTypeDefinition)
+    def typeDefinition: RootPrimitiveType[BinaryValue] = RootPrimitiveType(BinaryTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
 
 final case class SimpleObjectValue[ID <: FilledEntityId[_, ID]](
@@ -164,7 +164,7 @@ final case class BackReferenceValue[ID <: FilledEntityId[_, ID]](value: ID, type
         value.foreach(entity => checkReferenceValue(entity, typeDefinition.valueType.referencedType, this.value))
         _refValue = Some(value)
         
-type ValueTypes = RootPrimitiveValue[_, _] | Seq[ItemValue] | Map[String, EntityValue]
+type ValueTypes = RootPrimitiveValue[_] | Seq[ItemValue] | Map[String, EntityValue]
 
 trait Entity[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes]:
     def typeDefinition: EntityType[ID, VT , V]
@@ -173,7 +173,7 @@ trait Entity[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes]:
     def cloneWithId(newId: ID):  Entity[ID, VT, V]
     def toJson: JsValue = typeDefinition.valueType.toJson(this.value)
 
-final case class CustomPrimitiveValue[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
+final case class CustomPrimitiveValue[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[V]](
     id: ID,
     value: V,
     typeDefinition: CustomPrimitiveEntityType[ID, VT, V]
@@ -183,6 +183,7 @@ final case class CustomPrimitiveValue[ID <: EntityId[_, ID], VT <: CustomPrimiti
     if typeDefinition.valueType.rootType != value.typeDefinition then throw new ConsistencyException(
         s"CustomPrimitiveTypeDefinition ${typeDefinition.valueType.rootType} does not match provided value type ${value.typeDefinition}!")
     def cloneWithId(newId: ID): CustomPrimitiveValue[ID, VT, V] = this.copy(id = newId)
+    
 
 final case class ArrayValue[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
     id: ID,
@@ -219,7 +220,7 @@ private def checkMaybeId(id: Option[EntityId[_, _]], typeDefinitionOpt: Option[A
         case None =>
             if id.isDefined then throw new ConsistencyException("Id is not expected!")
             
-private def checkValue(value: RootPrimitiveValue[_, _], definition: CustomPrimitiveTypeDefinition[_, _, _]): Unit =
+private def checkValue(value: RootPrimitiveValue[_], definition: CustomPrimitiveTypeDefinition[_, _, _]): Unit =
     if value.typeDefinition.name != definition.rootType.name then
         throw new ConsistencyException(s"Expected value type $definition does not match provided type ${value.typeDefinition}!")
 

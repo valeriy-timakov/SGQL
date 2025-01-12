@@ -25,4 +25,7 @@ libraryDependencies ++= Seq(
     "org.postgresql" % "postgresql" % "42.7.2",
 )
 
+scalacOptions ++= Seq(
+    "-Wconf:cat=exhaustivity:error",
+)
 

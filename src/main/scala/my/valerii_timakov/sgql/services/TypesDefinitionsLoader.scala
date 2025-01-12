@@ -254,16 +254,16 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData], defaul
         parseReferenceType(rowData, typePrefix, typesMap) match
             case refData: TypeReferenceDefinition[_] =>
                 ArrayItemTypeDefinition(refData)
-            case refData: RootPrimitiveTypeDefinition[_, _] =>
+            case refData: RootPrimitiveTypeDefinition[_] =>
                 ArrayItemTypeDefinition(refData)
             case _ =>
                 throw new ConsistencyException("Only reference or root primitive types could be array items! " +
                     s"Type ${rowData.refTypeName} is trying to be array item!")
                 
-    private def getPrimitiveType(name: String): Option[RootPrimitiveTypeDefinition[_, _]] =
+    private def getPrimitiveType(name: String): Option[RootPrimitiveTypeDefinition[_]] =
         typePredefsMap.get(name)
             .map {
-                case rootPrimitiveType: RootPrimitiveTypeDefinition[_, _] =>
+                case rootPrimitiveType: RootPrimitiveTypeDefinition[_] =>
                     rootPrimitiveType
                 case FixedStringTypeDefinition =>
                     //TODO: add support for fixed string customized length

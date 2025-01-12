@@ -405,7 +405,7 @@ object SimpleObjectTypeDefinition:
 sealed trait AbstractRootPrimitiveTypeDefinition:
     def name: String
 
-sealed abstract case class RootPrimitiveTypeDefinition[T, V <: RootPrimitiveValue[T, V]](name: String)
+sealed abstract case class RootPrimitiveTypeDefinition[V <: RootPrimitiveValue[V]](name: String)
             extends AbstractRootPrimitiveTypeDefinition,  ItemValueTypeDefinition[V]:
     def parse(value: String): Either[ValueParseError, V] =
         try {
@@ -414,142 +414,141 @@ sealed abstract case class RootPrimitiveTypeDefinition[T, V <: RootPrimitiveValu
             case e: Exception => Left(new ValueParseError(this.getClass.getSimpleName, value, e.getMessage))
         }
     def parse(value: JsValue): Either[ValueParseError, V]
-    def createValue(value: T): V
     def extract(rs: WrappedResultSet, pos: Int): Option[V]
     protected def parseInner(value: String): V
 
-object ByteTypeDefinition extends RootPrimitiveTypeDefinition[Byte, ByteValue]("Byte"):
+object ByteTypeDefinition extends RootPrimitiveTypeDefinition[ByteValue]("Byte"):
     override def toJson(value: ByteValue): JsValue = JsNumber(value.value)
     def parse(value: JsValue): Either[ValueParseError, ByteValue] =
         parseWholeNumber(value, v => v >= Byte.MinValue && v <= Byte.MaxValue, v => ByteValue(v.byteValue),
             rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
-    override def createValue(value: Byte): ByteValue = ByteValue(value)
+    def createValue(value: Byte): ByteValue = ByteValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[ByteValue] = rs.byteOpt(pos).map(createValue)
     protected override def parseInner(value: String): ByteValue = ByteValue(value.toByte)
 
-object ShortIntTypeDefinition extends RootPrimitiveTypeDefinition[Short, ShortIntValue]("Short"):
+object ShortIntTypeDefinition extends RootPrimitiveTypeDefinition[ShortIntValue]("Short"):
     override def toJson(value: ShortIntValue): JsValue = JsNumber(value.value)
     def parse(value: JsValue): Either[ValueParseError, ShortIntValue] =
         parseWholeNumber(value, v => v >= Short.MinValue && v <= Short.MaxValue, v => ShortIntValue(v.shortValue),
             rootCause => Left(new ValueParseError(name, value.toString, rootCause)) )
-    override def createValue(value: Short): ShortIntValue = ShortIntValue(value)
+    def createValue(value: Short): ShortIntValue = ShortIntValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[ShortIntValue] = rs.shortOpt(pos).map(createValue)
     protected override def parseInner(value: String): ShortIntValue = ShortIntValue(value.toShort)
 
-object IntTypeDefinition extends RootPrimitiveTypeDefinition[Int, IntValue]("Integer"):
+object IntTypeDefinition extends RootPrimitiveTypeDefinition[IntValue]("Integer"):
     override def toJson(value: IntValue): JsValue = JsNumber(value.value)
     def parse(value: JsValue): Either[ValueParseError, IntValue] =
         parseWholeNumber(value, v => v >= Byte.MinValue && v <= Byte.MaxValue, v => IntValue(v.intValue),
             rootCause => Left(new ValueParseError(name, value.toString, rootCause)) )
-    override def createValue(value: Int): IntValue = IntValue(value)
+    def createValue(value: Int): IntValue = IntValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[IntValue] = rs.intOpt(pos).map(createValue)
     protected override def parseInner(value: String): IntValue = IntValue(value.toInt)
 
-object LongTypeDefinition extends RootPrimitiveTypeDefinition[Long, LongValue]("Long"):
+object LongTypeDefinition extends RootPrimitiveTypeDefinition[LongValue]("Long"):
     override def toJson(value: LongValue): JsValue = JsNumber(value.value)
     def parse(value: JsValue): Either[ValueParseError, LongValue] =
         parseWholeNumber(value, v => true, v => LongValue(v),
             rootCause => Left(new ValueParseError(name, value.toString, rootCause)) )
-    override def createValue(value: Long): LongValue = LongValue(value)
+    def createValue(value: Long): LongValue = LongValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[LongValue] = rs.longOpt(pos).map(createValue)
     protected override def parseInner(value: String):LongValue = LongValue(value.toLong)
 
-object DoubleTypeDefinition extends RootPrimitiveTypeDefinition[Double, DoubleValue]("Double"):
+object DoubleTypeDefinition extends RootPrimitiveTypeDefinition[DoubleValue]("Double"):
     override def toJson(value: DoubleValue): JsValue = JsNumber(value.value)
     def parse(value: JsValue): Either[ValueParseError, DoubleValue] =
         parseDecimalNumber(value, v => v.isDecimalDouble, v => DoubleValue(v.doubleValue),
             rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
-    override def createValue(value: Double): DoubleValue = DoubleValue(value)
+    def createValue(value: Double): DoubleValue = DoubleValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[DoubleValue] = rs.doubleOpt(pos).map(createValue)
     protected override def parseInner(value: String): DoubleValue = DoubleValue(value.toDouble)
 
-object FloatTypeDefinition extends RootPrimitiveTypeDefinition[Float, FloatValue]("Float"):
+object FloatTypeDefinition extends RootPrimitiveTypeDefinition[FloatValue]("Float"):
     override def toJson(value: FloatValue): JsValue = JsNumber(value.value)
     def parse(value: JsValue): Either[ValueParseError, FloatValue] =
         parseDecimalNumber(value, v => v.isDecimalFloat, v => FloatValue(v.floatValue),
             rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
-    override def createValue(value: Float): FloatValue = FloatValue(value)
+    def createValue(value: Float): FloatValue = FloatValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[FloatValue] = rs.floatOpt(pos).map(createValue)
     protected override def parseInner(value: String): FloatValue = FloatValue(value.toFloat)
 
-object DecimalTypeDefinition extends RootPrimitiveTypeDefinition[BigDecimal, DecimalValue]("Decimal"):
+object DecimalTypeDefinition extends RootPrimitiveTypeDefinition[DecimalValue]("Decimal"):
     override def toJson(value: DecimalValue): JsValue = JsNumber(value.value)
     def parse(value: JsValue): Either[ValueParseError, DecimalValue] =
         parseDecimalNumber(value, v => true, v => DecimalValue(v),
             rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
-    override def createValue(value: BigDecimal): DecimalValue = DecimalValue(value)
+    def createValue(value: BigDecimal): DecimalValue = DecimalValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[DecimalValue] = rs.bigDecimalOpt(pos).map(BigDecimal(_)).map(createValue)
     protected override def parseInner(value: String): DecimalValue = DecimalValue(BigDecimal(value))
 
-object BooleanTypeDefinition extends RootPrimitiveTypeDefinition[Boolean, BooleanValue]("Boolean"):
+object BooleanTypeDefinition extends RootPrimitiveTypeDefinition[BooleanValue]("Boolean"):
     override def toJson(value: BooleanValue): JsValue = JsBoolean(value.value)
     def parse(value: JsValue): Either[ValueParseError, BooleanValue] =
         value match
             case JsBoolean(bool) => Right(BooleanValue(bool))
             case _ => Left(new ValueParseError(this.getClass.getSimpleName, value.toString))
-    override def createValue(value: Boolean): BooleanValue = BooleanValue(value)
+    def createValue(value: Boolean): BooleanValue = BooleanValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[BooleanValue] = rs.booleanOpt(pos).map(createValue)
     protected override def parseInner(value: String): BooleanValue = BooleanValue(value.toBoolean)
 
-object DateTypeDefinition extends RootPrimitiveTypeDefinition[LocalDate, DateValue]("Date"):
+object DateTypeDefinition extends RootPrimitiveTypeDefinition[DateValue]("Date"):
     override def toJson(value: DateValue): JsValue = JsString(GlobalSerializationData.json.serialize(value.value))
     def parse(value: JsValue): Either[ValueParseError, DateValue] =
         parseFormattedString[LocalDate, DateValue](value, GlobalSerializationData.json.parseDate,
             DateValue.apply, rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
-    override def createValue(value: LocalDate): DateValue = DateValue(value)
+    def createValue(value: LocalDate): DateValue = DateValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[DateValue] = rs.localDateOpt(pos).map(createValue)
     protected override def parseInner(value: String): DateValue = DateValue(LocalDate.parse(value))
 
-object DateTimeTypeDefinition extends RootPrimitiveTypeDefinition[LocalDateTime, DateTimeValue]("DateTime"):
+object DateTimeTypeDefinition extends RootPrimitiveTypeDefinition[DateTimeValue]("DateTime"):
     override def toJson(value: DateTimeValue): JsValue = JsString(GlobalSerializationData.json.serialize(value.value))
     def parse(value: JsValue): Either[ValueParseError, DateTimeValue] =
         parseFormattedString[LocalDateTime, DateTimeValue](value, GlobalSerializationData.json.parseDateTime,
             DateTimeValue.apply, rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
-    override def createValue(value: LocalDateTime): DateTimeValue = DateTimeValue(value)
+    def createValue(value: LocalDateTime): DateTimeValue = DateTimeValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[DateTimeValue] = rs.localDateTimeOpt(pos).map(createValue)
     protected override def parseInner(value: String): DateTimeValue = DateTimeValue(LocalDateTime.parse(value))
 
-object TimeTypeDefinition extends RootPrimitiveTypeDefinition[LocalTime, TimeValue]("Time"):
+object TimeTypeDefinition extends RootPrimitiveTypeDefinition[TimeValue]("Time"):
     override def toJson(value: TimeValue): JsValue = JsString(GlobalSerializationData.json.serialize(value.value))
     def parse(value: JsValue): Either[ValueParseError, TimeValue] =
         parseFormattedString[LocalTime, TimeValue](value, GlobalSerializationData.json.parseTime, 
             TimeValue.apply, rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
-    override def createValue(value: LocalTime): TimeValue = TimeValue(value)
+    def createValue(value: LocalTime): TimeValue = TimeValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[TimeValue] = rs.localTimeOpt(pos).map(createValue)
     protected override def parseInner(value: String): TimeValue = TimeValue(LocalTime.parse(value))
 
-object UUIDTypeDefinition extends RootPrimitiveTypeDefinition[UUID, UUIDValue]("UUID"):
+object UUIDTypeDefinition extends RootPrimitiveTypeDefinition[UUIDValue]("UUID"):
     override def toJson(value: UUIDValue): JsValue = JsString(value.value.toString)
     def parse(value: JsValue): Either[ValueParseError, UUIDValue] =
         parseFormattedString[UUID, UUIDValue](value, UUID.fromString, UUIDValue.apply,
             rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
-    override def createValue(value: UUID): UUIDValue = UUIDValue(value)
+    def createValue(value: UUID): UUIDValue = UUIDValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[UUIDValue] = rs.stringOpt(pos).map(parseInner)
     protected override def parseInner(value: String): UUIDValue = UUIDValue(java.util.UUID.fromString(value))
 
-object BinaryTypeDefinition extends RootPrimitiveTypeDefinition[Array[Byte], BinaryValue]("Binary"):
+object BinaryTypeDefinition extends RootPrimitiveTypeDefinition[BinaryValue]("Binary"):
     override def toJson(value: BinaryValue): JsValue = JsString(Base64.rfc2045().encodeToString(value.value, false))
     def parse(value: JsValue): Either[ValueParseError, BinaryValue] =
         parseFormattedString[Array[Byte], BinaryValue](value, Base64.rfc2045().decode, BinaryValue.apply,
             rootCause => Left(new ValueParseError(name, value.toString, rootCause)))
-    override def createValue(value: Array[Byte]): BinaryValue = BinaryValue(value)
+    def createValue(value: Array[Byte]): BinaryValue = BinaryValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[BinaryValue] = rs.bytesOpt(pos).map(createValue)
     protected override def parseInner(value: String): BinaryValue = BinaryValue(Base64.rfc2045().decode(value))
 
-object StringTypeDefinition extends RootPrimitiveTypeDefinition[String, StringValue]("String"):
+object StringTypeDefinition extends RootPrimitiveTypeDefinition[StringValue]("String"):
     override def toJson(value: StringValue): JsValue = JsString(value.value)
     def parse(value: JsValue): Either[ValueParseError, StringValue] =
         parseString(value, rootCause => Left(new ValueParseError(name, value.toString, rootCause))).map(StringValue.apply)
-    override def createValue(value: String): StringValue = StringValue(value)
+    def createValue(value: String): StringValue = StringValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[StringValue] = rs.stringOpt(pos).map(createValue)
     protected override def parseInner(value: String): StringValue = StringValue(value)
 
 class FixedStringTypeDefinition(val length: Int)
-        extends RootPrimitiveTypeDefinition[String, FixedStringValue](FixedStringTypeDefinition.name):
+        extends RootPrimitiveTypeDefinition[FixedStringValue](FixedStringTypeDefinition.name):
     override def toJson(value: FixedStringValue): JsValue = JsString(value.value)
     def parse(value: JsValue): Either[ValueParseError, FixedStringValue] =
         parseString(value, rootCause => Left(new ValueParseError(name, value.toString, rootCause))).map(createValue)
-    override def createValue(value: String): FixedStringValue = FixedStringValue(value, this)
+    def createValue(value: String): FixedStringValue = FixedStringValue(value, this)
     def extract(rs: WrappedResultSet, pos: Int): Option[FixedStringValue] = rs.stringOpt(pos).map(createValue)
     protected override def parseInner(value: String): FixedStringValue = createValue(value)
 
@@ -561,7 +560,7 @@ trait FieldsContainer:
     def allFields: Map[String, FieldTypeDefinition[_]]
     def idTypeOpt: Option[EntityIdTypeDefinition[_]]
 
-private def parseWholeNumber[V <: RootPrimitiveValue[_, _] | EntityId[_, _]](
+private def parseWholeNumber[V <: RootPrimitiveValue[_] | EntityId[_, _]](
                                                             value: JsValue,
                                                             rangeCheker: Long => Boolean,
                                                             valueWrapper: Long => V,
@@ -576,7 +575,7 @@ private def parseWholeNumber[V <: RootPrimitiveValue[_, _] | EntityId[_, _]](
         case _ =>
             errorGenerator(" not a number")
 
-private def parseDecimalNumber[V <: RootPrimitiveValue[_, _]](
+private def parseDecimalNumber[V <: RootPrimitiveValue[_]](
                                                             value: JsValue,
                                                             rangeCheker: BigDecimal => Boolean,
                                                             valueWrapper: BigDecimal => V,
@@ -588,7 +587,7 @@ private def parseDecimalNumber[V <: RootPrimitiveValue[_, _]](
         case _ =>
             errorGenerator("not a number")
 
-private def wrappNumberInRange[P, V <: RootPrimitiveValue[_, _] | EntityId[_, _]](
+private def wrappNumberInRange[P, V <: RootPrimitiveValue[_] | EntityId[_, _]](
                                                   value: P,
                                                   rangeCheker: P => Boolean,
                                                   valueWrapper: P => V,
@@ -607,7 +606,7 @@ private def parseString(
         case JsString(data) => Right(data)
         case _ => errorGenerator("not a JSON string")
 
-private def parseFormattedString[T, V <: RootPrimitiveValue[_, _] | EntityId[_, _]](
+private def parseFormattedString[T, V <: RootPrimitiveValue[_] | EntityId[_, _]](
                                                         value: JsValue,
                                                         exceptionalParser: String => T,
                                                         valueWrapper: T => V,
@@ -635,10 +634,10 @@ sealed trait EntityTypeDefinition[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V]
     def parseValue(data: JsValue): Either[ValueParseError, V]
     def toJson(value: V): JsValue
 
-final case class CustomPrimitiveTypeDefinition[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
-    parentNode: Either[(EntityIdTypeDefinition[ID], RootPrimitiveTypeDefinition[_, V]), PrimitiveEntitySuperType[ID, _, V]]
+final case class CustomPrimitiveTypeDefinition[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[V]](
+    parentNode: Either[(EntityIdTypeDefinition[ID], RootPrimitiveTypeDefinition[V]), PrimitiveEntitySuperType[ID, _, V]]
 ) extends EntityTypeDefinition[ID, VT, V]:
-    @tailrec def rootType: RootPrimitiveTypeDefinition[_, V] = this.parentNode match
+    @tailrec def rootType: RootPrimitiveTypeDefinition[V] = this.parentNode match
         case Left((_, root)) => root
         case Right(parent) => parent.valueType.rootType
     lazy val idType: EntityIdTypeDefinition[ID] = parentNode.fold(_._1, _.valueType.idType)
@@ -649,11 +648,11 @@ final case class CustomPrimitiveTypeDefinition[ID <: EntityId[_, ID], VT <: Cust
     def parseValue(data: JsValue): Either[ValueParseError, V] =
         rootType.parse(data)
 
-object CustomPrimitiveTypeDefinition:
-    def apply[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
-        parentNode: Either[(EntityIdTypeDefinition[ID], RootPrimitiveTypeDefinition[_, V]), PrimitiveEntitySuperType[ID, _, V]]
-    ): CustomPrimitiveTypeDefinition[ID, VT, V] =
-        new CustomPrimitiveTypeDefinition(parentNode)
+//object CustomPrimitiveTypeDefinition:
+//    def apply[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[_, V]](
+//        parentNode: Either[(EntityIdTypeDefinition[ID], RootPrimitiveTypeDefinition[_, V]), PrimitiveEntitySuperType[ID, _, V]]
+//    ): CustomPrimitiveTypeDefinition[ID, VT, V] =
+//        new CustomPrimitiveTypeDefinition(parentNode)
 
 object ArrayTypeDefinition:
     val name = "Array"
