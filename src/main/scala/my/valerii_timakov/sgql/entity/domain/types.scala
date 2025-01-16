@@ -1,10 +1,10 @@
 package my.valerii_timakov.sgql.entity.domain.types
 
 import my.valerii_timakov.sgql.entity.TypesConsistencyError
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractTypeDefinition, ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityTypeDefinition, FieldValueTypeDefinition, ItemValueTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractTypeDefinition, ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityTypeDefinition, FieldValueTypeDefinition, FieldsContainer, ItemValueTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, CustomPrimitiveValue, Entity, EntityId, EntityValue, FilledEntityId, ItemValue, ObjectValue, RootPrimitiveValue, ValueTypes}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, WrongStateExcetion}
-import my.valerii_timakov.sgql.services.{ArrayTypePersistenceDataFinal, ObjectTypePersistenceDataFinal, PrimitiveTypePersistenceDataFinal, TypePersistenceDataFinal}
+import my.valerii_timakov.sgql.services.{AbstractObjectPersistenceData, ArrayTypePersistenceDataFinal, ObjectTypePersistenceDataFinal, PrimitiveTypePersistenceDataFinal, PrimitiveValuePersistenceDataFinal, ReferenceValuePersistenceDataFinal, SimpleObjectValuePersistenceDataFinal, TypePersistenceDataFinal}
 import spray.json.{JsArray, JsObject, JsString, JsValue}
 
 import scala.annotation.tailrec
@@ -28,6 +28,23 @@ object GlobalTypesMap extends GlobalTypesMap:
     private final val VERSION_SHIFT = 64-16
 
     def init(types: Seq[AbstractEntityType[_, _, _]], version: Short, typesPersistenceData: Map[String, TypePersistenceDataFinal]): Unit =
+        def setFieldsPersistenceData(objectTypeDef: FieldsContainer, persistenceData: AbstractObjectPersistenceData): Unit =
+            objectTypeDef.fields.foreach(fieldDef =>
+                val fieldPersistenceDataOpt = persistenceData.fields.get(fieldDef._1)
+                (fieldDef._2.valueType, fieldPersistenceDataOpt) match
+                    case (primitiveType: RootPrimitiveTypeDefinition[_], Some(persistenceData: PrimitiveValuePersistenceDataFinal)) =>
+                        fieldDef._2.setPersistenceData(persistenceData)
+                    case (primitiveType: TypeReferenceDefinition[_], Some(persistenceData: ReferenceValuePersistenceDataFinal)) =>
+                        fieldDef._2.setPersistenceData(persistenceData)
+                    case (_: TypeBackReferenceDefinition[_], None) =>
+                    //do nothing
+                    case (soType: SimpleObjectTypeDefinition[_], Some(persistenceData: SimpleObjectValuePersistenceDataFinal)) =>
+                        fieldDef._2.setPersistenceData(persistenceData)
+                        setFieldsPersistenceData(soType, persistenceData)
+                    case _ =>
+                        throw new ConsistencyException(s"Field ${fieldDef._1} persistence init failed! Type ${fieldDef._2.valueType} " +
+                            s"and persistence data $fieldPersistenceDataOpt are not compatible!")
+            )
         if maps.nonEmpty then throw new ConsistencyException("Types already initialized!")
         maps = Some(new TypesMaps(version,
             new java.util.HashMap(types.size),
@@ -41,15 +58,16 @@ object GlobalTypesMap extends GlobalTypesMap:
                 throw new ConsistencyException(s"Type ${tmpType.name} has no persistence data!"))
             (tmpType, persistenceData) match
                 case (objectType: AbstractObjectEntityType[_, _], persistenceData: ObjectTypePersistenceDataFinal) =>
-                    objectType._persistenceData = Some(persistenceData)
+                    objectType.setPersistenceData(persistenceData)
+                    setFieldsPersistenceData(objectType.valueType, persistenceData)
                 case (primitiveType: CustomPrimitiveEntityType[_, _, _], persistenceData: PrimitiveTypePersistenceDataFinal) =>
-                    primitiveType._persistenceData = Some(persistenceData)
+                    primitiveType.setPersistenceData(persistenceData)
                 case (primitiveType: PrimitiveEntitySuperType[_, _, _], persistenceData: PrimitiveTypePersistenceDataFinal) =>
-                    primitiveType._persistenceData = Some(persistenceData)
+                    primitiveType.setPersistenceData(persistenceData)
                 case (arrayType: ArrayEntityType[_, _], persistenceData: ArrayTypePersistenceDataFinal) =>
-                    arrayType._persistenceData = Some(persistenceData)
+                    arrayType.setPersistenceData(persistenceData)
                 case (arrayType: ArrayEntitySuperType[_, _], persistenceData: ArrayTypePersistenceDataFinal) =>
-                    arrayType._persistenceData = Some(persistenceData)
+                    arrayType.setPersistenceData(persistenceData)
                 case _ =>
                     throw new ConsistencyException(s"Type $tmpType and persistence data $persistenceData are not compatible!")
             byNameMap.put(tmpType.name, tmpType)
@@ -96,7 +114,10 @@ sealed abstract class AbstractNamedType extends AbstractType:
 case class RootPrimitiveType[V <: RootPrimitiveValue[V]](valueType: RootPrimitiveTypeDefinition[V]) extends AbstractNamedType, ItemValueType
 
 sealed abstract class AbstractEntityType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractNamedType:
-    private[types] var _persistenceData: Option[TypePersistenceDataFinal] = None
+    private var _persistenceData: Option[TypePersistenceDataFinal] = None
+    private[types] def setPersistenceData(data: TypePersistenceDataFinal): Unit =
+        if (_persistenceData.isDefined) throw new ConsistencyException(s"Type $name already has persistence data!")
+        _persistenceData = Some(data)
     def persistenceData: TypePersistenceDataFinal = 
         _persistenceData.getOrElse(throw new ConsistencyException(s"Type $name has no persistence data!"))
     override def valueType: EntityTypeDefinition[ID, VT, V]

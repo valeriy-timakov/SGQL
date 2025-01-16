@@ -8,7 +8,7 @@ import my.valerii_timakov.sgql.entity.{SingleMessageError, TypesConsistencyError
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BackReferenceValue, BinaryValue, BooleanValue, ByteId, ByteValue, CustomPrimitiveValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, Entity, EntityId, EntityValue, FilledEntityId, FixedStringId, FixedStringValue, FloatValue, IntId, IntValue, ItemValue, LongId, LongValue, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, ShortIntValue, SimpleObjectValue, StringId, StringValue, TimeValue, UUIDId, UUIDValue, ValueTypes}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, ArrayEntitySuperType, BackReferenceType, EntitySuperType, EntityType, GlobalTypesMap, ObjectEntitySuperType, PrimitiveEntitySuperType, ReferenceType, SimpleObjectType}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, TypeReinitializationException, WrongStateExcetion}
-import my.valerii_timakov.sgql.services.{ArrayTypePersistenceDataFinal, ObjectTypePersistenceDataFinal, PrimitiveTypePersistenceDataFinal, TypePersistenceDataFinal}
+import my.valerii_timakov.sgql.services.{ArrayTypePersistenceDataFinal, ObjectTypePersistenceDataFinal, PrimitiveTypePersistenceDataFinal, TypePersistenceDataFinal, ValuePersistenceDataFinal}
 import scalikejdbc.WrappedResultSet
 import spray.json.{JsArray, JsBoolean, JsNull, JsNumber, JsObject, JsString, JsValue}
 
@@ -723,7 +723,13 @@ case class ArrayItemTypeDefinition(valueType: ItemValueTypeDefinition[_]):
     def name: String = valueType.name
     override def toString: String = name
 
-case class FieldTypeDefinition[V <: EntityValue](valueType: FieldValueTypeDefinition[V], isNullable: Boolean)
+case class FieldTypeDefinition[V <: EntityValue](valueType: FieldValueTypeDefinition[V], isNullable: Boolean):
+    private var _persistenceData: Option[ValuePersistenceDataFinal] = None
+    private[domain] def setPersistenceData(data: ValuePersistenceDataFinal): Unit =
+        if (_persistenceData.isDefined) throw new ConsistencyException(s"Type $name already has persistence data!")
+        _persistenceData = Some(data)
+    def persistenceData: ValuePersistenceDataFinal =
+        _persistenceData.getOrElse(throw new ConsistencyException(s"Type $name has no persistence data!"))
 
 object ObjectTypeDefinition:
     val name = "Object"
