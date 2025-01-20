@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.services
 
 import my.valerii_timakov.sgql.entity
 import my.valerii_timakov.sgql.entity.{GetFieldsFieldValidateError, GetFieldsFieldsValidateError, GetFieldsParseError, SearchConditionParseError}
-import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, GlobalTypesMap}
+import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, GlobalTypesMap, ObjectEntitySuperType, ObjectEntityType}
 import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, GetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
 
 import scala.annotation.tailrec
@@ -19,6 +19,7 @@ trait TypesDefinitionProvider:
     def getAllTypes: Seq[AbstractEntityType[_, _, _]]
     def getPersistenceData(name: String): Option[TypePersistenceDataFinal]
     def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal]
+    def getAllLeafObjectsSubtypes(entityType: ObjectEntitySuperType[_, _]): Set[ObjectEntityType[_, _]]
     def validateGetFieldsDescriptor(descriptor: ObjectGetFieldsDescriptor, entityType: AbstractEntityType[_, _, _]):
         Either[entity.Error, Unit]
     def parseSearchCondition(condition: Option[String], entityType: AbstractEntityType[_, _, _]):
@@ -56,6 +57,8 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
     def getPersistenceData(name: String): Option[TypePersistenceDataFinal] = globalTypesMap.getTypeByName(name).map(_.persistenceData)
     def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal] =
         globalTypesMap.getAllTypes.map(entityType => entityType.name -> entityType.persistenceData).toMap
+    def getAllLeafObjectsSubtypes(entityType: ObjectEntitySuperType[_, _]): Set[ObjectEntityType[_, _]] = 
+        globalTypesMap.getAllLeafObjectsSubtypes(entityType)
     def validateGetFieldsDescriptor(
                                     descriptor: ObjectGetFieldsDescriptor,
                                     entityType: AbstractEntityType[_, _, _]

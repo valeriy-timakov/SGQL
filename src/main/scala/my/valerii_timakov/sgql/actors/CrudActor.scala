@@ -56,11 +56,8 @@ class CrudActor(
                             case Left(error) =>
                                 Left(error)
                             case Right(value) =>
-                                entityType.createEntity(id, value) match
-                                    case Left(error) =>
-                                        Left(error)
-                                    case Right(entity) =>
-                                        Right(repository.update(entity))
+                                val entity = entityType.createEntity(id, value)
+                                Right(repository.update(entity))
                     }
                 }
                 this

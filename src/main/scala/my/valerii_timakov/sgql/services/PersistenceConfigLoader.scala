@@ -19,6 +19,7 @@ sealed trait ValuePersistenceDataFinal:
 sealed trait OneValuePersistenceDataFinal extends ValuePersistenceDataFinal:
     def columnName: String
     def columnType: PersistenceFieldType
+    def isNullable: Boolean
     override def columnNames: Seq[String] = Seq(columnName)
 
 final case class PrimitiveValuePersistenceDataFinal(
@@ -233,6 +234,7 @@ object TypesToPersistenceMapper extends TypesToPersistenceMapper:
         
     def getConsistentPersistenceTypesMap(valueType: AbstractRootPrimitiveTypeDefinition): Set[PersistenceFieldType] =
         consistencePersistenceTypesMap.getOrElse(valueType, throw new NoTypeFound(valueType.name))
+        
 
 trait PersistenceConfigLoader:
     def load(dataResourcePath: String,

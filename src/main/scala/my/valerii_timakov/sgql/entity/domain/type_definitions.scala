@@ -49,6 +49,7 @@ sealed abstract class AbstractEntityIdTypeDefinition[V <: EntityId[_, V]]:
 
 
 sealed abstract class EntityIdTypeDefinition[V <: EntityId[_, V]](val name: String) extends AbstractEntityIdTypeDefinition[V]:
+    def extract(rs: WrappedResultSet, pos: Int): Option[V]
     def parse(value: String): Either[ValueParseError, V] = {
         try {
             Right(parseInner(value))
@@ -61,6 +62,8 @@ sealed abstract class EntityIdTypeDefinition[V <: EntityId[_, V]](val name: Stri
     protected def parseInner(value: String): V
 
 case object ByteIdTypeDefinition extends EntityIdTypeDefinition[ByteId]("Byte"):
+    def createValue(value: Byte): ByteId = ByteId(value)
+    def extract(rs: WrappedResultSet, pos: Int): Option[ByteId] = rs.byteOpt(pos).map(createValue)
     def toJson(value: ByteId): JsValue = JsNumber(value.value)
     def parse(value: JsValue): Either[ValueParseError, ByteId] =
         parseWholeNumber(value, v => v >= Byte.MinValue && v <= Byte.MaxValue, v => ByteId(v.byteValue),
@@ -68,6 +71,8 @@ case object ByteIdTypeDefinition extends EntityIdTypeDefinition[ByteId]("Byte"):
     protected override def parseInner(value: String): ByteId = ByteId(value.toByte)
 
 case object ShortIdTypeDefinition extends EntityIdTypeDefinition[ShortIntId]("Short"):
+    def createValue(value: Short): ShortIntId = ShortIntId(value)
+    def extract(rs: WrappedResultSet, pos: Int): Option[ShortIntId] = rs.shortOpt(pos).map(createValue)
     def toJson(value: ShortIntId): JsValue = JsNumber(value.value)
     def parse(value: JsValue): Either[ValueParseError, ShortIntId] =
         parseWholeNumber(value, v => v >= Byte.MinValue && v <= Byte.MaxValue, v => ShortIntId(v.byteValue),
@@ -75,6 +80,8 @@ case object ShortIdTypeDefinition extends EntityIdTypeDefinition[ShortIntId]("Sh
     protected override def parseInner(value: String): ShortIntId = ShortIntId(value.toShort)
 
 case object IntIdTypeDefinition extends EntityIdTypeDefinition[IntId]("Integer"):
+    def createValue(value: Int): IntId = IntId(value)
+    def extract(rs: WrappedResultSet, pos: Int): Option[IntId] = rs.intOpt(pos).map(createValue)
     def toJson(value: IntId): JsValue = JsNumber(value.value)
     def parse(value: JsValue): Either[ValueParseError, IntId] =
         parseWholeNumber(value, v => v >= Byte.MinValue && v <= Byte.MaxValue, v => IntId(v.byteValue),
@@ -82,6 +89,8 @@ case object IntIdTypeDefinition extends EntityIdTypeDefinition[IntId]("Integer")
     protected override def parseInner(value: String): IntId = IntId(value.toInt)
 
 case object LongIdTypeDefinition extends EntityIdTypeDefinition[LongId]("Long"):
+    def createValue(value: Long): LongId = LongId(value)
+    def extract(rs: WrappedResultSet, pos: Int): Option[LongId] = rs.longOpt(pos).map(createValue)
     def toJson(value: LongId): JsValue = JsNumber(value.value)
     def parse(value: JsValue): Either[ValueParseError, LongId] =
         parseWholeNumber(value, v => v >= Byte.MinValue && v <= Byte.MaxValue, v => LongId(v.byteValue),
@@ -89,6 +98,8 @@ case object LongIdTypeDefinition extends EntityIdTypeDefinition[LongId]("Long"):
     protected override def parseInner(value: String): LongId = LongId(value.toLong)
 
 case object UUIDIdTypeDefinition extends EntityIdTypeDefinition[UUIDId]("UUID"):
+    def createValue(value: UUID): UUIDId = UUIDId(value)
+    def extract(rs: WrappedResultSet, pos: Int): Option[UUIDId] = rs.stringOpt(pos).map(parseInner)
     def toJson(value: UUIDId): JsValue = JsString(value.value.toString)
     def parse(value: JsValue): Either[ValueParseError, UUIDId] =
         parseFormattedString[UUID, UUIDId](value,  UUID.fromString, UUIDId.apply,
@@ -96,12 +107,16 @@ case object UUIDIdTypeDefinition extends EntityIdTypeDefinition[UUIDId]("UUID"):
     protected override def parseInner(value: String): UUIDId = UUIDId(java.util.UUID.fromString(value))
 
 case object StringIdTypeDefinition extends EntityIdTypeDefinition[StringId]("String"):
+    def createValue(value: String): StringId = StringId(value)
+    def extract(rs: WrappedResultSet, pos: Int): Option[StringId] = rs.stringOpt(pos).map(createValue)
     def toJson(value: StringId): JsValue = JsString(value.value)
     def parse(value: JsValue): Either[ValueParseError, StringId] =
         parseString(value, rootCause => Left(new ValueParseError(name, value.toString, rootCause))).map(StringId.apply)
     protected override def parseInner(value: String): StringId = StringId(value)
 
 case class FixedStringIdTypeDefinition(length: Int) extends EntityIdTypeDefinition[FixedStringId](FixedStringIdTypeDefinition.name):
+    def createValue(value: String): StringId = StringId(value)
+    def extract(rs: WrappedResultSet, pos: Int): Option[StringId] = rs.stringOpt(pos).map(createValue)
     def toJson(value: FixedStringId): JsValue = JsString(value.value)
     def parse(value: JsValue): Either[ValueParseError, FixedStringId] =
         parseString(value, rootCause => Left(new ValueParseError(name, value.toString, rootCause))).map(FixedStringId(_, this))
@@ -151,6 +166,7 @@ sealed trait FieldValueTypeDefinition[V <: EntityValue] extends AbstractTypeDefi
 
 sealed trait ItemValueTypeDefinition[V <: ItemValue] extends FieldValueTypeDefinition[V]:
     def name: String
+    def extract(rs: WrappedResultSet, pos: Int): Option[V]
 
 sealed trait ReferenceDefinition[ID <: EntityId[_, ID], V <: EntityValue] extends FieldValueTypeDefinition[V]:
     def idType: EntityIdTypeDefinition[ID]
@@ -162,6 +178,8 @@ final case class TypeReferenceDefinition[ID <: FilledEntityId[_, ID]](
                                         ) extends ItemValueTypeDefinition[ReferenceValue[ID]], ReferenceDefinition[ID, ReferenceValue[ID]]:
     lazy val idType: EntityIdTypeDefinition[ID] = referencedType.valueType.idType
     override def name: String = referencedType.name
+    def extract(rs: WrappedResultSet, pos: Int): Option[ReferenceValue[ID]] = 
+        idType.extract(rs, pos).map(ReferenceValue(_, ReferenceType(this)))
     def toJson(value: ReferenceValue[ID]): JsValue =
         JsObject(
             "refId" -> value.refId.toJson,
@@ -414,7 +432,6 @@ sealed abstract case class RootPrimitiveTypeDefinition[V <: RootPrimitiveValue[V
             case e: Exception => Left(new ValueParseError(this.getClass.getSimpleName, value, e.getMessage))
         }
     def parse(value: JsValue): Either[ValueParseError, V]
-    def extract(rs: WrappedResultSet, pos: Int): Option[V]
     protected def parseInner(value: String): V
 
 object ByteTypeDefinition extends RootPrimitiveTypeDefinition[ByteValue]("Byte"):
@@ -728,8 +745,8 @@ case class FieldTypeDefinition[V <: EntityValue](valueType: FieldValueTypeDefini
     private[domain] def setPersistenceData(data: ValuePersistenceDataFinal): Unit =
         if (_persistenceData.isDefined) throw new ConsistencyException(s"Type $name already has persistence data!")
         _persistenceData = Some(data)
-    def persistenceData: ValuePersistenceDataFinal =
-        _persistenceData.getOrElse(throw new ConsistencyException(s"Type $name has no persistence data!"))
+    def persistenceData: Option[ValuePersistenceDataFinal] =
+        _persistenceData
 
 object ObjectTypeDefinition:
     val name = "Object"
