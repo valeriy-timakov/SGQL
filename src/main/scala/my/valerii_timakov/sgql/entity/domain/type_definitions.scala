@@ -342,16 +342,23 @@ final case class SimpleObjectTypeDefinition[ID <: FilledEntityId[_, ID]](
 
     def fields: Map[String, FieldTypeDefinition[_]] = _fields
     
-    def createValue(id: Option[ID], value: Map[String, EntityValue]): SimpleObjectValue[ID] =
-        checkId(id)
-        SimpleObjectValue(id, value, SimpleObjectType(this))
-        
-    private def checkId(id: EntityId[_, _]): ID =
-        id match
-            case id: ID =>
-                id
+    def createValue(id: Option[EntityId[_, _]], value: Map[String, EntityValue]): SimpleObjectValue[ID] =
+        SimpleObjectValue(checkId(id), value, SimpleObjectType(this))
+
+    private def checkId(idOpt: Option[EntityId[_, _]]): Option[ID] =
+        (idOpt, idTypeOpt) match
+            case (Some(id), Some(defIdType)) =>
+                id match
+                    case id: ID =>
+                        if (defIdType != id.typeDefinition)
+                            throw new ConsistencyException(s"Wrong ID type for simple object $id! Expected $defIdType")
+                        Some(id)
+                    case _ =>
+                        throw new ConsistencyException(s"Wrong ID type for simple object $id! Expected $defIdType") //todo check why "name" variable is correct here!
+            case (None, None) =>
+                None
             case _ =>
-                throw new ConsistencyException(s"Wrong ID type for entity $name: $id!")
+                throw new ConsistencyException(s"Wrong ID type $idOpt for simple object type ID type: $idTypeOpt!")
         
 
     def setChildren(fieldsValues: Map[String, FieldTypeDefinition[_]]): Unit =
