@@ -420,6 +420,7 @@ class PostgresCrudRepository(
 
             objectType.parent match
                 case Some(refType) =>
+                    refType.valueType.directChildren
                     extractObjectSuperTypeEntity(refType, getFieldsDscs, ownerDsc, "simple object of $fieldName field", 
                         rs, fields)
                 case None =>

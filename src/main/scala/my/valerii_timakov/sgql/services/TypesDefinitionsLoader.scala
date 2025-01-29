@@ -95,7 +95,7 @@ class TypesDefinitionsLoaderImpl(conf: Config) extends TypesDefinitionsLoader:
                                 case Some(ObjectTypeData(_, ObjectData(_, fields), _)) =>
                                     val fieldsMap = fields.map(fieldRaw =>
                                         fieldRaw.name -> parser.parseAnyTypeDef(fieldRaw, typePrefix, typesMap)).toMap
-                                    objDef.setChildren(fieldsMap)
+                                    objDef.setFields(fieldsMap)
                                 case _ => throw new NoTypeFound(typeFullName)
                         case _ => // do nothing
                 )

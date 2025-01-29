@@ -10,6 +10,7 @@ import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, Abstract
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, TypeReinitializationException, WrongStateExcetion}
 import my.valerii_timakov.sgql.services.{ArrayTypePersistenceDataFinal, ObjectTypePersistenceDataFinal, PrimitiveTypePersistenceDataFinal, TypePersistenceDataFinal, ValuePersistenceDataFinal}
 import scalikejdbc.WrappedResultSet
+import scala.collection.mutable
 import spray.json.{JsArray, JsBoolean, JsNull, JsNumber, JsObject, JsString, JsValue}
 
 import java.time.format.DateTimeFormatter
@@ -774,14 +775,19 @@ object ObjectTypeDefinition:
 
 final case class ObjectTypeDefinition[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     private var _fields: Map[String, FieldTypeDefinition[_]],
-    idOrParent: Either[EntityIdTypeDefinition[ID], ObjectEntitySuperType[ID, _]]
+    idOrParent: Either[EntityIdTypeDefinition[ID], ObjectEntitySuperType[ID, _]],
+    private var _directChildren: List[AbstractObjectEntityType[ID, _]] = Nil,
 ) extends EntityTypeDefinition[ID, VT, Map[String, EntityValue]], FieldsContainer:
     private var initiated = false
     def fields: Map[String, FieldTypeDefinition[_]] = _fields
-    def setChildren(fieldsValues: Map[String, FieldTypeDefinition[_]]): Unit =
+    private[sgql] def setFields(fieldsValues: Map[String, FieldTypeDefinition[_]]): Unit =
         if (initiated) throw new TypeReinitializationException
         _fields = fieldsValues
         initiated = true
+    private[domain] def addDirectChild(child: AbstractObjectEntityType[ID, _]): Unit =
+        _directChildren = child :: _directChildren
+    def directChildren: List[AbstractObjectEntityType[ID, _]] = 
+        _directChildren
     lazy val allFields: Map[String, FieldTypeDefinition[_]] =
         _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldTypeDefinition[_]])
     lazy val idType: EntityIdTypeDefinition[ID] = idOrParent.fold(identity, _.valueType.idType)

@@ -67,6 +67,7 @@ object GlobalTypesMap extends GlobalTypesMap:
                 throw new ConsistencyException(s"Type ${tmpType.name} has no persistence data!"))
             (tmpType, persistenceData) match
                 case (objectType: AbstractObjectEntityType[_, _], persistenceData: ObjectTypePersistenceDataFinal) =>
+                    objectType.valueType.parent.foreach( _.valueType.addDirectChild(objectType) )
                     objectType.setPersistenceData(persistenceData)
                     setFieldsPersistenceData(objectType.valueType, persistenceData)
                 case (primitiveType: CustomPrimitiveEntityType[_, _, _], persistenceData: PrimitiveTypePersistenceDataFinal) =>
