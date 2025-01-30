@@ -66,8 +66,11 @@ object GlobalTypesMap extends GlobalTypesMap:
             val persistenceData = typesPersistenceData.getOrElse(tmpType.name,
                 throw new ConsistencyException(s"Type ${tmpType.name} has no persistence data!"))
             (tmpType, persistenceData) match
-                case (objectType: AbstractObjectEntityType[_, _], persistenceData: ObjectTypePersistenceDataFinal) =>
-                    objectType.valueType.parent.foreach( _.valueType.addDirectChild(objectType) )
+                case (objectType: ObjectEntitySuperType[_, _], persistenceData: ObjectTypePersistenceDataFinal) =>
+                    objectType.valueType.parent.foreach( _.addDirectChild(objectType) )
+                    objectType.setPersistenceData(persistenceData)
+                    setFieldsPersistenceData(objectType.valueType, persistenceData)
+                case (objectType: ObjectEntityType[_, _], persistenceData: ObjectTypePersistenceDataFinal) =>
                     objectType.setPersistenceData(persistenceData)
                     setFieldsPersistenceData(objectType.valueType, persistenceData)
                 case (primitiveType: CustomPrimitiveEntityType[_, _, _], persistenceData: PrimitiveTypePersistenceDataFinal) =>
@@ -270,6 +273,11 @@ case class ArrayEntitySuperType[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]]
 case class ObjectEntitySuperType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     name: String,
     valueType: ObjectTypeDefinition[ID, VT],
-) extends EntitySuperType[ID, VT, Map[String, EntityValue]], AbstractObjectEntityType[ID, VT]
+) extends EntitySuperType[ID, VT, Map[String, EntityValue]], AbstractObjectEntityType[ID, VT]:
+    private var _directChildren: List[AbstractObjectEntityType[ID, _]] = Nil
+    private[domain] def addDirectChild(child: AbstractObjectEntityType[ID, _]): Unit =
+        _directChildren = child :: _directChildren
+    def directChildren: List[AbstractObjectEntityType[ID, _]] =
+        _directChildren
 
 
