@@ -343,23 +343,28 @@ final case class SimpleObjectTypeDefinition[ID <: FilledEntityId[_, ID]](
 
     def fields: Map[String, FieldTypeDefinition[_]] = _fields
     
-    def createValue(id: Option[EntityId[_, _]], value: Map[String, EntityValue]): SimpleObjectValue[ID] =
-        SimpleObjectValue(checkId(id), value, SimpleObjectType(this))
+    def createValue[ID2 <: FilledEntityId[_, ID2]](
+        idAndParentType: Option[(AbstractObjectEntityType[ID2, _], ID2)], 
+        value: Map[String, EntityValue]
+    ): SimpleObjectValue[ID] =
+        SimpleObjectValue(checkIdAndType(idAndParentType), value, SimpleObjectType(this))
 
-    private def checkId(idOpt: Option[EntityId[_, _]]): Option[ID] =
-        (idOpt, idTypeOpt) match
-            case (Some(id), Some(defIdType)) =>
+    private def checkIdAndType[ID2 <: FilledEntityId[_, ID2]](
+                                                                 idAndParentType: Option[EntityId[_, _]]
+                                                             ): Option[(AbstractObjectEntityType[ID, _], ID)] =
+        (idAndParentType, idTypeOpt) match
+            case (Some((parentType, id)), Some(defIdType)) =>
                 id match
-                    case id: ID =>
-                        if (defIdType != id.typeDefinition)
+                    case idAndParentType: (AbstractObjectEntityType[ID, _], ID) =>
+                        if (defIdType != idAndParentType._2.typeDefinition || defIdType != idAndParentType._1.valueType.idType)
                             throw new ConsistencyException(s"Wrong ID type for simple object $id! Expected $defIdType")
-                        Some(id)
+                        Some(idAndParentType)
                     case _ =>
                         throw new ConsistencyException(s"Wrong ID type for simple object $id! Expected $defIdType") //todo check why "name" variable is correct here!
             case (None, None) =>
                 None
             case _ =>
-                throw new ConsistencyException(s"Wrong ID type $idOpt for simple object type ID type: $idTypeOpt!")
+                throw new ConsistencyException(s"Wrong ID type $idAndParentType for simple object type ID type: $idTypeOpt!")
         
 
     def setChildren(fieldsValues: Map[String, FieldTypeDefinition[_]]): Unit =

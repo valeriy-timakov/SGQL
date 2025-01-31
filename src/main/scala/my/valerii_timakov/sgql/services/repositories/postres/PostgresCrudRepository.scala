@@ -425,7 +425,6 @@ class PostgresCrudRepository(
             objectType: SimpleObjectTypeDefinition[ID],
             getFieldsDscs: List[NestedGetFieldsDescriptor],
             ownerDsc: GetDescriptorChainCell,
-            fieldName: String,
             rs: WrappedResultSet,
             fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
         ): Option[SimpleObjectValue[ID]] =
@@ -436,10 +435,7 @@ class PostgresCrudRepository(
             objectType.parent match
                 case Some(refType) =>
                     getLastExistingChild(refType, ownerDsc, rs, fieldsMap)
-                        .map((objectType, id) => {
-                            
-                        })
-                    
+                        .map(objectType.createValue(_, fields.toMap))                    
                 case None =>
                     if (fields.isEmpty)
                         None
@@ -488,12 +484,14 @@ class PostgresCrudRepository(
                         valueOpt.map(fieldName -> _)
                     case (SingleGetFieldsDescriptor(fieldName), fieldTypeDef: TypeReferenceDefinition[_]) =>
                         val valueOpt = fieldTypeDef.extract(rs, fieldIdx)
+                        fieldTypeDef.referencedType match
+                            case primitiveType: CustomPrimitiveEntityType
                         valueOpt.map(fieldName -> _)
                     case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), fieldTypeDef: TypeReferenceDefinition[idtype]) =>
                         val valueOpt = Some(extractRefObject[idtype](fieldTypeDef, subFieldsDscs, currFieldDsc, fieldIdx, fieldName, rs, fieldsMap))
                         valueOpt.map(fieldName -> _)
                     case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), soTypeDef: SimpleObjectTypeDefinition[idtype]) =>
-                        val valueOpt = extractSimpleObject[idtype](soTypeDef, subFieldsDscs, currFieldDsc, fieldIdx, fieldName, rs, fieldsMap)
+                        val valueOpt = extractSimpleObject[idtype](soTypeDef, subFieldsDscs, currFieldDsc, rs, fieldsMap)
                         valueOpt.map(fieldName -> _)
             )
 
@@ -919,11 +917,11 @@ class PostgresCrudRepository(
                             (List((columnName, prim.value)), Nil)
                         case (value: ReferenceValue[_], fieldPersData: ReferenceValuePersistenceDataFinal) =>
                             (List((fieldPersData.columnName, value.refId)), Nil)
-                        case (SimpleObjectValue(id, subFields, _), SimpleObjectValuePersistenceDataFinal(parentPersOpt, fieldsPers)) =>
+                        case (SimpleObjectValue(idAndParentType, subFields, _), SimpleObjectValuePersistenceDataFinal(parentPersOpt, fieldsPers)) =>
                             val parentData =
-                                id.map { id =>
+                                idAndParentType.map { idAndParentType =>
                                     val parentPers = parentPersOpt.getOrElse(throw new ConsistencyException("Parent is not defined!"))
-                                    (parentPers.columnName, id)
+                                    (parentPers.columnName, idAndParentType._1)
                                 }
                             val fieldsData: (List[(String, Any)], List[(String, EntityValue)]) = getColumnsValuesAndRestFields(subFields.toList, fieldsPers)
                             (fieldsData._1 ++ parentData.toList, fieldsData._2)

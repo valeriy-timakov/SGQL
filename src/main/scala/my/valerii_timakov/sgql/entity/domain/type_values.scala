@@ -1,7 +1,7 @@
 package my.valerii_timakov.sgql.entity.domain.type_values
 
 import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractRootPrimitiveTypeDefinition, AbstractTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntityTypeDefinition, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, ItemValueTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectTypeDefinition, ReferenceDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
-import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractNamedType, AbstractType, ArrayEntityType, BackReferenceType, CustomPrimitiveEntityType, EntitySuperType, EntityType, FieldValueType, ItemValueType, ObjectEntityType, ReferenceType, RootPrimitiveType, SimpleObjectType}
+import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractNamedType, AbstractObjectEntityType, AbstractType, ArrayEntityType, BackReferenceType, CustomPrimitiveEntityType, EntitySuperType, EntityType, FieldValueType, ItemValueType, ObjectEntityType, ReferenceType, RootPrimitiveType, SimpleObjectType}
 import my.valerii_timakov.sgql.exceptions.ConsistencyException
 import my.valerii_timakov.sgql.services.{ArrayTypePersistenceDataFinal, ObjectTypePersistenceDataFinal, PrimitiveTypePersistenceDataFinal, TypePersistenceDataFinal}
 import spray.json.{JsNull, JsValue}
@@ -131,13 +131,14 @@ final case class BinaryValue(value: Array[Byte]) extends RootPrimitiveValue[Bina
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
 
 final case class SimpleObjectValue[ID <: FilledEntityId[_, ID]](
-    id: Option[ID],
+    idAndParentType: Option[(ID, AbstractObjectEntityType[ID, _])],
     value: Map[String, EntityValue],
     typeDefinition: SimpleObjectType[ID]
 ) extends EntityValue:
     checkMaybeId(id, typeDefinition.valueType.idTypeOpt)
     checkObjectTypeData(value, typeDefinition.valueType)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def id: Option[ID] = idAndParentType.map(_._1)
 
 final case class ReferenceValue[ID <: FilledEntityId[_, ID]](refId: ID, typeDefinition: ReferenceType[ID]) extends ItemValue:
     checkReferenceId(refId, typeDefinition.valueType)
