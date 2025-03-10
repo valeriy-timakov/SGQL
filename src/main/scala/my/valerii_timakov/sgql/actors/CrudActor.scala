@@ -98,10 +98,10 @@ class CrudActor(
             case Some(entityType: EntityType[_, _, _]) =>
                 typeMapper(entityType)
                 
-    private def parseId[Res](entityType: EntityType[_, _, _], idStr: String)
-                            (idMapper: EntityId[_, _] => Either[entity.Error, Try[Res]])
+    private def parseId[Res, ID](entityType: EntityType[ID, _, _], idStr: String)
+                            (idMapper: ID => Either[entity.Error, Try[Res]])
     : Either[entity.Error, Try[Res]] =
-        val idDef: EntityIdTypeDefinition[_] = entityType.valueType.idType
+        val idDef: EntityIdTypeDefinition[ID] = entityType.valueType.idType
         idDef.parse(idStr) match
             case Left(error) =>
                 Left(error)

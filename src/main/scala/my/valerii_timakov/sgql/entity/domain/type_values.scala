@@ -15,33 +15,30 @@ sealed trait EntityId[T, V <: EntityId[T, V]]:
     def typeDefinition: EntityIdTypeDefinition[V]
     def toJson: JsValue = typeDefinition.toJson(this.asInstanceOf[V])
     def value: T
-//object EmptyId extends EntityId:
-//    override def serialize: String = "()"
-sealed trait FilledEntityId[T, V <: FilledEntityId[T, V]] extends EntityId[T, V]
-final case class ByteId(value: Byte) extends FilledEntityId[Byte, ByteId]:
+final case class ByteId(value: Byte) extends EntityId[Byte, ByteId]:
     override def serialize: String = value.toString
     override val typeDefinition: EntityIdTypeDefinition[ByteId] = ByteIdTypeDefinition
-final case class ShortIntId(value: Short) extends FilledEntityId[Short, ShortIntId]:
+final case class ShortIntId(value: Short) extends EntityId[Short, ShortIntId]:
     override def serialize: String = value.toString
     override val typeDefinition: EntityIdTypeDefinition[ShortIntId] = ShortIdTypeDefinition
-final case class IntId(value: Int) extends FilledEntityId[Int, IntId]:
+final case class IntId(value: Int) extends EntityId[Int, IntId]:
     override def serialize: String = value.toString
     override val typeDefinition: EntityIdTypeDefinition[IntId] = IntIdTypeDefinition
-final case class LongId(value: Long) extends FilledEntityId[Long, LongId]:
+final case class LongId(value: Long) extends EntityId[Long, LongId]:
     override def serialize: String = value.toString
     override val typeDefinition: EntityIdTypeDefinition[LongId] = LongIdTypeDefinition
-final case class StringId(value: String) extends FilledEntityId[String, StringId]:
+final case class StringId(value: String) extends EntityId[String, StringId]:
     if value == null then throw new IllegalArgumentException("StringId cannot be null!")
     override def serialize: String = value
     override val typeDefinition: EntityIdTypeDefinition[StringId] = StringIdTypeDefinition
-final case class FixedStringId(value: String, typeRef: FixedStringIdTypeDefinition) extends FilledEntityId[String, FixedStringId]:
+final case class FixedStringId(value: String, typeRef: FixedStringIdTypeDefinition) extends EntityId[String, FixedStringId]:
     if value == null then throw new IllegalArgumentException("FixedStringId cannot be null!")
     if value == null then throw new IllegalArgumentException("FixedStringId cannot have null type!")
     if value.length != typeRef.length then throw new IllegalArgumentException(
         s"FixedStringId value must be of length ${typeRef.length}! Got: $value")
     override def serialize: String = value
     override val typeDefinition: EntityIdTypeDefinition[FixedStringId] = typeRef
-final case class UUIDId(value: UUID) extends FilledEntityId[UUID, UUIDId]:
+final case class UUIDId(value: UUID) extends EntityId[UUID, UUIDId]:
     if value == null then throw new IllegalArgumentException("UUIDId cannot be null!")
     override def serialize: String = value.toString
     override val typeDefinition: EntityIdTypeDefinition[UUIDId] = UUIDIdTypeDefinition
@@ -130,7 +127,8 @@ final case class BinaryValue(value: Array[Byte]) extends RootPrimitiveValue[Bina
     def typeDefinition: RootPrimitiveType[BinaryValue] = RootPrimitiveType(BinaryTypeDefinition)
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
 
-final case class SimpleObjectValue[ID <: FilledEntityId[_, ID]](
+final case class SimpleObjectValue[ID <: EntityId[_, ID]](
+    //save concrete parent type, because it is defined by value, not by type definition
     idAndParentType: Option[(ID, AbstractObjectEntityType[ID, _])],
     value: Map[String, EntityValue],
     typeDefinition: SimpleObjectType[ID]
@@ -140,7 +138,7 @@ final case class SimpleObjectValue[ID <: FilledEntityId[_, ID]](
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
     def id: Option[ID] = idAndParentType.map(_._1)
 
-final case class ReferenceValue[ID <: FilledEntityId[_, ID]](refId: ID, typeDefinition: ReferenceType[ID]) extends ItemValue:
+final case class ReferenceValue[ID <: EntityId[_, ID]](refId: ID, typeDefinition: ReferenceType[ID]) extends ItemValue:
     checkReferenceId(refId, typeDefinition.valueType)
     protected var _refValue: Option[Entity[ID, _, _]] = None
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
@@ -153,7 +151,7 @@ final case class ReferenceValue[ID <: FilledEntityId[_, ID]](refId: ID, typeDefi
         checkReferenceValue(value, typeDefinition.valueType.referencedType, this.refId)
         Some(value)
 
-final case class BackReferenceValue[ID <: FilledEntityId[_, ID]](value: ID, typeDefinition: BackReferenceType[ID]) extends EntityValue:
+final case class BackReferenceValue[ID <: EntityId[_, ID]](value: ID, typeDefinition: BackReferenceType[ID]) extends EntityValue:
     checkReferenceId(value, typeDefinition.valueType)
     private var _refValue: Option[Seq[Entity[ID, _, _]]] = None
     def toJson: JsValue = typeDefinition.valueType.toJson(this)
@@ -250,7 +248,7 @@ private def checkObjectTypeData(
                 s"type ${fieldDef.valueType}!")
     )
 
-private def checkReferenceId[ID <: FilledEntityId[_, ID]](
+private def checkReferenceId[ID <: EntityId[_, ID]](
     value: ID,
     definition: ReferenceDefinition[ID, _]
 ): Unit =

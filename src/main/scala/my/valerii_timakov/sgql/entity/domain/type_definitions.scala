@@ -5,7 +5,7 @@ import akka.parboiled2.util.Base64
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.domain.type_definitions.LongTypeDefinition.name
 import my.valerii_timakov.sgql.entity.{SingleMessageError, TypesConsistencyError, ValueParseError}
-import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BackReferenceValue, BinaryValue, BooleanValue, ByteId, ByteValue, CustomPrimitiveValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, Entity, EntityId, EntityValue, FilledEntityId, FixedStringId, FixedStringValue, FloatValue, IntId, IntValue, ItemValue, LongId, LongValue, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, ShortIntValue, SimpleObjectValue, StringId, StringValue, TimeValue, UUIDId, UUIDValue, ValueTypes}
+import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BackReferenceValue, BinaryValue, BooleanValue, ByteId, ByteValue, CustomPrimitiveValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, Entity, EntityId, EntityValue, FixedStringId, FixedStringValue, FloatValue, IntId, IntValue, ItemValue, LongId, LongValue, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, ShortIntValue, SimpleObjectValue, StringId, StringValue, TimeValue, UUIDId, UUIDValue, ValueTypes}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, ArrayEntitySuperType, BackReferenceType, EntitySuperType, EntityType, GlobalTypesMap, ObjectEntitySuperType, PrimitiveEntitySuperType, ReferenceType, SimpleObjectType}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, TypeReinitializationException, WrongStateExcetion}
 import my.valerii_timakov.sgql.services.{ArrayTypePersistenceDataFinal, ObjectTypePersistenceDataFinal, PrimitiveTypePersistenceDataFinal, TypePersistenceDataFinal, ValuePersistenceDataFinal}
@@ -174,7 +174,7 @@ sealed trait ReferenceDefinition[ID <: EntityId[_, ID], V <: EntityValue] extend
     def referencedType: AbstractEntityType[ID, _, _]
     def name: String
 
-final case class TypeReferenceDefinition[ID <: FilledEntityId[_, ID]](
+final case class TypeReferenceDefinition[ID <: EntityId[_, ID]](
                                                          referencedType: AbstractEntityType[ID, _, _],
                                         ) extends ItemValueTypeDefinition[ReferenceValue[ID]], ReferenceDefinition[ID, ReferenceValue[ID]]:
     lazy val idType: EntityIdTypeDefinition[ID] = referencedType.valueType.idType
@@ -234,7 +234,7 @@ final case class TypeReferenceDefinition[ID <: FilledEntityId[_, ID]](
     override def toString: String = s"TypeReferenceDefinition(ref[${referencedType.name}])"
     
 object TypeReferenceDefinition:
-    def apply[ID <: FilledEntityId[_, ID]](
+    def apply[ID <: EntityId[_, ID]](
                                               referencedType: AbstractEntityType[_, _, _],
                                               refTypeName: String
                                           ): TypeReferenceDefinition[ID] =
@@ -245,7 +245,7 @@ object TypeReferenceDefinition:
                 throw new ConsistencyException(s"Not correct reference ID in type: $referencedType! " +
                     s"Error is impossible - analise if it was thrown! Type: $refTypeName")
 
-final case class TypeBackReferenceDefinition[ID <: FilledEntityId[_, ID]](
+final case class TypeBackReferenceDefinition[ID <: EntityId[_, ID]](
                                                                              //reference to abstract type to make it possible to reference to any concrete nested type
                                                                              referencedType: AbstractObjectEntityType[ID, _],
                                                                              refField: String
@@ -322,7 +322,7 @@ final case class TypeBackReferenceDefinition[ID <: FilledEntityId[_, ID]](
     override def toString: String = s"TypeReferenceDefinition(ref[${referencedType.name}], $refField)"
 
 object TypeBackReferenceDefinition:
-    def apply[ID <: FilledEntityId[_, ID]](
+    def apply[ID <: EntityId[_, ID]](
                                               referencedType: AbstractEntityType[_, _, _], 
                                               refField: String, 
                                               refTypeName: String
@@ -335,7 +335,7 @@ object TypeBackReferenceDefinition:
                     s"Type $refTypeName is trying to be referenced by $refField!")
 
 
-final case class SimpleObjectTypeDefinition[ID <: FilledEntityId[_, ID]](
+final case class SimpleObjectTypeDefinition[ID <: EntityId[_, ID]](
                                         private var _fields: Map[String, FieldTypeDefinition[_]],
                                         parent: Option[ObjectEntitySuperType[ID, _]]
                                     ) extends FieldValueTypeDefinition[SimpleObjectValue[ID]], FieldsContainer:
@@ -343,28 +343,28 @@ final case class SimpleObjectTypeDefinition[ID <: FilledEntityId[_, ID]](
 
     def fields: Map[String, FieldTypeDefinition[_]] = _fields
     
-    def createValue[ID2 <: FilledEntityId[_, ID2]](
-        idAndParentType: Option[(AbstractObjectEntityType[ID2, _], ID2)], 
+    def createValue[ID2 <: EntityId[_, ID2]](
+        idAndParentType: Option[(ID2, AbstractObjectEntityType[ID2, _])],
         value: Map[String, EntityValue]
     ): SimpleObjectValue[ID] =
         SimpleObjectValue(checkIdAndType(idAndParentType), value, SimpleObjectType(this))
 
-    private def checkIdAndType[ID2 <: FilledEntityId[_, ID2]](
-                                                                 idAndParentType: Option[EntityId[_, _]]
-                                                             ): Option[(AbstractObjectEntityType[ID, _], ID)] =
-        (idAndParentType, idTypeOpt) match
-            case (Some((parentType, id)), Some(defIdType)) =>
-                id match
-                    case idAndParentType: (AbstractObjectEntityType[ID, _], ID) =>
-                        if (defIdType != idAndParentType._2.typeDefinition || defIdType != idAndParentType._1.valueType.idType)
-                            throw new ConsistencyException(s"Wrong ID type for simple object $id! Expected $defIdType")
-                        Some(idAndParentType)
-                    case _ =>
-                        throw new ConsistencyException(s"Wrong ID type for simple object $id! Expected $defIdType") //todo check why "name" variable is correct here!
+    private def checkIdAndType[ID2 <: EntityId[_, ID2]](
+                                                                 idAndParentType: Option[(ID2, AbstractObjectEntityType[ID2, _])]
+                                                             ): Option[(ID, AbstractObjectEntityType[ID, _])] =
+        (idAndParentType, parent) match
+            case (Some((id, parentTypeInstance)), Some(parentTypeDef)) =>
+
+                if (parentTypeDef.valueType.idType != id.typeDefinition)
+                    throw new ConsistencyException(s"Wrong ID type for simple object $id! Expected ${parentTypeDef.valueType.idType}");
+                if (parentTypeDef.hasChild(parentTypeInstance))
+                    throw new ConsistencyException(s"Wrong parent type for simple object $id! Expected child of " +
+                        s"${parentTypeDef.name}, found: ${parentTypeInstance.name}");
+                Some((id.asInstanceOf[ID], parentTypeInstance.asInstanceOf[AbstractObjectEntityType[ID, _]]))
             case (None, None) =>
                 None
             case _ =>
-                throw new ConsistencyException(s"Wrong ID type $idAndParentType for simple object type ID type: $idTypeOpt!")
+                throw new ConsistencyException(s"Wrong ID or parent type $idAndParentType for simple object type parent type: $parent!")
         
 
     def setChildren(fieldsValues: Map[String, FieldTypeDefinition[_]]): Unit =
@@ -381,26 +381,55 @@ final case class SimpleObjectTypeDefinition[ID <: FilledEntityId[_, ID]](
     def idTypeOpt: Option[EntityIdTypeDefinition[ID]] = parent.map(_.valueType.idType)
 
     def toJson(value: SimpleObjectValue[ID]): JsValue = JsObject(
-        "id" -> value.id.map(_.toJson).getOrElse(JsNull),
+        "parent" -> value.idAndParentType.map(idAndParentType => 
+            JsObject(
+                "id" -> value.id.map(_.toJson).getOrElse(JsNull),
+                "type" -> JsString(idAndParentType._2.name)
+            )
+        ).getOrElse(JsNull),
         "value" -> JsObject(value.value.map(v => v._1 -> v._2.toJson))
     )
 
     def parse(value: JsValue): Either[SingleMessageError, SimpleObjectValue[ID]] =
         value match
             case JsObject(topFields) =>
-                val id: Either[SingleMessageError, Option[ID]] = topFields.get("id") match
-                    case Some(idValue) =>
-                        idTypeOpt match
-                            case Some(idType) =>
-                                idType.parse(idValue) match
-                                    case Right(id) =>
-                                        Right(Some(id))
-                                    case Left(error) =>
-                                        Left(ValueParseError(name, value.toString, error.message))
-                            case None =>
-                                Left(ValueParseError(name, value.toString, "No ID type for object"))
-                    case None =>
-                        Right(None)
+                val idAndParentRes: Either[SingleMessageError, Option[(ID, AbstractObjectEntityType[ID, _])]] =
+                    (topFields.get("parent"), parent) match
+                        case (Some(JsObject(parentData)), Some(parentTypeDef)) =>
+                            (parentData.get("id"), parentData.get("type")) match
+                                case (Some(idJson), Some(JsString(parentTypeName))) =>
+                                    val parentTypeActual = GlobalTypesMap.getTypeByName(parentTypeName) match
+                                        case Some(parentTypeActual) => Right(parentTypeActual)
+                                        case None => Left(ValueParseError(name, value.toString, s"Parent type: \"$parentTypeName\" not found!"))
+                                    val objectParentTypeActualRes = parentTypeActual.flatMap {
+                                        case objectParentTypeActual: AbstractObjectEntityType[ID, _] =>
+                                            if objectParentTypeActual.isChildOf(parentTypeDef) then
+                                                Right(objectParentTypeActual)
+                                            else
+                                                Left(ValueParseError(name, value.toString, s"Parent type: $objectParentTypeActual is not a child of " +
+                                                    s"parent definition type: ${parentTypeDef.name}!"))
+                                        case _ =>
+                                            Left(ValueParseError(name, value.toString, s"Parent type: $parentTypeActual is not an object type!"))
+                                    }
+                                    val idValue = parentTypeDef.valueType.idType.parse(idJson)
+                                    (idValue, objectParentTypeActualRes) match  
+                                        case (Right(id), Right(parentTypeActual)) =>
+                                            Right(Some(id, parentTypeActual))
+                                        case (idError: Left[_, _], Right(_)) =>
+                                            idError.asInstanceOf[Left[SingleMessageError, Option[(ID, AbstractObjectEntityType[ID, _])]]]
+                                        case (Right(_), typeError: Left[_, _]) =>
+                                            typeError.asInstanceOf[Left[SingleMessageError, Option[(ID, AbstractObjectEntityType[ID, _])]]]
+                                        case (Left(idError), Left(typeError)) =>
+                                            Left(ValueParseError(name, value.toString, s"Parent errors found! id: ${idError.message} and " +
+                                                s"type: $parentTypeActual"))
+                                case _ =>
+                                    Left(ValueParseError(name, value.toString, s"Parent id: ${parentData.get("id")}, or type: ${parentData.get("type")}  " +
+                                        s"are absent when required!"))
+                        case (None, None) =>
+                            Right(None)
+                        case _ => 
+                            Left(ValueParseError(name, value.toString, s"Parent definition and value mismatch! Def: $parent, " +
+                                s"value: ${topFields.get("parent")}"))
 
                 val parsedFields: Either[SingleMessageError, Map[String, EntityValue]] =
                     topFields.get("value") match
@@ -423,12 +452,12 @@ final case class SimpleObjectTypeDefinition[ID <: FilledEntityId[_, ID]](
                         case None =>
                             Left(ValueParseError(name, value.toString, "No value field in object"))
 
-                id.flatMap(id => parsedFields.map(fields => SimpleObjectValue(id, fields, SimpleObjectType(this))))
+                idAndParentRes.flatMap(idAndParent => parsedFields.map(fields => SimpleObjectValue(idAndParent, fields, SimpleObjectType(this))))
             case _ =>
                 Left(ValueParseError(name, value.toString, "not an object"))
 
 object SimpleObjectTypeDefinition:
-    def apply[ID <: FilledEntityId[_, ID]](
+    def apply[ID <: EntityId[_, ID]](
                                               parent: Option[ObjectEntitySuperType[_, _]],
                                               fields: Map[String, FieldTypeDefinition[_]],
                                           ): SimpleObjectTypeDefinition[ID] =

@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.entity.domain.types
 
 import my.valerii_timakov.sgql.entity.TypesConsistencyError
 import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractTypeDefinition, ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinition, FieldsContainer, ItemValueTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition}
-import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, CustomPrimitiveValue, Entity, EntityId, EntityValue, FilledEntityId, ItemValue, ObjectValue, RootPrimitiveValue, ValueTypes}
+import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, CustomPrimitiveValue, Entity, EntityId, EntityValue, ItemValue, ObjectValue, RootPrimitiveValue, ValueTypes}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, WrongStateExcetion}
 import my.valerii_timakov.sgql.services.{AbstractObjectPersistenceData, ArrayTypePersistenceDataFinal, ObjectTypePersistenceDataFinal, OneValuePersistenceDataFinal, PrimitiveTypePersistenceDataFinal, PrimitiveValuePersistenceDataFinal, ReferenceValuePersistenceDataFinal, SimpleObjectValuePersistenceDataFinal, TypePersistenceDataFinal}
 import spray.json.{JsArray, JsObject, JsString, JsValue}
@@ -132,11 +132,11 @@ sealed trait ItemValueType extends FieldValueType:
     def valueType: ItemValueTypeDefinition[_]
     def name: String = valueType.name
 
-case class SimpleObjectType[ID <: FilledEntityId[_, ID]](valueType: SimpleObjectTypeDefinition[ID]) extends FieldValueType
+case class SimpleObjectType[ID <: EntityId[_, ID]](valueType: SimpleObjectTypeDefinition[ID]) extends FieldValueType
 
-case class ReferenceType[ID <: FilledEntityId[_, ID]](valueType: TypeReferenceDefinition[ID]) extends ItemValueType
+case class ReferenceType[ID <: EntityId[_, ID]](valueType: TypeReferenceDefinition[ID]) extends ItemValueType
 
-case class BackReferenceType[ID <: FilledEntityId[_, ID]](valueType: TypeBackReferenceDefinition[ID]) extends FieldValueType
+case class BackReferenceType[ID <: EntityId[_, ID]](valueType: TypeBackReferenceDefinition[ID]) extends FieldValueType
 
 sealed abstract class AbstractNamedType extends AbstractType:
     private var id: Option[Long] = None
@@ -247,14 +247,29 @@ case class ObjectEntityType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     name: String,
     valueType: ObjectTypeDefinition[ID, VT],
 ) extends EntityType[ID, VT, Map[String, EntityValue]], AbstractObjectEntityType[ID, VT]:
-    def createEntity(id:EntityId[_, _], value: Map[String, EntityValue]):  ObjectValue[ID, VT] =
-        ObjectValue(checkId(id), value, this)
+    def createEntity(id:EntityId[_, _], fieldsMap: Map[String, Option[EntityValue]]):  ObjectValue[ID, VT] =
+        fieldsMap
+            .filter(_._2.isEmpty)
+            .foreach((fieldName, fieldValueOpt) =>
+                val fieldType = valueType.fields.getOrElse(fieldName, throw new WrongStateExcetion(
+                    s"Field $fieldName not found in object type $name to create entity!"))
+                if !fieldType.isNullable then
+                    throw new WrongStateExcetion(s"Field $fieldName value not found in provided fields to create entity of type $name!")
+            )
+        val checkedFieldsMap: Map[String, EntityValue] = fieldsMap
+            .collect { case (fieldName, Some(fieldValue)) => fieldName -> fieldValue }
+        ObjectValue(checkId(id), checkedFieldsMap, this)
 
-trait EntitySuperType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractEntityType[ID, VT, V]:
+abstract class EntitySuperType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractEntityType[ID, VT, V]:
+    private var _directChildren: List[AbstractEntityType[ID, _, V]] = Nil
+    private[domain] def addDirectChild(child: AbstractEntityType[ID, _, V]): Unit =
+        _directChildren = child :: _directChildren
+    def directChildren: List[AbstractEntityType[ID, _, V]] =
+        _directChildren
     def name: String
     def valueType: EntityTypeDefinition[ID, VT, V]
     @tailrec
-    final def hasChild(entityType: AbstractEntityType[ID, _, _]): Boolean =
+    final def hasChild[ID2 <: EntityId[_, ID2]](entityType: AbstractEntityType[ID2, _, _]): Boolean =
         entityType.getId == getId || (entityType.valueType.parent match
                 case None => false
                 case Some(parent) => hasChild(parent)
@@ -263,21 +278,22 @@ trait EntitySuperType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: Value
 case class PrimitiveEntitySuperType[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[V]](
     name: String,
     valueType: CustomPrimitiveTypeDefinition[ID, VT, V],
-) extends EntitySuperType[ID, VT, V], AbstractPrimitiveEntityType[ID, VT, V]
+) extends EntitySuperType[ID, VT, V], AbstractPrimitiveEntityType[ID, VT, V]:
+    def directChildren: List[AbstractPrimitiveEntityType[ID, _, _]] =
+        super.directChildren.asInstanceOf[List[AbstractPrimitiveEntityType[ID, _, _]]]
 
 case class ArrayEntitySuperType[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
     name: String,
     valueType: ArrayTypeDefinition[ID, VT],
-) extends EntitySuperType[ID, VT, Seq[ItemValue]], AbstractArrayEntityType[ID, VT]
+) extends EntitySuperType[ID, VT, Seq[ItemValue]], AbstractArrayEntityType[ID, VT]:
+    def directChildren: List[AbstractArrayEntityType[ID, _]] =
+        super.directChildren.asInstanceOf[List[AbstractArrayEntityType[ID, _]]]
 
 case class ObjectEntitySuperType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     name: String,
     valueType: ObjectTypeDefinition[ID, VT],
 ) extends EntitySuperType[ID, VT, Map[String, EntityValue]], AbstractObjectEntityType[ID, VT]:
-    private var _directChildren: List[AbstractObjectEntityType[ID, _]] = Nil
-    private[domain] def addDirectChild(child: AbstractObjectEntityType[ID, _]): Unit =
-        _directChildren = child :: _directChildren
     def directChildren: List[AbstractObjectEntityType[ID, _]] =
-        _directChildren
+        super.directChildren.asInstanceOf[List[AbstractObjectEntityType[ID, _]]]
 
 
