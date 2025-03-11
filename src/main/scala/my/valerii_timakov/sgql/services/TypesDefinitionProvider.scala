@@ -20,7 +20,8 @@ trait TypesDefinitionProvider:
     def getAllTypes: Seq[AbstractEntityType[_, _, _]]
     def getPersistenceData(name: String): Option[TypePersistenceDataFinal]
     def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal]
-    def getAllLeafObjectsSubtypes[ID <: EntityId[_, ID]](entityType: ObjectEntitySuperType[ID, _]): Set[ObjectEntityType[ID, _]]
+    def getAllLeafObjectsSubtypesTyped[ID <: EntityId[_, ID]](entityType: ObjectEntitySuperType[ID, _]): Set[ObjectEntityType[ID, _]]
+    def getAllLeafObjectsSubtypes(entityType: ObjectEntitySuperType[_, _]): Set[ObjectEntityType[_, _]]
     def validateGetFieldsDescriptor(descriptor: ObjectGetFieldsDescriptor, entityType: AbstractEntityType[_, _, _]):
         Either[entity.Error, Unit]
     def parseSearchCondition(condition: Option[String], entityType: AbstractEntityType[_, _, _]):
@@ -58,7 +59,9 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
     def getPersistenceData(name: String): Option[TypePersistenceDataFinal] = globalTypesMap.getTypeByName(name).map(_.persistenceData)
     def getAllPersistenceDataMap: Map[String, TypePersistenceDataFinal] =
         globalTypesMap.getAllTypes.map(entityType => entityType.name -> entityType.persistenceData).toMap
-    def getAllLeafObjectsSubtypes[ID <: EntityId[_, ID]](entityType: ObjectEntitySuperType[ID, _]): Set[ObjectEntityType[ID, _]] = 
+    def getAllLeafObjectsSubtypesTyped[ID <: EntityId[_, ID]](entityType: ObjectEntitySuperType[ID, _]): Set[ObjectEntityType[ID, _]] = 
+        globalTypesMap.getAllLeafObjectsSubtypes(entityType).asInstanceOf[Set[ObjectEntityType[ID, _]]]
+    def getAllLeafObjectsSubtypes(entityType: ObjectEntitySuperType[_, _]): Set[ObjectEntityType[_, _]] =
         globalTypesMap.getAllLeafObjectsSubtypes(entityType)
     def validateGetFieldsDescriptor(
                                     descriptor: ObjectGetFieldsDescriptor,

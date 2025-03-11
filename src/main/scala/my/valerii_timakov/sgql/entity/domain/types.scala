@@ -23,7 +23,7 @@ trait GlobalTypesMap:
     def getTypeByName(name: String): Option[AbstractEntityType[_, _, _]]
     def getTypeById(id: Long): Option[AbstractEntityType[_, _, _]]
     def getAllTypes: Seq[AbstractEntityType[_, _, _]]
-    def getAllLeafObjectsSubtypes[ID <: EntityId[_, ID]](entityType: ObjectEntitySuperType[ID, _]): Set[ObjectEntityType[ID, _]]
+    def getAllLeafObjectsSubtypes(entityType: ObjectEntitySuperType[_, _]): Set[ObjectEntityType[_, _]]
 
 object GlobalTypesMap extends GlobalTypesMap:
     private var _maps: Option[TypesMaps] = None
@@ -97,13 +97,13 @@ object GlobalTypesMap extends GlobalTypesMap:
 
     def getTypeByName(name: String): Option[AbstractEntityType[_, _, _]] = Option(byNameMap.get(name))
     def getTypeById(id: Long): Option[AbstractEntityType[_, _, _]] = Option(byIdMap.get(id))
-    def getAllLeafObjectsSubtypes[ID <: EntityId[_, ID]](entityType: ObjectEntitySuperType[ID, _]): Set[ObjectEntityType[ID, _]] =
+    def getAllLeafObjectsSubtypes(entityType: ObjectEntitySuperType[_, _]): Set[ObjectEntityType[_, _]] =
         leafObjectSubTypesCache.getOrElseUpdate(entityType,
             maps.byIdMap.values().asScala
                 .collect { case objectType: ObjectEntityType[_, _] => objectType }
                 .filter(_.isChildOf(entityType))
                 .toSet
-        ).asInstanceOf[Set[ObjectEntityType[ID, _]]]
+        )
 //    def getAllLeafArraysSubtypes(entityType: ArrayEntitySuperType[_, _]): Set[AbstractEntityType[_, _, _]] =
 //        subTypesCache.getOrElseUpdate(entityType,
 //            maps.byIdMap.values().asScala.filter( _ match

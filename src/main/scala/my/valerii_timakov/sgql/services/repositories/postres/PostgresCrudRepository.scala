@@ -390,7 +390,7 @@ class PostgresCrudRepository(
                                                                            fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
                                                                            fieldValuesMap: Map[String, EntityValue] = Map()
         ) =
-            val entities = typesDefinitionsProvider.getAllLeafObjectsSubtypes(refType).map(leafSubType =>
+            val entities = typesDefinitionsProvider.getAllLeafObjectsSubtypesTyped(refType).map(leafSubType =>
                     extractObject(leafSubType, subFieldsDscs, Some(ownerDsc), rs, fieldsMap)
                 )
                 .collect({ case Some(entity) => entity })
