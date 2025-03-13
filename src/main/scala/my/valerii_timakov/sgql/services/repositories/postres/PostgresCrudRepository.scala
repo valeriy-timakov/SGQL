@@ -851,9 +851,8 @@ class PostgresCrudRepository(
                                 val soParentSubtypesTgds = typeDef.parent.map(parentType =>
                                     val processedParentsSet = Some(mutable.Set[ObjectEntitySuperType[_, _]]())
                                     typesDefinitionsProvider.getAllLeafObjectsSubtypes(parentType).flatMap(subtype =>
-                                        getAllObjectTablesGetDescriptors(subtype, fieldsDescriptors, nextReferer, Some(currFieldChainCell), processedParentsSet))
+                                        getAllObjectTablesGetDescriptors(subtype, fieldsDescriptors, refererPart.prevReferef, Some(currFieldChainCell), processedParentsSet))
                                 ).getOrElse(Set())
-                                val subTypesTablesGetDefinitions =
                                 (soSubfieldsData._1 ++ acc._1, acc._2, soSubfieldsData._2 ++ soParentSubtypesTgds ++ acc._3)
                             case _ =>
                                 throw new ConsistencyException(s"Get field descriptor $gfd is not supported for $fieldTypeDef and $typeDef!")

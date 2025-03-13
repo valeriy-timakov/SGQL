@@ -398,10 +398,10 @@ final case class SimpleObjectTypeDefinition[ID <: EntityId[_, ID]](
                         case (Some(JsObject(parentData)), Some(parentTypeDef)) =>
                             (parentData.get("id"), parentData.get("type")) match
                                 case (Some(idJson), Some(JsString(parentTypeName))) =>
-                                    val parentTypeActual = GlobalTypesMap.getTypeByName(parentTypeName) match
+                                    val parentTypeActual: Either[ValueParseError, AbstractEntityType[_, _, _]] = GlobalTypesMap.getTypeByName(parentTypeName) match
                                         case Some(parentTypeActual) => Right(parentTypeActual)
                                         case None => Left(ValueParseError(name, value.toString, s"Parent type: \"$parentTypeName\" not found!"))
-                                    val objectParentTypeActualRes = parentTypeActual.flatMap {
+                                    val objectParentTypeActualRes: Either[ValueParseError, AbstractObjectEntityType[ID, _]] = parentTypeActual.flatMap {
                                         case objectParentTypeActual: AbstractObjectEntityType[ID, _] =>
                                             if objectParentTypeActual.isChildOf(parentTypeDef) then
                                                 Right(objectParentTypeActual)

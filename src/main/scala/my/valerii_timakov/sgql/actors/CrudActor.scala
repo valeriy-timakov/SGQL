@@ -98,7 +98,7 @@ class CrudActor(
             case Some(entityType: EntityType[_, _, _]) =>
                 typeMapper(entityType)
                 
-    private def parseId[Res, ID](entityType: EntityType[ID, _, _], idStr: String)
+    private def parseId[Res, ID <: EntityId[_, ID]](entityType: EntityType[ID, _, _], idStr: String)
                             (idMapper: ID => Either[entity.Error, Try[Res]])
     : Either[entity.Error, Try[Res]] =
         val idDef: EntityIdTypeDefinition[ID] = entityType.valueType.idType
