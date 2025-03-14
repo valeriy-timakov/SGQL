@@ -336,11 +336,11 @@ class PostgresCrudRepository(
                     deleteArrayValues(items)
         }
 
-    def get[ID <: EntityId[_, ID]](
-                                      entityType: EntityType[ID, _, _],
-                                      id: EntityId[_, ID],
-                                      getFields: ObjectGetFieldsDescriptor
-                                  )(implicit session: DBSession): Try[Option[Entity[ID, _, _]]] =
+    def get[ID1 <: EntityId[_, ID1]](
+                                        entityType: EntityType[ID1, _, _],
+                                        id: EntityId[_, ID1],
+                                        getFields: ObjectGetFieldsDescriptor
+                                  )(implicit session: DBSession): Try[Option[Entity[ID1, _, _]]] =
         val namesDelimiter: String = ", "
         def getTableAliace(map:  Map[(Option[RefererTableData], String), String], tgd: ReferredTable) =
             map.getOrElse((tgd.referer, tgd.tableName), throw new ConsistencyException(s"Table aliace not found for ${(tgd.referer, tgd.tableName)}"))
@@ -485,10 +485,10 @@ class PostgresCrudRepository(
                         fieldName -> fieldTypeDef.extract(rs, fieldIdx)
                     case (SingleGetFieldsDescriptor(fieldName), fieldTypeDef: TypeReferenceDefinition[_]) =>
                         fieldName -> fieldTypeDef.extract(rs, fieldIdx)
-                    case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), fieldTypeDef: TypeReferenceDefinition[idtype]) =>
-                        fieldName -> Some(extractRefObject[idtype](fieldTypeDef, subFieldsDscs, currFieldDsc, fieldIdx, fieldName, rs, fieldsMap))
-                    case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), soTypeDef: SimpleObjectTypeDefinition[idtype]) =>
-                        fieldName -> extractSimpleObject[idtype](soTypeDef, subFieldsDscs, currFieldDsc, rs, fieldsMap)
+                    case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), fieldTypeDef: TypeReferenceDefinition[ID]) =>
+                        fieldName -> Some(extractRefObject[ID](fieldTypeDef, subFieldsDscs, currFieldDsc, fieldIdx, fieldName, rs, fieldsMap))
+                    case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), soTypeDef: SimpleObjectTypeDefinition[ID]) =>
+                        fieldName -> extractSimpleObject[ID](soTypeDef, subFieldsDscs, currFieldDsc, rs, fieldsMap)
             )
 
             
@@ -509,7 +509,7 @@ class PostgresCrudRepository(
 
         Try {
             val res = entityType match
-                case primType: CustomPrimitiveEntityType[ID, _, _] =>
+                case primType: CustomPrimitiveEntityType[ID1, _, _] =>
                     val persData = primType.persistenceData
                     val valueOpt =
                         SQL(s"""
@@ -523,7 +523,7 @@ class PostgresCrudRepository(
                             .apply()
                             .flatten
                     //valueOpt.map(value => primType.createEntityRaw(id, value))
-                case objectType: ObjectEntityType[ID, _] =>
+                case objectType: ObjectEntityType[ID1, _] =>
                     val fieldsInDescriptor = getFields match
                         case ObjectGetFieldsDescriptor(Left(AllGetFieldsDescriptor)) => getAllFieldsGetDescriptor(objectType.valueType)
                         case ObjectGetFieldsDescriptor(Right(fields)) => fields
