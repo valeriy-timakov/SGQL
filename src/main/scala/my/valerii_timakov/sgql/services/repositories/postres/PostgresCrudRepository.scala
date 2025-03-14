@@ -411,7 +411,7 @@ class PostgresCrudRepository(
             extractObjectId(objectType, Some(ownerDsc), rs, fieldsMap).map(id =>
                 objectType match
                     case leafType: ObjectEntityType[ID2, _] =>
-                        (id, leafType)
+                        (id, leafType.asInstanceOf[ObjectEntityType[ID2, _]])
                     case superType: ObjectEntitySuperType[ID2, _] =>
                         val existingChildren = superType.directChildren
                             .map(getLastExistingChild(_, ownerDsc, rs, fieldsMap))
@@ -419,7 +419,7 @@ class PostgresCrudRepository(
                         if (existingChildren.size == 1)
                             existingChildren.iterator.next()
                         else if (existingChildren.isEmpty)
-                            (id, superType)
+                            (id, superType.asInstanceOf[ObjectEntitySuperType[ID2, _]])
                         else
                             throw new ConsistencyException(s"Multiple entities found for type $objectType! Found: $existingChildren")
             )
