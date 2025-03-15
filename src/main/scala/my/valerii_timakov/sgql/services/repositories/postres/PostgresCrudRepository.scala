@@ -359,6 +359,18 @@ class PostgresCrudRepository(
         def getListLineReversed(tablesLines: List[String]): String =
             getTablesLineReversedInner(tablesLines, 0, "").toString
 
+
+        def extractRefObject2(
+                                                         refFieldTypeDef: TypeReferenceDefinition[_],
+                                                         subFieldsDscs: List[NestedGetFieldsDescriptor],
+                                                         ownerDsc: GetDescriptorChainCell,
+                                                         refFieldIdx: Int,
+                                                         refFieldName: String,
+                                                         rs: WrappedResultSet,
+                                                         fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
+                                                     ): ReferenceValue[_] =
+            extractRefObject(refFieldTypeDef, subFieldsDscs, ownerDsc, refFieldIdx, refFieldName, rs, fieldsMap)
+
         def extractRefObject[ID2 <: EntityId[_, ID2]](
                                                                refFieldTypeDef: TypeReferenceDefinition[ID2],
                                                                subFieldsDscs: List[NestedGetFieldsDescriptor],
@@ -424,6 +436,16 @@ class PostgresCrudRepository(
                             throw new ConsistencyException(s"Multiple entities found for type $objectType! Found: $existingChildren")
             )
 
+
+        def extractSimpleObject2(
+                                                            objectType: SimpleObjectTypeDefinition[_],
+                                                            getFieldsDscs: List[NestedGetFieldsDescriptor],
+                                                            ownerDsc: GetDescriptorChainCell,
+                                                            rs: WrappedResultSet,
+                                                            fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                                                        ): Option[SimpleObjectValue[_]] =
+            extractSimpleObject(objectType, getFieldsDscs, ownerDsc, rs, fieldsMap)
+
         def extractSimpleObject[ID2 <: EntityId[_, ID2]](
                                                                   objectType: SimpleObjectTypeDefinition[ID2],
                                                                   getFieldsDscs: List[NestedGetFieldsDescriptor],
@@ -485,10 +507,10 @@ class PostgresCrudRepository(
                         fieldName -> fieldTypeDef.extract(rs, fieldIdx)
                     case (SingleGetFieldsDescriptor(fieldName), fieldTypeDef: TypeReferenceDefinition[_]) =>
                         fieldName -> fieldTypeDef.extract(rs, fieldIdx)
-                    case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), fieldTypeDef: TypeReferenceDefinition[ID]) =>
-                        fieldName -> Some(extractRefObject[ID](fieldTypeDef, subFieldsDscs, currFieldDsc, fieldIdx, fieldName, rs, fieldsMap))
-                    case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), soTypeDef: SimpleObjectTypeDefinition[ID]) =>
-                        fieldName -> extractSimpleObject[ID](soTypeDef, subFieldsDscs, currFieldDsc, rs, fieldsMap)
+                    case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), fieldTypeDef: TypeReferenceDefinition[_]) =>
+                        fieldName -> Some(extractRefObject2(fieldTypeDef, subFieldsDscs, currFieldDsc, fieldIdx, fieldName, rs, fieldsMap))
+                    case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), soTypeDef: SimpleObjectTypeDefinition[_]) =>
+                        fieldName -> extractSimpleObject2(soTypeDef, subFieldsDscs, currFieldDsc, rs, fieldsMap)
             )
 
             
@@ -571,7 +593,7 @@ class PostgresCrudRepository(
                                             
                                         case primitiveEntityType: AbstractPrimitiveEntityType[_, _, _] =>
                                             currFieldIdx += 1
-                                            fieldsMap += (gfd.getDescriptorChainCell, None) -> (currFieldIdx, primitiveEntityType.valueType.rootType)
+                                            fieldsMap += (gfd.getDescriptorChainCell, None) -> (currFieldIdx, primitiveEntityType.valueType.rootType.asInstanceOf[FieldValueTypeDefinition[_]])
                                             (s"$tableAlias.${esc(primitiveEntityType.persistenceData.valueColumn.columnName)}" :: columnsList, backRefFieldsList)
                             )
                             (
