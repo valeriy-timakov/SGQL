@@ -476,7 +476,7 @@ class PostgresCrudRepository(
                    ): Option[ObjectValue[ID2, _]] =
             extractObjectId(objectType, ownerDsc, rs, fieldsMap).map(id =>
                 val fields = extractFieldsValues(mainObjectGetFieldsDscs, ownerDsc, rs, fieldsMap).toMap
-                objectType.createEntity(id, fields)
+                objectType.createEntityAndCheckFields(id, fields)
             )
             
         def extractObjectId[ID2 <: EntityId[_, ID2]](
@@ -870,10 +870,10 @@ class PostgresCrudRepository(
                             case SubObjectGetFieldsDescriptor(_, Right(fieldsDescriptors)) =>
                                 val soSubfieldsData = getSimpleObjectTablesGetDescriptors(currFieldChainCell,
                                     simpleObjectPersistenceData, typeDef, fieldsDescriptors, refererPart, currTypeName)
-                                val soParentSubtypesTgds = typeDef.parent.map(parentType =>
-                                    val processedParentsSet = Some(mutable.Set[ObjectEntitySuperType[_, _]]())
+                                val soParentSubtypesTgds = typeDef.parent.map((parentType: ObjectEntitySuperType[_, _]) =>
                                     typesDefinitionsProvider.getAllLeafObjectsSubtypes(parentType).flatMap(subtype =>
-                                        getAllObjectTablesGetDescriptors(subtype, fieldsDescriptors, refererPart.prevReferef, Some(currFieldChainCell), processedParentsSet))
+                                        getAllObjectTablesGetDescriptors(subtype, fieldsDescriptors, refererPart.prevReferef, 
+                                            Some(currFieldChainCell), Some(mutable.Set[ObjectEntitySuperType[_, _]]())))
                                 ).getOrElse(Set())
                                 (soSubfieldsData._1 ++ acc._1, acc._2, soSubfieldsData._2 ++ soParentSubtypesTgds ++ acc._3)
                             case _ =>
@@ -881,7 +881,8 @@ class PostgresCrudRepository(
                     case (Some(referenceValueFieldPersistenceData: ReferenceValuePersistenceDataFinal), typeDef: TypeReferenceDefinition[_]) =>
                         //val refType: AbstractEntityType[_, _, _] = typeDef.referencedType
                         val nextReferer = Some(refererPart.toRefererTableData(referenceValueFieldPersistenceData.columnName))
-                        (gfd, typeDef.referencedType) match
+                        val rt: AbstractEntityType[_, _, _] = typeDef.referencedType
+                        (gfd, rt) match
                             case (SubObjectGetFieldsDescriptor(_, Right(fieldsDescriptors)), objectType: ObjectEntityType[_, _]) =>
                                 (acc._1, acc._2, getAllObjectTablesGetDescriptors(objectType, fieldsDescriptors, nextReferer, Some(currFieldChainCell)) ++ acc._3)
                             case (SubObjectGetFieldsDescriptor(_, Right(fieldsDescriptors)), objectType: ObjectEntitySuperType[_, _]) =>

@@ -247,8 +247,8 @@ case class ObjectEntityType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     name: String,
     valueType: ObjectTypeDefinition[ID, VT],
 ) extends EntityType[ID, VT, Map[String, EntityValue]], AbstractObjectEntityType[ID, VT]:
-    def createEntity(id:EntityId[_, _], fieldsMap: Map[String, Option[EntityValue]]):  ObjectValue[ID, VT] =
-        fieldsMap
+    def createEntityAndCheckFields(id:EntityId[_, _], value: Map[String, Option[EntityValue]]):  ObjectValue[ID, VT] =
+        value
             .filter(_._2.isEmpty)
             .foreach((fieldName, fieldValueOpt) =>
                 val fieldType = valueType.fields.getOrElse(fieldName, throw new WrongStateExcetion(
@@ -256,9 +256,11 @@ case class ObjectEntityType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
                 if !fieldType.isNullable then
                     throw new WrongStateExcetion(s"Field $fieldName value not found in provided fields to create entity of type $name!")
             )
-        val checkedFieldsMap: Map[String, EntityValue] = fieldsMap
+        val checkedFieldsMap: Map[String, EntityValue] = value
             .collect { case (fieldName, Some(fieldValue)) => fieldName -> fieldValue }
-        ObjectValue(checkId(id), checkedFieldsMap, this)
+        createEntity(id, checkedFieldsMap)
+    def createEntity(id:EntityId[_, _], value: Map[String, EntityValue]):  ObjectValue[ID, VT] =
+        ObjectValue(checkId(id), value, this)
 
 abstract class EntitySuperType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractEntityType[ID, VT, V]:
     private var _directChildren: List[AbstractEntityType[ID, _, V]] = Nil
@@ -279,21 +281,21 @@ case class PrimitiveEntitySuperType[ID <: EntityId[_, ID], VT <: CustomPrimitive
     name: String,
     valueType: CustomPrimitiveTypeDefinition[ID, VT, V],
 ) extends EntitySuperType[ID, VT, V], AbstractPrimitiveEntityType[ID, VT, V]:
-    def directChildren: List[AbstractPrimitiveEntityType[ID, _, _]] =
-        super.directChildren.asInstanceOf[List[AbstractPrimitiveEntityType[ID, _, _]]]
+    override def directChildren: List[AbstractPrimitiveEntityType[ID, _, V]] =
+        super.directChildren.asInstanceOf[List[AbstractPrimitiveEntityType[ID, _, V]]]
 
 case class ArrayEntitySuperType[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
     name: String,
     valueType: ArrayTypeDefinition[ID, VT],
 ) extends EntitySuperType[ID, VT, Seq[ItemValue]], AbstractArrayEntityType[ID, VT]:
-    def directChildren: List[AbstractArrayEntityType[ID, _]] =
+    override def directChildren: List[AbstractArrayEntityType[ID, _]] =
         super.directChildren.asInstanceOf[List[AbstractArrayEntityType[ID, _]]]
 
 case class ObjectEntitySuperType[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     name: String,
     valueType: ObjectTypeDefinition[ID, VT],
 ) extends EntitySuperType[ID, VT, Map[String, EntityValue]], AbstractObjectEntityType[ID, VT]:
-    def directChildren: List[AbstractObjectEntityType[ID, _]] =
+    override def directChildren: List[AbstractObjectEntityType[ID, _]] =
         super.directChildren.asInstanceOf[List[AbstractObjectEntityType[ID, _]]]
 
 

@@ -116,8 +116,8 @@ case object StringIdTypeDefinition extends EntityIdTypeDefinition[StringId]("Str
     protected override def parseInner(value: String): StringId = StringId(value)
 
 case class FixedStringIdTypeDefinition(length: Int) extends EntityIdTypeDefinition[FixedStringId](FixedStringIdTypeDefinition.name):
-    def createValue(value: String): StringId = StringId(value)
-    def extract(rs: WrappedResultSet, pos: Int): Option[StringId] = rs.stringOpt(pos).map(createValue)
+    def createValue(value: String): FixedStringId = FixedStringId(value, this)
+    def extract(rs: WrappedResultSet, pos: Int): Option[FixedStringId] = rs.stringOpt(pos).map(createValue)
     def toJson(value: FixedStringId): JsValue = JsString(value.value)
     def parse(value: JsValue): Either[ValueParseError, FixedStringId] =
         parseString(value, rootCause => Left(new ValueParseError(name, value.toString, rootCause))).map(FixedStringId(_, this))
