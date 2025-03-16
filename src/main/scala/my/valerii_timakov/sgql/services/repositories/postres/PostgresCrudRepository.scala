@@ -674,7 +674,7 @@ class PostgresCrudRepository(
         UUIDFieldType -> Set("UUID"),
     )
 
-    private val generateRandomUUIDFunc = "uuid_generate_v4()"
+    private val generateRandomUUIDFunc = "public.uuid_generate_v4()"
 
     private final val DB_KEYWORDS_SET = Set("ALL", "ANALYSE", "ANALYZE", "AND", "ANY", "ARRAY", "AS", "ASC", "ASYMMETRIC",
         "AUTHORIZATION", "BINARY", "BOTH", "CASE", "CAST", "CHECK", "COLLATE", "COLUMN", "CONSTRAINT", "CREATE",
@@ -1036,6 +1036,9 @@ class PostgresCrudRepository(
             SQL(
                 s"""CREATE SCHEMA IF NOT EXISTS $typesSchemaName"""
             ).execute.apply()
+            SQL(
+                s"""CREATE EXTENSION IF NOT EXISTS "uuid-ossp" SCHEMA $typesSchemaName"""
+            ).execute.apply()
         }
 
     private def saveTypesToTablesMap(typeToTableMap: Map[String, String], version: Version): Map[String, Long] =
@@ -1196,15 +1199,15 @@ class PostgresCrudRepository(
         ): Unit =
             val fieldsSqlData = getFieldsColumsData(fields, None)
             val fieldsSql = fieldsSqlData.map { case (columnName, columnType, fieldName, isNullable) =>
-                s"${esc(columnName)} $columnType ${if isNullable then "" else "NOT NULL"}"
-            }.mkString(", ")
+                s"${esc(columnName)} $columnType ${if isNullable then "" else "NOT NULL"}, "
+            }.mkString("")
             val idColumnType = getIdFieldType(idColumn.columnType)
             val idAutogenerator = getIdAutoGenerator(idColumn.columnType)
             val idAutogeneratorSql = if idAutogenerator.isEmpty then "" else s" DEFAULT $idAutogenerator"
 
             SQL(s"""
                 CREATE TABLE $typesSchemaName.${esc(tableName)} (
-                    ${esc(idColumn.columnName)} $idColumnType NOT NULL idAutogeneratorSql,
+                    ${esc(idColumn.columnName)} $idColumnType NOT NULL $idAutogeneratorSql,
                     $fieldsSql
                     CONSTRAINT ${esc(tableName + primaryKeySuffix)} PRIMARY KEY (${esc(idColumn.columnName)})
                 )

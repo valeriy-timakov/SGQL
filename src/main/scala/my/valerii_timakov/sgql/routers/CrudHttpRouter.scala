@@ -43,9 +43,9 @@ class CrudHttpRouter(
     private val subobjectEndMark = conf.getString("subobject-end-mark")
     private val intervalFromMark = conf.getString("interval-from-mark")
     private val intervalToMark = conf.getString("interval-to-mark")
-    private val delimiters = List(fieldsDelimiter, searchPathPrefix, subobjectStartMark, subobjectEndMark,
-        intervalFromMark, intervalToMark).mkString(",")
-    private val delimitersPattern = s"($delimiters)".r
+//    private val delimiters = List(fieldsDelimiter, searchPathPrefix, subobjectStartMark, subobjectEndMark,
+//        intervalFromMark, intervalToMark).mkString(",")
+//    private val delimitersPattern = s"($delimiters)".r
 
     val route: Route =
         pathPrefix("crud" / Segment) { objectType =>
