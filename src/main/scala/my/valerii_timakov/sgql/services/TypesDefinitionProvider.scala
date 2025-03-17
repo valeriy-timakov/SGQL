@@ -2,9 +2,9 @@ package my.valerii_timakov.sgql.services
 
 import my.valerii_timakov.sgql.entity
 import my.valerii_timakov.sgql.entity.domain.type_values.EntityId
-import my.valerii_timakov.sgql.entity.{GetFieldsFieldValidateError, GetFieldsFieldsValidateError, GetFieldsParseError, SearchConditionParseError}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, GlobalTypesMap, ObjectEntitySuperType, ObjectEntityType}
 import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, GetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
+import my.valerii_timakov.sgql.entity.{GetFieldsFieldValidateError, GetFieldsFieldsValidateError, GetFieldsParseError, SearchConditionParseError}
 
 import scala.annotation.tailrec
 import scala.collection.immutable.Map
@@ -100,13 +100,13 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                                                  ): Either[entity.Error, Unit] =
         descriptor match
             case SingleGetFieldsDescriptor(fieldName) =>
-                if (entityType.valueType.allFields.contains(fieldName))
+                if (entityType.typeDefinition.allFields.contains(fieldName))
                     Right(Success(()))
                 else
                     Left(GetFieldsFieldValidateError(s"GetFieldDescriptor field $fieldName not present in corresponding " +
                         s"type $entityType!"))
             case descriptor: SubObjectGetFieldsDescriptor =>
-                entityType.valueType.allFields.get(descriptor.fieldName)
+                entityType.typeDefinition.allFields.get(descriptor.fieldName)
                     .map {
                         case objectFieldType: AbstractObjectEntityType[_, _] =>
                             validateObjectGetFieldsDescriptor(descriptor, objectFieldType)

@@ -3,9 +3,8 @@ package my.valerii_timakov.sgql.services
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.TypesDefinitionsParseError
 import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractRootPrimitiveTypeDefinition, ArrayItemTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, FieldTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, ItemValueTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectTypeDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
-import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, ArrayEntitySuperType, ArrayEntityType, CustomPrimitiveEntityType, EntityType, ObjectEntitySuperType, ObjectEntityType, PrimitiveEntitySuperType}
+import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, ArrayEntitySuperType, ArrayEntityType, CustomPrimitiveEntityType, ObjectEntitySuperType, ObjectEntityType, PrimitiveEntitySuperType}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, NoTypeFound, NotDefinedOperationException, TypesLoadExceptionException}
-
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -317,7 +316,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
         val tableNamesChecker = new TableNamesChecker()
         val rest: Iterable[TypeNameData] = typesDefinitionsMap
             .map((name, typeDef) =>
-                val subTypesNames =  typeDef.valueType match
+                val subTypesNames =  typeDef.typeDefinition match
                     case arr: ArrayTypeDefinition[_, _] => arr.allElementTypes.map(_._2.name).toList
                     case _ => List.empty
                 persistenceDataMap.get(name)
@@ -386,7 +385,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
 
         originalNamesData.foreach( typeNameData =>
             val (name, subNames) = (typeNameData.name, typeNameData.subNames)
-            findNthFromEnd(name, level, TypesDefinitionsParser.NAMESPACES_DILIMITER) match
+            findNthFromEnd(name, level, TypesDefinitionsParser.NAMESPACES_DELIMITER) match
                 case Some(pos) =>
                     val shortName = tableNameFromTypeName( name.substring(pos + 1) )
                     if (uniqueMap.contains(shortName))
@@ -427,7 +426,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
         val mandatoryMap = mutable.Map[String, String]()
 
         originalNames.foreach(name =>
-            findNthFromEnd(name, level, TypesDefinitionsParser.NAMESPACES_DILIMITER) match
+            findNthFromEnd(name, level, TypesDefinitionsParser.NAMESPACES_DELIMITER) match
                 case Some(pos) =>
                     val shortName = tableNameFromTypeName(name.substring(pos + 1))
                     if (uniqueMap.contains(shortName))
@@ -475,12 +474,12 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
     private def mergeTypePersistenceData(typeDef: AbstractEntityType[_, _, _],
                                          parsed: Option[AbstractTypePersistenceData]): TypePersistenceDataFinal =
         typeDef match
-            case ot: ObjectEntityType[_, _] => mergeObjectTypePersistenceData(ot.name, ot.valueType, parsed)
-            case ost: ObjectEntitySuperType[_, _] => mergeObjectTypePersistenceData(ost.name, ost.valueType, parsed)
-            case at: ArrayEntityType[_, _] => mergeArrayTypePersistenceData(at.name, at.valueType, parsed)
-            case ast: ArrayEntitySuperType[_, _] => mergeArrayTypePersistenceData(ast.name, ast.valueType, parsed)
-            case cpt: CustomPrimitiveEntityType[_, _, _] => mergePrimitiveTypePersistenceData(cpt.name, cpt.valueType, parsed)
-            case pst: PrimitiveEntitySuperType[_, _, _] => mergePrimitiveTypePersistenceData(pst.name, pst.valueType, parsed)
+            case ot: ObjectEntityType[_, _] => mergeObjectTypePersistenceData(ot.name, ot.typeDefinition, parsed)
+            case ost: ObjectEntitySuperType[_, _] => mergeObjectTypePersistenceData(ost.name, ost.typeDefinition, parsed)
+            case at: ArrayEntityType[_, _] => mergeArrayTypePersistenceData(at.name, at.typeDefinition, parsed)
+            case ast: ArrayEntitySuperType[_, _] => mergeArrayTypePersistenceData(ast.name, ast.typeDefinition, parsed)
+            case cpt: CustomPrimitiveEntityType[_, _, _] => mergePrimitiveTypePersistenceData(cpt.name, cpt.typeDefinition, parsed)
+            case pst: PrimitiveEntitySuperType[_, _, _] => mergePrimitiveTypePersistenceData(pst.name, pst.typeDefinition, parsed)
             case _ => throw new TypesLoadExceptionException(s"Type ${typeDef.name} not supported")
 
 
@@ -649,7 +648,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
                         )
                     case Left(ExpandParentMarkerSingle) =>
                         SimpleObjectParendData(
-                            parentDef.valueType.parent.map(superParentDef =>
+                            parentDef.typeDefinition.parent.map(superParentDef =>
                                 val fieldsParsedData = typesDataPersistenceMap.get(superParentDef.name)
                                     .flatMap(p =>
                                         if (!p.isInstanceOf[ObjectTypePersistenceData])
@@ -696,7 +695,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
                         )
                     case Some(ExpandParentMarkerSingle) =>
                         SimpleObjectParendData(
-                            parentDef.valueType.parent.map(superParentDef =>
+                            parentDef.typeDefinition.parent.map(superParentDef =>
                                 ParentTableReferenceFinal(tableReferenceFactory.createForType(superParentDef.name))),
                                 copyParentFieldsPersitenceData(fieldsPrefix, parentDef, false)
                         )
@@ -740,7 +739,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
         )
 
     private def getTypeSimpleName(typeName: String): String =
-        typeName.substring(typeName.lastIndexOf(TypesDefinitionsParser.NAMESPACES_DILIMITER) + 1)
+        typeName.substring(typeName.lastIndexOf(TypesDefinitionsParser.NAMESPACES_DELIMITER) + 1)
 
     private def copyParentFieldsPersitenceData(prefix: String,
                                                typeDef: ObjectEntitySuperType[_, _],
@@ -756,9 +755,9 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
             )
             .getOrElse(Map.empty)
 
-        val parentFieldsData = mergeFieldsPersistenceData(typeDef.valueType.fields, fieldsParsedData, typeDef.name, prefix_)
+        val parentFieldsData = mergeFieldsPersistenceData(typeDef.typeDefinition.fields, fieldsParsedData, typeDef.name, prefix_)
 
-        val superParentFieldsData = typeDef.valueType.parent.map(superParentType =>
+        val superParentFieldsData = typeDef.typeDefinition.parent.map(superParentType =>
             if (copySuperParents)
                 copyParentFieldsPersitenceData(prefix_, superParentType, copySuperParents)
             else
@@ -869,7 +868,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
             case ct: CustomPrimitiveEntityType[_, _, _] =>
                 persistData match
                     case fieldPersistType: PrimitiveValuePersistenceData =>
-                        checkRootPrimitiveAndPersistenceTypeConsistency(ct.valueType.rootType,
+                        checkRootPrimitiveAndPersistenceTypeConsistency(ct.typeDefinition.rootType,
                             fieldPersistType, itemDescriptionProvider)
                     case _ => // do nothing
             case PrimitiveEntitySuperType(_, valueType) =>
@@ -918,7 +917,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
             case refType: TypeReferenceDefinition[_] =>
                 fieldPersitenceData match
                     case primitivePersistenceData: PrimitiveValuePersistenceData =>
-                        refType.referencedType.valueType match
+                        refType.referencedType.typeDefinition match
                             case customPrimitiveType: CustomPrimitiveTypeDefinition[_, _, _] =>
                                 toPrimitivePersistenceDataFinal(customPrimitiveType.rootType, 
                                     primitivePersistenceData, fieldName, fieldType.isNullable,
@@ -926,7 +925,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
                             case otherType => throw new ConsistencyException("Only CustomPrimitiveTypeDefinition could be " +
                                 s"saved in primitive columns! Trying to save $otherType as $primitivePersistenceData.")
                     case SimpleObjectValuePersistenceData(parentRelation, fieldsPersistenceMap) =>
-                        refType.referencedType.valueType match
+                        refType.referencedType.typeDefinition match
                             case objectType: ObjectTypeDefinition[_, _] =>
                                 parentRelation match
                                     case Left(_ :ExpandParentMarker) =>
@@ -1022,7 +1021,11 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
 
         PrimitiveValuePersistenceDataFinal(colName(columnNameFinal), persisType, isNullable)
                     
-    private def tableNameFromTypeName(typeName: String): String = typeName.toLowerCase().replace(TypesDefinitionsParser.NAMESPACES_DILIMITER.toString, "_")
+    private def tableNameFromTypeName(typeName: String): String = camelCaseToSnakeCase(typeName).replace(TypesDefinitionsParser.NAMESPACES_DELIMITER.toString, "_")
     private def columnNameFromFieldName(fieldName: String): String = camelCaseToSnakeCase(fieldName)
-    private def camelCaseToSnakeCase(name: String): String = name.replaceAll("[A-Z]", "_$0").toLowerCase()
+    private def camelCaseToSnakeCase(name: String): String =
+        if (name.isEmpty)
+            name
+        else
+            name.substring(0, 1).toLowerCase() + name.substring(1).replaceAll("[A-Z]", "_$0").toLowerCase()
                 

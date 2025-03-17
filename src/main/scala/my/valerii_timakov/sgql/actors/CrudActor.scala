@@ -4,15 +4,16 @@ import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity
-import my.valerii_timakov.sgql.entity.{AbstractTypeError, GetFieldsParseError, TypeNotFountError}
-import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BinaryValue, Entity, EntityId, EntityValue}
 import my.valerii_timakov.sgql.entity.domain.type_definitions.EntityIdTypeDefinition
+import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, EntitySuperType, EntityType}
-import my.valerii_timakov.sgql.entity.read_modiriers.{AllGetFieldsDescriptor, GetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AllGetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
+import my.valerii_timakov.sgql.entity.{AbstractTypeError, GetFieldsParseError, TypeNotFountError}
 import my.valerii_timakov.sgql.exceptions.WrongStateExcetion
 import my.valerii_timakov.sgql.services.{CrudRepository, TypesDefinitionProvider}
 import spray.json.JsValue
 
+import java.util.regex.Pattern
 import scala.collection.mutable.ArrayBuffer
 import scala.util.{Failure, Success, Try}
 
@@ -33,38 +34,50 @@ class CrudActor(
     private val intervalFromMark = conf.getString("interval-from-mark")
     private val intervalToMark = conf.getString("interval-to-mark")
     private val delimiters = List(fieldsDelimiter, searchPathPrefix, subobjectStartMark, subobjectEndMark,
-        intervalFromMark, intervalToMark).mkString(",")
+        intervalFromMark, intervalToMark)
+        .map(Pattern.quote)
+        .mkString("|")
     private val delimitersPattern = s"($delimiters)".r
 
     import CrudActor.*
 
     override def onMessage(msg: CrudMessage): Behavior[CrudMessage] =
+        def processAndWrapError[Res](process: () => Res, errorMessage: String): Either[entity.Error, Try[Res]] =
+            val res =
+                try
+                    Success(process())
+                catch
+                    case e: Exception =>
+                        context.log.error(errorMessage, e)
+                        Failure(e)
+            Right(res)
+
         msg match
             case CreateMessage(entityTypeName, data, replyTo) =>
                 replyTo ! getType(entityTypeName) { entityType =>
-                    entityType.valueType.parseValue(data) match
+                    entityType.typeDefinition.parseValue(data) match
                         case Left(error) =>
                             Left(error)
                         case Right(value) =>
-                            Right(repository.create(entityType, value))
+                            processAndWrapError(() => repository.create(entityType, value), "Error creating entity!")
                 }
                 this
             case UpdateMessage(entityTypeName, idStr, data, replyTo) =>
                 replyTo ! getType(entityTypeName) { entityType =>
                     parseId(entityType, idStr) { id =>
-                        entityType.valueType.parseValue(data) match
+                        entityType.typeDefinition.parseValue(data) match
                             case Left(error) =>
                                 Left(error)
                             case Right(value) =>
                                 val entity = entityType.createEntity(id, value)
-                                Right(repository.update(entity))
+                                processAndWrapError(() => repository.update(entity), "Error editing entity!")
                     }
                 }
                 this
             case DeleteMessage(entityTypeName, idStr, replyTo) =>
                 replyTo ! getType(entityTypeName) { entityType =>
                     parseId(entityType, idStr) { id =>
-                        Right(repository.delete(entityType, id))
+                        processAndWrapError(() => repository.delete(entityType, id), "Error deleting entity!")
                     }
                 }
                 this
@@ -72,7 +85,7 @@ class CrudActor(
                 replyTo ! getType(entityTypeName) { entityType =>
                     parseId(entityType, idStr) { id =>
                         parseAndProcessGetFieldsDescriptor(getFields, entityType) { getFields =>
-                            Right(repository.get(entityType, id, getFields))
+                            processAndWrapError(() => repository.get(entityType, id, getFields), "Error getting entity!")
                         }
                     }
                 }
@@ -81,7 +94,7 @@ class CrudActor(
                 replyTo ! getType(entityTypeName) { entityType =>
                     parseAndProcessGetFieldsDescriptor(getFields, entityType) { getFields =>
                         parseSearchCondition(searchQuery, entityType) { searchQuery =>
-                            Right(repository.find(entityType, searchQuery, getFields))
+                            processAndWrapError(() => repository.find(entityType, searchQuery, getFields), "Error sjearching entities!")
                         }
                     }
                 }
@@ -101,7 +114,7 @@ class CrudActor(
     private def parseId[Res, ID <: EntityId[_, ID]](entityType: EntityType[ID, _, _], idStr: String)
                             (idMapper: ID => Either[entity.Error, Try[Res]])
     : Either[entity.Error, Try[Res]] =
-        val idDef: EntityIdTypeDefinition[ID] = entityType.valueType.idType
+        val idDef: EntityIdTypeDefinition[ID] = entityType.typeDefinition.idType
         idDef.parse(idStr) match
             case Left(error) =>
                 Left(error)

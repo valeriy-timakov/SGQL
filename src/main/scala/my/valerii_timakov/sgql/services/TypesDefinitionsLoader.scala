@@ -81,7 +81,7 @@ class TypesDefinitionsLoaderImpl(conf: Config) extends TypesDefinitionsLoader:
                     )
                 //initialize children - fields or array items
                 typesMap.foreach((typeFullName, typeEntityDef) =>
-                    typeEntityDef.valueType match
+                    typeEntityDef.typeDefinition match
                         case arrDef: ArrayTypeDefinition[_, _] =>
                             val typePrefix = typeNamespace(typeFullName)
                             rawTypesDataMap.get(typeFullName) match
@@ -101,12 +101,12 @@ class TypesDefinitionsLoaderImpl(conf: Config) extends TypesDefinitionsLoader:
                 )
                 //check back references
                 typesMap.foreach((typeFullName, entityType) =>
-                    entityType.valueType match
+                    entityType.typeDefinition match
                         case objDef: ObjectTypeDefinition[_, _] =>
                             objDef.fields.foreach((fieldName, fieldDef) =>
                                 fieldDef.valueType match
                                     case TypeBackReferenceDefinition(backReferencedType, refFieldName) =>
-                                        val refFieldDef = backReferencedType.valueType.fields.getOrElse(refFieldName,
+                                        val refFieldDef = backReferencedType.typeDefinition.fields.getOrElse(refFieldName,
                                             throw new ConsistencyException(s"Field $fieldName not found in back " +
                                                 s"referenced type ${backReferencedType.name}!"))
                                         refFieldDef.valueType match
@@ -129,9 +129,9 @@ class TypesDefinitionsLoaderImpl(conf: Config) extends TypesDefinitionsLoader:
     private def getChildren(parentName: String, typesMap: Map[String, AbstractEntityType[_, _, _]]): List[AbstractEntityType[_, _, _]] =
         typesMap.values.filter(typeDef => typeDef match
             case entityType: EntityType[_, _, _] =>
-                entityType.valueType.parent.exists(parentName == _.name)
+                entityType.typeDefinition.parent.exists(parentName == _.name)
             case namedEntitySuperType: EntitySuperType[_, _, _] =>
-                namedEntitySuperType.valueType.parent.exists(parentName == _.name) 
+                namedEntitySuperType.typeDefinition.parent.exists(parentName == _.name) 
         ).toList 
 
 
@@ -139,7 +139,7 @@ def typeNamespace(typeName: String): Option[String] =
     val prefix = typeName.replaceFirst("\\w+$", "")
     if (prefix.isEmpty)
         None
-    else if (prefix.endsWith(TypesDefinitionsParser.NAMESPACES_DILIMITER.toString))
+    else if (prefix.endsWith(TypesDefinitionsParser.NAMESPACES_DELIMITER.toString))
         Some(prefix)
     else
         throw new WrongTypeNameException(typeName)

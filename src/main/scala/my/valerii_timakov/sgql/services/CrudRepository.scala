@@ -2,13 +2,12 @@ package my.valerii_timakov.sgql.services
 
 
 import com.typesafe.config.Config
+import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId, ValueTypes}
 import my.valerii_timakov.sgql.entity.domain.types.EntityType
-import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId, EntityValue, ValueTypes}
-import my.valerii_timakov.sgql.entity.read_modiriers.{GetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition}
+import my.valerii_timakov.sgql.entity.read_modiriers.{ObjectGetFieldsDescriptor, SearchCondition}
 import my.valerii_timakov.sgql.exceptions.PersistenceRepositoryTypeNotFoundException
 import my.valerii_timakov.sgql.services.repositories.postres.{PostgresCrudRepository, Version}
 
-import scala.util.Try
 
 object CrudRepositoriesFactory:
     def createRopository(conf: Config, typesMapper: TypesToPersistenceMapper, typeNameMaxLength: Short, fieldMaxLength: Short): CrudRepository =
@@ -19,15 +18,15 @@ object CrudRepositoriesFactory:
 
 
 trait CrudRepository:
-    def create(entityType: EntityType[_, _, _], data: ValueTypes): Try[EntityId[_, _]]
+    def create(entityType: EntityType[_, _, _], data: ValueTypes): EntityId[_, _]
 
-    def update(entity: Entity[_, _, _]): Try[Option[Unit]]
+    def update(entity: Entity[_, _, _]): Option[Unit]
 
-    def delete(entityType: EntityType[_, _, _], id: EntityId[_, _]): Try[Option[Unit]]
+    def delete(entityType: EntityType[_, _, _], id: EntityId[_, _]): Option[Unit]
 
-    def get[ID <: EntityId[_, ID]](entityType: EntityType[ID, _, _], id: EntityId[_, ID], getFields: ObjectGetFieldsDescriptor): Try[Option[Entity[ID, _, _]]]
+    def get[ID <: EntityId[_, ID]](entityType: EntityType[ID, _, _], id: EntityId[_, ID], getFields: ObjectGetFieldsDescriptor): Option[Entity[ID, _, _]]
 
-    def find(entityType: EntityType[_, _, _], query: SearchCondition, getFields: ObjectGetFieldsDescriptor): Try[Seq[Entity[_, _, _]]]
+    def find(entityType: EntityType[_, _, _], query: SearchCondition, getFields: ObjectGetFieldsDescriptor): Seq[Entity[_, _, _]]
 
     def init(typesDefinitionsProvider: TypesDefinitionProviderInitializer): Version
 

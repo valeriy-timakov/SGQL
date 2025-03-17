@@ -4,13 +4,12 @@ package my.valerii_timakov.sgql.entity.domain.type_definitions
 import akka.parboiled2.util.Base64
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.domain.type_definitions.LongTypeDefinition.name
-import my.valerii_timakov.sgql.entity.{SingleMessageError, TypesConsistencyError, ValueParseError}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BackReferenceValue, BinaryValue, BooleanValue, ByteId, ByteValue, CustomPrimitiveValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, Entity, EntityId, EntityValue, FixedStringId, FixedStringValue, FloatValue, IntId, IntValue, ItemValue, LongId, LongValue, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, ShortIntValue, SimpleObjectValue, StringId, StringValue, TimeValue, UUIDId, UUIDValue, ValueTypes}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, ArrayEntitySuperType, BackReferenceType, EntitySuperType, EntityType, GlobalTypesMap, ObjectEntitySuperType, PrimitiveEntitySuperType, ReferenceType, SimpleObjectType}
+import my.valerii_timakov.sgql.entity.{SingleMessageError, ValueParseError}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, TypeReinitializationException, WrongStateExcetion}
-import my.valerii_timakov.sgql.services.{ArrayTypePersistenceDataFinal, ObjectTypePersistenceDataFinal, PrimitiveTypePersistenceDataFinal, TypePersistenceDataFinal, ValuePersistenceDataFinal}
+import my.valerii_timakov.sgql.services.ValuePersistenceDataFinal
 import scalikejdbc.WrappedResultSet
-import scala.collection.mutable
 import spray.json.{JsArray, JsBoolean, JsNull, JsNumber, JsObject, JsString, JsValue}
 
 import java.time.format.DateTimeFormatter
@@ -18,7 +17,7 @@ import java.time.{LocalDate, LocalDateTime, LocalTime}
 import java.util.UUID
 import scala.annotation.tailrec
 import scala.util.boundary
-import boundary.break
+import scala.util.boundary.break
 
 
 private class JsonSerializationData(
@@ -177,7 +176,7 @@ sealed trait ReferenceDefinition[ID <: EntityId[_, ID], V <: EntityValue] extend
 final case class TypeReferenceDefinition[ID <: EntityId[_, ID]](
                                                          referencedType: AbstractEntityType[ID, _, _],
                                         ) extends ItemValueTypeDefinition[ReferenceValue[ID]], ReferenceDefinition[ID, ReferenceValue[ID]]:
-    lazy val idType: EntityIdTypeDefinition[ID] = referencedType.valueType.idType
+    lazy val idType: EntityIdTypeDefinition[ID] = referencedType.typeDefinition.idType
     override def name: String = referencedType.name
     def extract(rs: WrappedResultSet, pos: Int): Option[ReferenceValue[ID]] = 
         idType.extract(rs, pos).map(ReferenceValue(_, ReferenceType(this)))
@@ -250,7 +249,7 @@ final case class TypeBackReferenceDefinition[ID <: EntityId[_, ID]](
                                                                              referencedType: AbstractObjectEntityType[ID, _],
                                                                              refField: String
                                             ) extends FieldValueTypeDefinition[BackReferenceValue[ID]], ReferenceDefinition[ID, BackReferenceValue[ID]]:
-    lazy val idType: EntityIdTypeDefinition[ID] = referencedType.valueType.idType
+    lazy val idType: EntityIdTypeDefinition[ID] = referencedType.typeDefinition.idType
     override def name: String = referencedType.name + "." + refField + "[]"
     def toJson(value: BackReferenceValue[ID]): JsValue =
         JsObject(
@@ -355,8 +354,8 @@ final case class SimpleObjectTypeDefinition[ID <: EntityId[_, ID]](
         (idAndParentType, parent) match
             case (Some((id, parentTypeInstance)), Some(parentTypeDef)) =>
 
-                if (parentTypeDef.valueType.idType != id.typeDefinition)
-                    throw new ConsistencyException(s"Wrong ID type for simple object $id! Expected ${parentTypeDef.valueType.idType}");
+                if (parentTypeDef.typeDefinition.idType != id.typeDefinition)
+                    throw new ConsistencyException(s"Wrong ID type for simple object $id! Expected ${parentTypeDef.typeDefinition.idType}");
                 if (parentTypeDef.hasChild(parentTypeInstance))
                     throw new ConsistencyException(s"Wrong parent type for simple object $id! Expected child of " +
                         s"${parentTypeDef.name}, found: ${parentTypeInstance.name}");
@@ -373,12 +372,12 @@ final case class SimpleObjectTypeDefinition[ID <: EntityId[_, ID]](
         initiated = true
 
     lazy val allFields: Map[String, FieldTypeDefinition[_]] =
-        _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldTypeDefinition[_]])
+        _fields ++ parent.map(_.typeDefinition.allFields).getOrElse(Map.empty[String, FieldTypeDefinition[_]])
 
     override def toString: String = parent.map(_.name).getOrElse("") + "{" +
         fields.map(f => s"${f._1}: ${f._2}").mkString(", ") + "}"
 
-    def idTypeOpt: Option[EntityIdTypeDefinition[ID]] = parent.map(_.valueType.idType)
+    def idTypeOpt: Option[EntityIdTypeDefinition[ID]] = parent.map(_.typeDefinition.idType)
 
     def toJson(value: SimpleObjectValue[ID]): JsValue = JsObject(
         "parent" -> value.idAndParentType.map(idAndParentType => 
@@ -411,7 +410,7 @@ final case class SimpleObjectTypeDefinition[ID <: EntityId[_, ID]](
                                         case _ =>
                                             Left(ValueParseError(name, value.toString, s"Parent type: $parentTypeActual is not an object type!"))
                                     }
-                                    val idValue = parentTypeDef.valueType.idType.parse(idJson)
+                                    val idValue = parentTypeDef.typeDefinition.idType.parse(idJson)
                                     (idValue, objectParentTypeActualRes) match  
                                         case (Right(id), Right(parentTypeActual)) =>
                                             Right(Some(id, parentTypeActual))
@@ -710,8 +709,8 @@ final case class CustomPrimitiveTypeDefinition[ID <: EntityId[_, ID], VT <: Cust
 ) extends EntityTypeDefinition[ID, VT, V]:
     @tailrec def rootType: RootPrimitiveTypeDefinition[V] = this.parentNode match
         case Left((_, root)) => root
-        case Right(parent) => parent.valueType.rootType
-    lazy val idType: EntityIdTypeDefinition[ID] = parentNode.fold(_._1, _.valueType.idType)
+        case Right(parent) => parent.typeDefinition.rootType
+    lazy val idType: EntityIdTypeDefinition[ID] = parentNode.fold(_._1, _.typeDefinition.idType)
     lazy val parent: Option[PrimitiveEntitySuperType[ID, _, V]] = parentNode.toOption
 
     def toJson(value: V): JsValue =
@@ -738,9 +737,9 @@ final case class ArrayTypeDefinition[ID <: EntityId[_, ID], VT <: ArrayValue[ID,
         if (_elementTypes.nonEmpty) throw new TypeReinitializationException
         _elementTypes = Some(elementTypesValues)
     lazy val allElementTypes: Map[String, ArrayItemTypeDefinition] =
-        elementTypes.map(v => v.name -> v).toMap ++ parent.map(_.valueType.allElementTypes).getOrElse(Map.empty[String, ArrayItemTypeDefinition])
+        elementTypes.map(v => v.name -> v).toMap ++ parent.map(_.typeDefinition.allElementTypes).getOrElse(Map.empty[String, ArrayItemTypeDefinition])
 
-    lazy val idType: EntityIdTypeDefinition[ID] = idOrParent.fold(identity, _.valueType.idType)
+    lazy val idType: EntityIdTypeDefinition[ID] = idOrParent.fold(identity, _.typeDefinition.idType)
     lazy val parent: Option[ArrayEntitySuperType[ID, _]] = idOrParent.toOption
 
     def toJson(value: Seq[ItemValue]): JsValue =
@@ -750,7 +749,7 @@ final case class ArrayTypeDefinition[ID <: EntityId[_, ID], VT <: ArrayValue[ID,
         else
             JsArray(value.map(v =>
                 JsObject(
-                    "type" -> JsString(v.typeDefinition.name),
+                    "type" -> JsString(v.valueType.name),
                     "value" -> v.toJson
                 )
             ).toVector)
@@ -818,8 +817,8 @@ final case class ObjectTypeDefinition[ID <: EntityId[_, ID], VT <: ObjectValue[I
         _fields = fieldsValues
         initiated = true
     lazy val allFields: Map[String, FieldTypeDefinition[_]] =
-        _fields ++ parent.map(_.valueType.allFields).getOrElse(Map.empty[String, FieldTypeDefinition[_]])
-    lazy val idType: EntityIdTypeDefinition[ID] = idOrParent.fold(identity, _.valueType.idType)
+        _fields ++ parent.map(_.typeDefinition.allFields).getOrElse(Map.empty[String, FieldTypeDefinition[_]])
+    lazy val idType: EntityIdTypeDefinition[ID] = idOrParent.fold(identity, _.typeDefinition.idType)
     lazy val parent: Option[ObjectEntitySuperType[ID, _]] = idOrParent.toOption
     def idTypeOpt: Option[EntityIdTypeDefinition[ID]] = Some(idType)
 
@@ -833,7 +832,7 @@ final case class ObjectTypeDefinition[ID <: EntityId[_, ID], VT <: ObjectValue[I
                 boundary {
                     Right(fields.map {
                         case (fieldName, fieldValue) =>
-                            this.fields.get(fieldName) match
+                            this.allFields.get(fieldName) match
                                 case Some(fieldDef) =>
                                     fieldDef.valueType.parse(fieldValue) match
                                         case Right(parsedValue) =>

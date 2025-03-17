@@ -1,9 +1,8 @@
 package my.valerii_timakov.sgql.entity.domain.type_values
 
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractRootPrimitiveTypeDefinition, AbstractTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, EntityTypeDefinition, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, ItemValueTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ObjectTypeDefinition, ReferenceDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, SimpleObjectTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
-import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractNamedType, AbstractObjectEntityType, AbstractType, ArrayEntityType, BackReferenceType, CustomPrimitiveEntityType, EntitySuperType, EntityType, FieldValueType, ItemValueType, ObjectEntityType, ReferenceType, RootPrimitiveType, SimpleObjectType}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ReferenceDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
+import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, ArrayEntityType, BackReferenceType, CustomPrimitiveEntityType, EntityType, FieldValueType, ItemValueType, ObjectEntityType, ReferenceType, RootPrimitiveType, SimpleObjectType}
 import my.valerii_timakov.sgql.exceptions.ConsistencyException
-import my.valerii_timakov.sgql.services.{ArrayTypePersistenceDataFinal, ObjectTypePersistenceDataFinal, PrimitiveTypePersistenceDataFinal, TypePersistenceDataFinal}
 import spray.json.{JsNull, JsValue}
 
 import java.time.{LocalDate, LocalDateTime, LocalTime}
@@ -44,123 +43,123 @@ final case class UUIDId(value: UUID) extends EntityId[UUID, UUIDId]:
     override val typeDefinition: EntityIdTypeDefinition[UUIDId] = UUIDIdTypeDefinition
 
 sealed abstract class EntityValue:
-    def typeDefinition: FieldValueType
+    def valueType: FieldValueType
     def toJson: JsValue
     
 sealed abstract class ItemValue extends EntityValue:
-    def typeDefinition: ItemValueType
+    def valueType: ItemValueType
 
-final case class EmptyValue(typeDefinition: FieldValueType) extends EntityValue:
+final case class EmptyValue(valueType: FieldValueType) extends EntityValue:
     def toJson: JsValue = JsNull
 
 sealed abstract class RootPrimitiveValue[V <: RootPrimitiveValue[V]] extends ItemValue:
     def value: Any
-    override def typeDefinition: RootPrimitiveType[V]
+    override def valueType: RootPrimitiveType[V]
     
 final case class StringValue(value: String) extends RootPrimitiveValue[StringValue]:
-    def typeDefinition: RootPrimitiveType[StringValue] = RootPrimitiveType[StringValue](StringTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[StringValue] = RootPrimitiveType[StringValue](StringTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class FixedStringValue(value: String, typeDef: FixedStringTypeDefinition) extends RootPrimitiveValue[FixedStringValue]:
     if value == null then throw new IllegalArgumentException("FixedStringValue cannot be null!")
     if value == null then throw new IllegalArgumentException("FixedStringValue cannot have null type!")
     if value.length != typeDef.length then throw new IllegalArgumentException(
         s"FixedStringValue value must be of length ${typeDef.length}! Got: $value")
-    def typeDefinition: RootPrimitiveType[FixedStringValue] = RootPrimitiveType[FixedStringValue](typeDef)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[FixedStringValue] = RootPrimitiveType[FixedStringValue](typeDef)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class ByteValue(value: Byte) extends RootPrimitiveValue[ByteValue]:
-    def typeDefinition: RootPrimitiveType[ByteValue] = RootPrimitiveType[ByteValue](ByteTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[ByteValue] = RootPrimitiveType[ByteValue](ByteTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class ShortIntValue(value: Short) extends RootPrimitiveValue[ShortIntValue]:
-    def typeDefinition: RootPrimitiveType[ShortIntValue] = RootPrimitiveType[ShortIntValue](ShortIntTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[ShortIntValue] = RootPrimitiveType[ShortIntValue](ShortIntTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class IntValue(value: Int) extends RootPrimitiveValue[IntValue]:
-    def typeDefinition: RootPrimitiveType[IntValue] = RootPrimitiveType(IntTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[IntValue] = RootPrimitiveType(IntTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class LongValue(value: Long) extends RootPrimitiveValue[LongValue]:
-    def typeDefinition: RootPrimitiveType[LongValue] = RootPrimitiveType(LongTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[LongValue] = RootPrimitiveType(LongTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
 
 final case class DecimalValue(value: BigDecimal) extends RootPrimitiveValue[DecimalValue]:
     if value == null then throw new IllegalArgumentException("DecimalValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[DecimalValue] = RootPrimitiveType(DecimalTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[DecimalValue] = RootPrimitiveType(DecimalTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class DoubleValue(value: Double) extends RootPrimitiveValue[DoubleValue]:
-    def typeDefinition: RootPrimitiveType[DoubleValue] = RootPrimitiveType(DoubleTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[DoubleValue] = RootPrimitiveType(DoubleTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class FloatValue(value: Float) extends RootPrimitiveValue[FloatValue]:
-    def typeDefinition: RootPrimitiveType[FloatValue] = RootPrimitiveType(FloatTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[FloatValue] = RootPrimitiveType(FloatTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class BooleanValue(value: Boolean) extends RootPrimitiveValue[BooleanValue]:
-    def typeDefinition: RootPrimitiveType[BooleanValue] = RootPrimitiveType(BooleanTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[BooleanValue] = RootPrimitiveType(BooleanTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class DateValue(value: LocalDate) extends RootPrimitiveValue[DateValue]:
     if value == null then throw new IllegalArgumentException("DateValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[DateValue] = RootPrimitiveType(DateTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[DateValue] = RootPrimitiveType(DateTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class DateTimeValue(value: LocalDateTime) extends RootPrimitiveValue[DateTimeValue]:
     if value == null then throw new IllegalArgumentException("DateTimeValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[DateTimeValue] = RootPrimitiveType(DateTimeTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[DateTimeValue] = RootPrimitiveType(DateTimeTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class TimeValue(value: LocalTime) extends RootPrimitiveValue[TimeValue]:
     if value == null then throw new IllegalArgumentException("TimeValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[TimeValue] = RootPrimitiveType(TimeTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[TimeValue] = RootPrimitiveType(TimeTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class UUIDValue(value: UUID) extends RootPrimitiveValue[UUIDValue]:
     if value == null then throw new IllegalArgumentException("UUIDValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[UUIDValue] = RootPrimitiveType(UUIDTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[UUIDValue] = RootPrimitiveType(UUIDTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     
 final case class BinaryValue(value: Array[Byte]) extends RootPrimitiveValue[BinaryValue]:
     if value == null then throw new IllegalArgumentException("BinaryValue cannot be null!")
-    def typeDefinition: RootPrimitiveType[BinaryValue] = RootPrimitiveType(BinaryTypeDefinition)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def valueType: RootPrimitiveType[BinaryValue] = RootPrimitiveType(BinaryTypeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
 
 final case class SimpleObjectValue[ID <: EntityId[_, ID]](
-    //save concrete parent type, because it is defined by value, not by type definition
-    idAndParentType: Option[(ID, AbstractObjectEntityType[ID, _])],
-    value: Map[String, EntityValue],
-    typeDefinition: SimpleObjectType[ID]
+                                                             //save concrete parent type, because it is defined by value, not by type definition
+                                                             idAndParentType: Option[(ID, AbstractObjectEntityType[ID, _])],
+                                                             value: Map[String, EntityValue],
+                                                             valueType: SimpleObjectType[ID]
 ) extends EntityValue:
-    checkMaybeId(id, typeDefinition.valueType.idTypeOpt)
-    checkObjectTypeData(value, typeDefinition.valueType)
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    checkMaybeId(id, valueType.typeDefinition.idTypeOpt)
+    checkObjectTypeData(value, valueType.typeDefinition)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
     def id: Option[ID] = idAndParentType.map(_._1)
 
-final case class ReferenceValue[ID <: EntityId[_, ID]](refId: ID, typeDefinition: ReferenceType[ID]) extends ItemValue:
-    checkReferenceId(refId, typeDefinition.valueType)
+final case class ReferenceValue[ID <: EntityId[_, ID]](refId: ID, valueType: ReferenceType[ID]) extends ItemValue:
+    checkReferenceId(refId, valueType.typeDefinition)
     protected var _refValue: Option[Entity[ID, _, _]] = None
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
 
 
     def refValue: Entity[ID, _, _] = _refValue.getOrElse(throw new ConsistencyException("Reference value is not set!"))
     def refValueOpt: Option[Entity[ID, _, _]] = _refValue
 
     def setRefValue(value: Entity[ID, _, _]): Unit = _refValue =
-        checkReferenceValue(value, typeDefinition.valueType.referencedType, this.refId)
+        checkReferenceValue(value, valueType.typeDefinition.referencedType, this.refId)
         Some(value)
 
-final case class BackReferenceValue[ID <: EntityId[_, ID]](value: ID, typeDefinition: BackReferenceType[ID]) extends EntityValue:
-    checkReferenceId(value, typeDefinition.valueType)
+final case class BackReferenceValue[ID <: EntityId[_, ID]](value: ID, valueType: BackReferenceType[ID]) extends EntityValue:
+    checkReferenceId(value, valueType.typeDefinition)
     private var _refValue: Option[Seq[Entity[ID, _, _]]] = None
-    def toJson: JsValue = typeDefinition.valueType.toJson(this)
+    def toJson: JsValue = valueType.typeDefinition.toJson(this)
 
     def refValue: Seq[Entity[ID, _, _]] = _refValue.getOrElse(throw new ConsistencyException("Reference value is not set!"))
     def refValueOpt: Option[Seq[Entity[ID, _, _]]] = _refValue
 
     def setRefValue(value: Seq[Entity[ID, _, _]]): Unit =
-        value.foreach(entity => checkReferenceValue(entity, typeDefinition.valueType.referencedType, this.value))
+        value.foreach(entity => checkReferenceValue(entity, valueType.typeDefinition.referencedType, this.value))
         _refValue = Some(value)
         
 type ValueTypes = RootPrimitiveValue[_] | Seq[ItemValue] | Map[String, EntityValue]
@@ -170,17 +169,17 @@ trait Entity[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes]:
     def id: ID
     def value: V
     def cloneWithId(newId: ID):  Entity[ID, VT, V]
-    def toJson: JsValue = typeDefinition.valueType.toJson(this.value)
+    def toJson: JsValue = typeDefinition.typeDefinition.toJson(this.value)
 
 final case class CustomPrimitiveValue[ID <: EntityId[_, ID], VT <: CustomPrimitiveValue[ID, VT, V], V <: RootPrimitiveValue[V]](
     id: ID,
     value: V,
     typeDefinition: CustomPrimitiveEntityType[ID, VT, V]
 ) extends Entity[ID, VT, V]:
-    checkId(id, typeDefinition.valueType.idType)
-    checkValue(value, typeDefinition.valueType)
-    if typeDefinition.valueType.rootType != value.typeDefinition then throw new ConsistencyException(
-        s"CustomPrimitiveTypeDefinition ${typeDefinition.valueType.rootType} does not match provided value type ${value.typeDefinition}!")
+    checkId(id, typeDefinition.typeDefinition.idType)
+    checkValue(value, typeDefinition.typeDefinition)
+    if typeDefinition.typeDefinition.rootType != value.valueType then throw new ConsistencyException(
+        s"CustomPrimitiveTypeDefinition ${typeDefinition.typeDefinition.rootType} does not match provided value type ${value.valueType}!")
     def cloneWithId(newId: ID): CustomPrimitiveValue[ID, VT, V] = this.copy(id = newId)
     
 
@@ -189,8 +188,8 @@ final case class ArrayValue[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
     value: Seq[ItemValue],
     typeDefinition: ArrayEntityType[ID, VT]
 ) extends Entity[ID, VT, Seq[ItemValue]]:
-    checkId(id, typeDefinition.valueType.idType)
-    checkArrayData(value, typeDefinition.valueType)
+    checkId(id, typeDefinition.typeDefinition.idType)
+    checkArrayData(value, typeDefinition.typeDefinition)
     def cloneWithId(newId: ID): VT = this.copy(id = newId).asInstanceOf[VT]
 
 final case class ObjectValue[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
@@ -198,8 +197,8 @@ final case class ObjectValue[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
     value: Map[String, EntityValue],
     typeDefinition: ObjectEntityType[ID, VT]
 ) extends Entity[ID, VT, Map[String, EntityValue]]:
-    checkId(id, typeDefinition.valueType.idType)
-    checkObjectTypeData(value, typeDefinition.valueType)
+    checkId(id, typeDefinition.typeDefinition.idType)
+    checkObjectTypeData(value, typeDefinition.typeDefinition)
     def cloneWithId(newId: ID): ObjectValue[ID, VT] = this.copy(id = newId)
 
 private def checkId(id: EntityId[_, _], typeDefinition: AbstractEntityIdTypeDefinition[_]): Unit =
@@ -220,15 +219,15 @@ private def checkMaybeId(id: Option[EntityId[_, _]], typeDefinitionOpt: Option[A
             if id.isDefined then throw new ConsistencyException("Id is not expected!")
             
 private def checkValue(value: RootPrimitiveValue[_], definition: CustomPrimitiveTypeDefinition[_, _, _]): Unit =
-    if value.typeDefinition.name != definition.rootType.name then
-        throw new ConsistencyException(s"Expected value type $definition does not match provided type ${value.typeDefinition}!")
+    if value.valueType.name != definition.rootType.name then
+        throw new ConsistencyException(s"Expected value type $definition does not match provided type ${value.valueType}!")
 
 
 private def checkArrayData(value: Seq[ItemValue], definition: ArrayTypeDefinition[_, _]): Unit =
     val acceptableItemsTypes = definition.elementTypes.map(_.name)
     value.foreach(item =>
-        if acceptableItemsTypes.contains(item.typeDefinition.name) then
-            throw new ConsistencyException(s"Array item type ${item.typeDefinition} does not match provided " +
+        if acceptableItemsTypes.contains(item.valueType.name) then
+            throw new ConsistencyException(s"Array item type ${item.valueType} does not match provided " +
                 s"element type ${definition.elementTypes.head.valueType}!")
     )
     
@@ -238,7 +237,7 @@ private def checkObjectTypeData(
 ): Unit =
     val allFieldsDefsMap = definition.allFields
     value.foreach((fieldName, fieldValue) =>
-        val fieldValueDef = fieldValue.typeDefinition match
+        val fieldValueDef = fieldValue.valueType.typeDefinition match
             case fieldDef: FieldValueTypeDefinition[_] => fieldDef
             case _ => throw new ConsistencyException(s"Unexpected ObjectType definition! $definition")
         val fieldDef = allFieldsDefsMap.getOrElse(fieldName,
@@ -257,9 +256,9 @@ private def checkReferenceId[ID <: EntityId[_, ID]](
             s"type ${definition.idType}!")
 
 private def checkReferenceValue(entity: Entity[_, _, _], refTypeDef: AbstractEntityType[_, _, _], idValue: EntityId[_, _]): Unit =
-    if entity.typeDefinition.valueType != refTypeDef.valueType then
-        throw new ConsistencyException(s"Reference value type ${entity.typeDefinition.valueType} does not match " +
-            s"provided type ${refTypeDef.valueType}!")
+    if entity.typeDefinition.typeDefinition != refTypeDef.typeDefinition then
+        throw new ConsistencyException(s"Reference value type ${entity.typeDefinition.typeDefinition} does not match " +
+            s"provided type ${refTypeDef.typeDefinition}!")
     if entity.id != idValue then
         throw new ConsistencyException(s"Reference value id ${entity.id} does not match provided id $idValue!")
 

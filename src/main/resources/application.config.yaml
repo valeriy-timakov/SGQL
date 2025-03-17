@@ -1,5 +1,6 @@
 http:
-  port: 9056
-  host: localhost
-  responseTimeout: 20s
+  connection:
+    port: 9056
+    host: localhost
+    responseTimeout: 20s
 
