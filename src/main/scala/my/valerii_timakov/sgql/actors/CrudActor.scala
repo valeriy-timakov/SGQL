@@ -251,7 +251,7 @@ class CrudActor(
                 setNextBoundary(currMatch).map(_.map { _ =>
                     val resDescriptor =
                         if (nextFrom.isDefined || nextTo.isDefined)
-                            val result = ListGetFieldsDescriptor(nextDescriptor, nextFrom, nextTo)
+                            val result = ListGetFieldsDescriptor(nextDescriptor.fieldName, nextFrom, nextTo)
                             nextFrom = None
                             nextTo = None
                             result

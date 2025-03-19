@@ -93,18 +93,21 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                 else
                     Right(Success(()))
 
-    @tailrec
     private def validateNestedGetFieldsDescriptor(
                                                      descriptor: NestedGetFieldsDescriptor,
                                                      entityType: AbstractObjectEntityType[_, _]
                                                  ): Either[entity.Error, Unit] =
+        def checkFieldPresent(fieldName: String): Either[entity.Error, Unit] =
+            if (entityType.typeDefinition.allFields.contains(fieldName))
+                Right(Success(()))
+            else
+                Left(GetFieldsFieldValidateError(s"GetFieldDescriptor field $fieldName not present in corresponding " +
+                    s"type $entityType!"))
         descriptor match
             case SingleGetFieldsDescriptor(fieldName) =>
-                if (entityType.typeDefinition.allFields.contains(fieldName))
-                    Right(Success(()))
-                else
-                    Left(GetFieldsFieldValidateError(s"GetFieldDescriptor field $fieldName not present in corresponding " +
-                        s"type $entityType!"))
+                checkFieldPresent(fieldName)
+            case ListGetFieldsDescriptor(fieldName, _, _) =>
+                checkFieldPresent(fieldName)
             case descriptor: SubObjectGetFieldsDescriptor =>
                 entityType.typeDefinition.allFields.get(descriptor.fieldName)
                     .map {
@@ -115,5 +118,3 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                     }
                     .getOrElse(Left(GetFieldsFieldValidateError(s"GetFieldDescriptor field ${descriptor.fieldName} not " +
                         s"present in corresponding type $entityType!")))
-            case ListGetFieldsDescriptor(repeatedField, _, _) =>
-                validateNestedGetFieldsDescriptor(repeatedField, entityType)

@@ -1,10 +1,10 @@
 package my.valerii_timakov.sgql.services.repositories.postres
 
 import com.typesafe.config.Config
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{EntityIdTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, ItemValueTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, ItemValueTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, ByteId, CustomPrimitiveValue, Entity, EntityId, EntityValue, FixedStringId, IntId, ItemValue, LongId, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, SimpleObjectValue, StringId, UUIDId, ValueTypes}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, AbstractPrimitiveEntityType, ArrayEntityType, CustomPrimitiveEntityType, EntityType, ObjectEntitySuperType, ObjectEntityType, PrimitiveEntitySuperType}
-import my.valerii_timakov.sgql.entity.read_modiriers.{AllGetFieldsDescriptor, AllInReferenceGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AllGetFieldsDescriptor, AllInReferenceGetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, DbTableMigrationException, NotInitializedException}
 import my.valerii_timakov.sgql.services.*
 import scalikejdbc.*
@@ -513,7 +513,13 @@ class PostgresCrudRepository(
                     case definition: RootPrimitiveTypeDefinition[_] =>
                         SingleGetFieldsDescriptor(fieldName)
                     case definition: TypeReferenceDefinition[_] =>
-                        AllInReferenceGetFieldsDescriptor(fieldName)
+                        definition.referencedType.typeDefinition match
+                            case _: ArrayTypeDefinition[_, _] =>
+                                ListGetFieldsDescriptor(fieldName, None, None)
+                            case _: CustomPrimitiveTypeDefinition[_, _, _] =>
+                                SingleGetFieldsDescriptor(fieldName)
+                            case objectDef: ObjectTypeDefinition[_, _] =>                                
+                                SubObjectGetFieldsDescriptor(fieldName, Right(getAllFieldsGetDescriptor(objectDef)))
                     case definition: TypeBackReferenceDefinition[_] =>
                         AllInReferenceGetFieldsDescriptor(fieldName)
                     case _ =>

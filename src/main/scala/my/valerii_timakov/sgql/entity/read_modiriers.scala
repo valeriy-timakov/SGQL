@@ -14,8 +14,7 @@ case class ObjectGetFieldsDescriptor(fields: Either[AllGetFieldsDescriptor, List
 case class SubObjectGetFieldsDescriptor(fieldName: String, fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]])
     extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor
 case class SingleGetFieldsDescriptor(fieldName: String) extends NestedGetFieldsDescriptor
-case class ListGetFieldsDescriptor(repeatedField: NestedGetFieldsDescriptor, limit: Option[Int], offset: Option[Int]) extends NestedGetFieldsDescriptor:
-    def fieldName: String = repeatedField.fieldName
+case class ListGetFieldsDescriptor(fieldName: String, limit: Option[Int], offset: Option[Int]) extends NestedGetFieldsDescriptor
 case class AllInReferenceGetFieldsDescriptor(fieldName: String) extends NestedGetFieldsDescriptor
 
 sealed trait SearchCondition
