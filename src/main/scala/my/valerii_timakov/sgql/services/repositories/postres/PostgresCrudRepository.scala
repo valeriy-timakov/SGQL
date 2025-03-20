@@ -332,23 +332,22 @@ class PostgresCrudRepository(
                                         id: EntityId[_, ID1],
                                         getFields: ObjectGetFieldsDescriptor
                                   )(implicit session: DBSession): Option[Entity[ID1, _, _]] =
-        val namesDelimiter: String = ", "
         def getTableAliace(map:  Map[(Option[RefererTableData], String), String], tgd: ReferredTable) =
             map.getOrElse((tgd.referer, tgd.tableName), throw new ConsistencyException(s"Table aliace not found for ${(tgd.referer, tgd.tableName)}"))
             
-        def getTablesLineReversedInner(tablesLines: List[String], prevLength: Int, delimiter: String): StringBuilder =
+        def getTablesLineReversedInner(tablesLines: List[String], prevLength: Int, currDelimiter: String, nextDelimiter: String): StringBuilder =
             if (tablesLines.nonEmpty)
                 val currValue = tablesLines.head
                 val result = getTablesLineReversedInner(tablesLines.tail, 
-                    prevLength + currValue.length + namesDelimiter.length, namesDelimiter)
-                result.append(tablesLines.head)
-                result.append(delimiter)
+                    prevLength + currValue.length + currDelimiter.length, nextDelimiter, nextDelimiter)
+                result.append(currValue)
+                result.append(currDelimiter)
                 result
             else 
                 new StringBuilder(prevLength)
                 
-        def getListLineReversed(tablesLines: List[String]): String =
-            getTablesLineReversedInner(tablesLines, 0, "").toString
+        def getListLineReversed(tablesLines: List[String], delimiter: String): String =
+            getTablesLineReversedInner(tablesLines, 0, "", delimiter).toString
 
 
         def extractRefObject2(
@@ -557,12 +556,12 @@ class PostgresCrudRepository(
                         acc: (List[String], List[String], List[GetFieldData]),
                         tgd: TableGetDescriptor
                     ) =>
-                        val (columnsList, tablesList, backRefFieldsList) = acc
+                        val (tablesList, columnsList, backRefFieldsList) = acc
                         val tableAlias = getTableAliace(tablesAliasesMap, tgd)
                         currFieldIdx += 1
                         val idDscChainCell = GetDescriptorChainCell(SingleGetFieldsDescriptor(entityIdFieldNameForDsc), tgd.parentDsc)
                         fieldsMap += (idDscChainCell, Some(tgd.realObjectTypeName)) -> (currFieldIdx, tgd.idType)
-                        val tableDesc = s"$typesSchemaName.${esc(tgd.tableName)} as $tableAlias" + tgd.referer.map(ref =>
+                        val tableLine = s"$typesSchemaName.${esc(tgd.tableName)} as $tableAlias" + tgd.referer.map(ref =>
                                 val refAlias = getTableAliace(tablesAliasesMap, ref)
                                 s" on $refAlias.${ref.columnName} = $tableAlias.${tgd.idColumn}"
                             ).getOrElse("")
@@ -593,15 +592,16 @@ class PostgresCrudRepository(
                                         (s"$tableAlias.${esc(primitiveEntityType.persistenceData.valueColumn.columnName)}" :: columnsList, backRefFieldsList)
                         )
                         (
-                            tableDesc :: tablesList,
+                            tableLine :: tablesList,
                             updatedColumnsList,
                             updatedBackRefFieldsList
                         )
                 )
+                val firstTableAlias = getTableAliace(tablesAliasesMap, tableGetDescriptors.head)
                 SQL(s"""
-                   SELECT ${getListLineReversed(columnsLines)}
-                   FROM ${getListLineReversed(tableLines)}
-                   WHERE ${esc(objectType.persistenceData.idColumn.columnName)} = ?
+                   SELECT ${getListLineReversed(columnsLines, ", ")}
+                   FROM ${getListLineReversed(tableLines, " LEFT JOIN ")}
+                   WHERE $firstTableAlias.${esc(objectType.persistenceData.idColumn.columnName)} = ?
                 """)
                     .bind(id.value)
                     .map(rs => extractObject(objectType, fieldsInDescriptor, None, rs, fieldsMap.toMap))
