@@ -1,7 +1,7 @@
 package my.valerii_timakov.sgql.entity.domain.type_values
 
 import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, ArrayTypeDefinition, BinaryTypeDefinition, BooleanTypeDefinition, ByteIdTypeDefinition, ByteTypeDefinition, CustomPrimitiveTypeDefinition, DateTimeTypeDefinition, DateTypeDefinition, DecimalTypeDefinition, DoubleTypeDefinition, EntityIdTypeDefinition, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, FixedStringTypeDefinition, FloatTypeDefinition, IntIdTypeDefinition, IntTypeDefinition, LongIdTypeDefinition, LongTypeDefinition, ReferenceDefinition, ShortIdTypeDefinition, ShortIntTypeDefinition, StringIdTypeDefinition, StringTypeDefinition, TimeTypeDefinition, UUIDIdTypeDefinition, UUIDTypeDefinition}
-import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, ArrayEntityType, BackReferenceType, CustomPrimitiveEntityType, EntityType, FieldValueType, ItemValueType, ObjectEntityType, ReferenceType, RootPrimitiveType, SimpleObjectType}
+import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, ArrayEntityType, BackReferenceType, CustomPrimitiveEntityType, EntitySuperType, EntityType, FieldValueType, ItemValueType, ObjectEntityType, ReferenceType, RootPrimitiveType, SimpleObjectType}
 import my.valerii_timakov.sgql.exceptions.ConsistencyException
 import spray.json.{JsNull, JsValue}
 
@@ -256,9 +256,15 @@ private def checkReferenceId[ID <: EntityId[_, ID]](
             s"type ${definition.idType}!")
 
 private def checkReferenceValue(entity: Entity[_, _, _], refTypeDef: AbstractEntityType[_, _, _], idValue: EntityId[_, _]): Unit =
-    if entity.typeDefinition.typeDefinition != refTypeDef.typeDefinition then
-        throw new ConsistencyException(s"Reference value type ${entity.typeDefinition.typeDefinition} does not match " +
-            s"provided type ${refTypeDef.typeDefinition}!")
+    refTypeDef match
+        case refSuperTypeDef: EntitySuperType[_, _, _] =>
+            if (!entity.typeDefinition.isChildOfRaw(refSuperTypeDef))
+                throw new ConsistencyException(s"Reference value type ${entity.typeDefinition.typeDefinition} is not parent of " +
+                    s"provided type ${refSuperTypeDef.typeDefinition}!")
+        case refEntityType: EntityType[_, _, _] =>
+            if (entity.typeDefinition.getId != refEntityType.getId)
+                throw new ConsistencyException(s"Reference value type ${entity.typeDefinition.typeDefinition} does not match " +
+                    s"provided type ${refEntityType.typeDefinition}!")
     if entity.id != idValue then
         throw new ConsistencyException(s"Reference value id ${entity.id} does not match provided id $idValue!")
 

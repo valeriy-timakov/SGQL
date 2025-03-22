@@ -629,6 +629,9 @@ trait FieldsContainer:
     def fields: Map[String, FieldTypeDefinition[_]]
     def allFields: Map[String, FieldTypeDefinition[_]]
     def idTypeOpt: Option[EntityIdTypeDefinition[_]]
+    def getFieldType(fieldName: String, includeParent: Boolean): FieldTypeDefinition[_] =
+        val resOpt = if (includeParent) allFields.get(fieldName)  else fields.get(fieldName)
+        resOpt.getOrElse(throw new ConsistencyException(s"Field $fieldName not found in object type $this!"))
 
 private def parseWholeNumber[V <: RootPrimitiveValue[_] | EntityId[_, _]](
                                                             value: JsValue,
