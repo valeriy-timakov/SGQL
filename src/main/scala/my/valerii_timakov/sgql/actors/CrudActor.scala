@@ -130,7 +130,8 @@ class CrudActor(
                 val res = typesDefinitionProvider.validateGetFieldsDescriptor(parsedDescriptor, entityType)
                     .flatMap(_ => getFieldsDescriptorMapper(parsedDescriptor))
                 res 
-                )))
+            ))
+        )
         
     private def flatMap[Res](input: Either[entity.Error, Try[Either[entity.Error, Try[Res]]]]): Either[entity.Error, Try[Res]] = 
         input match
