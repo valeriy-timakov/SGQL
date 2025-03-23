@@ -31,10 +31,8 @@ class CrudActor(
     private val searchPathPrefix = conf.getString("search-path-prefix")
     private val subobjectStartMark = conf.getString("subobject-start-mark")
     private val subobjectEndMark = conf.getString("subobject-end-mark")
-    private val intervalFromMark = conf.getString("interval-from-mark")
-    private val intervalToMark = conf.getString("interval-to-mark")
-    private val delimiters = List(fieldsDelimiter, searchPathPrefix, subobjectStartMark, subobjectEndMark,
-        intervalFromMark, intervalToMark)
+    private val intervalMark = conf.getString("interval-mark")
+    private val delimiters = List(fieldsDelimiter, searchPathPrefix, subobjectStartMark, subobjectEndMark, intervalMark)
         .map(Pattern.quote)
         .mkString("|")
     private val delimitersPattern = s"($delimiters)".r
@@ -159,20 +157,23 @@ class CrudActor(
     private def parseObjectDescriptor(
                                          getFields: String,
                                          fieldName: Option[String]
-                                     ): Either[GetFieldsParseError, Try[(ObjectGetFieldsDescriptor | SubObjectGetFieldsDescriptor, Option[String])]] = {
+                                     ): Either[GetFieldsParseError, Try[(ObjectGetFieldsDescriptor | SubObjectGetFieldsDescriptor, String)]] = {
         var stopFound = false
         val fields: ArrayBuffer[NestedGetFieldsDescriptor] = ArrayBuffer()
-        var currPortionOpt: Option[String] = Some(getFields)
+        var currPortion = getFields
         var nextDescriptorOpt: Option[NestedGetFieldsDescriptor] = None
         var nextFrom: Option[Int] = None
         var nextTo: Option[Int] = None
-        var nextMarkOpt: Option[String] = None
+        var boundaryMarkFound: Boolean = false
 
         def parseBoundary(value: String): Either[GetFieldsParseError, Int] =
-            try
-                Right(value.toInt)
-            catch
-                case e: Exception => Left(GetFieldsParseError(s"Invalid boundary value $value!"))
+            if (value.isEmpty)
+                Right(0)
+            else 
+                try
+                    Right(value.toInt)
+                catch
+                    case e: Exception => Left(GetFieldsParseError(s"Invalid boundary value $value!"))
 
         def filterFailures[T](
                                  input: Either[GetFieldsParseError, Try[T]]
@@ -202,39 +203,27 @@ class CrudActor(
                 case None =>
                     (query, None)
 
+        //should be called only if {boundaryMarkFound} is true - not check here for performance
         def setNextBoundary(currMatch: String): Either[GetFieldsParseError, Try[Unit]] =
-            nextMarkOpt match
-                case Some(nextMark) =>
-                    nextMarkOpt = None
-                    val boundaryValue = parseBoundary(currMatch) match
-                        case Right(value) => value
-                        case Left(error) => return Left(error)
-                    nextMark match
-                        case `intervalFromMark` =>
-                            if (nextFrom.isEmpty)
-                                nextFrom = Some(boundaryValue)
-                                Right(Success(()))
-                            else
-                                Left(GetFieldsParseError(s"Unexpected $intervalFromMark before $nextDescriptorOpt!" +
-                                    s"New from $boundaryValue defined, where other value already set: ${nextFrom.get}"))
-                        case `intervalToMark` =>
-                            if (nextTo.isEmpty)
-                                nextTo = Some(boundaryValue)
-                                Right(Success(()))
-                            else
-                                Left(GetFieldsParseError(s"Unexpected $intervalToMark before $nextDescriptorOpt!" +
-                                    s"New to $boundaryValue defined, where other value already set: ${nextTo.get}"))
-                        case _ =>
-                            Right(Failure(WrongStateExcetion(s"Unexpected $nextMarkOpt before $nextDescriptorOpt!")))
-                case None =>
-                    Right(Failure(WrongStateExcetion(s"Call to setNextBoundary when no nextMarkOpt is defined!")))
+            boundaryMarkFound = false
+            val boundaryValue = parseBoundary(currMatch) match
+                case Right(value) => 
+                    value
+                case Left(error) => 
+                    return Left(error)
+            if (nextFrom.isEmpty)
+                nextFrom = Some(boundaryValue)
+                Right(Success(()))
+            else if (nextTo.isEmpty)
+                nextTo = Some(boundaryValue)
+                Right(Success(()))
+            else
+                Left(GetFieldsParseError(s"Unexpected '$intervalMark' before $nextDescriptorOpt!" +
+                    s"Both boundaries to $boundaryValue defined, where other value already set: ${nextTo.get}"))
 
-        def addDataToNextDescriptor(data: String, nextDataDescriber: String, rawParsedData: String): Either[GetFieldsParseError, Try[Unit]] =
+        def addDataToNextDescriptor(data: String, rawParsedData: String): Either[GetFieldsParseError, Try[Unit]] =
             if (nextDescriptorOpt.isDefined)
-                if (data.isBlank)
-                    if (nextMarkOpt.isDefined)
-                        return Left(GetFieldsParseError(s"Empty value before of $rawParsedData, after ${nextMarkOpt.get}!"))
-                else
+                if (boundaryMarkFound)
                     val res = setNextBoundary(data)
                     if (isFailed(res))
                         return res
@@ -242,83 +231,80 @@ class CrudActor(
                 if (data.isBlank)
                     return Left(GetFieldsParseError(s"Empty field name in start of $rawParsedData!"))
                 nextDescriptorOpt = Some(SingleGetFieldsDescriptor(data))
-            nextMarkOpt = Some(nextDataDescriber)
+            boundaryMarkFound = true
             Right(Success(()))
 
-        def addToFieldsNextDecriptor(currMatch: String): Try[Unit] =
+        def addToFieldsNextDecriptor(currMatch: String): Either[GetFieldsParseError, Try[Unit]] =
             if (nextDescriptorOpt.isDefined)
                 val nextDescriptor = nextDescriptorOpt.get
                 nextDescriptorOpt = None
-                setNextBoundary(currMatch).map(_.map { _ =>
-                    val resDescriptor =
-                        if (nextFrom.isDefined || nextTo.isDefined)
-                            val result = ListGetFieldsDescriptor(nextDescriptor.fieldName, nextFrom, nextTo)
-                            nextFrom = None
-                            nextTo = None
-                            result
-                        else
-                            nextDescriptor
-                    fields += resDescriptor
-                })
-                Success(())
+                if (boundaryMarkFound)
+                    val res = setNextBoundary(currMatch)
+                    if (isFailed(res))
+                        return res
+                    val result = ListGetFieldsDescriptor(nextDescriptor.fieldName, nextFrom, nextTo)
+                    nextFrom = None
+                    nextTo = None
+                    fields += result
+                else
+                    fields += nextDescriptor                    
+                Right(Success(()))
             else if (nextFrom.isDefined || nextTo.isDefined)
                 nextFrom = None
                 nextTo = None
-                Failure(new WrongStateExcetion(s"One of or both nextFrom=$nextFrom and nextTo=$nextTo are set but no descriptor defined!"))
+                Right(Failure(WrongStateExcetion(s"One of or both nextFrom=$nextFrom and nextTo=$nextTo are set but no descriptor defined!")))
             else
                 fields += SingleGetFieldsDescriptor(currMatch)
-                Success(())
+                Right(Success(()))
 
         while
-            currPortionOpt.foreach(currPortion =>
-                val (before, delimiterAndNextPotionOpt) = getNextMatch(currPortion)
-                delimiterAndNextPotionOpt match
-                    case Some(delimiter, nextPortion) =>
-                        delimiter match
-                            case `fieldsDelimiter` =>
-                                val res = addToFieldsNextDecriptor(before)
-                                if (res.isFailure)
-                                    return Right(res.asInstanceOf[Try[(ObjectGetFieldsDescriptor | SubObjectGetFieldsDescriptor, Option[String])]])
-                                currPortionOpt = Some(nextPortion)
-                            case `subobjectStartMark` =>
-                                if (nextDescriptorOpt.isDefined || nextFrom.isDefined || nextTo.isDefined || nextMarkOpt.isDefined)
-                                    return Left(GetFieldsParseError(s"Unexpected $subobjectStartMark before $nextPortion!" +
-                                        s"nextDescriptorOpt=$nextDescriptorOpt, nextFrom=$nextFrom, nextTo=$nextTo, nextMarkOpt=$nextMarkOpt"))
-                                if (before.isEmpty)
-                                    return Left(GetFieldsParseError(s"Empty field name of object before $nextPortion!"))
-                                val err = filterFailures(
-                                    parseObjectDescriptor(nextPortion, Some(before))
-                                ) { (descriptor, nextPortion) =>
-                                    nextDescriptorOpt = Some(descriptor.asInstanceOf[SubObjectGetFieldsDescriptor])
-                                    currPortionOpt = nextPortion
-                                    None
-                                }
-                                if (err.isDefined)
-                                    return err.get
-                            case `subobjectEndMark` =>
-                                val res = addToFieldsNextDecriptor(before)
-                                if (res.isFailure)
-                                    return Right(res.get.asInstanceOf[Try[(ObjectGetFieldsDescriptor | SubObjectGetFieldsDescriptor, Option[String])]])
-                                currPortionOpt = Some(nextPortion)
-                                stopFound = true
-                            case `intervalToMark` | `intervalFromMark` =>
-                                val res = addDataToNextDescriptor(before, delimiter, currPortion)
-                                if (isFailed(res))
-                                    return res.asInstanceOf[Either[GetFieldsParseError, Try[(ObjectGetFieldsDescriptor | SubObjectGetFieldsDescriptor, Option[String])]]]
-                                currPortionOpt = Some(nextPortion)
-                            case _ =>
-                                return Right(Failure(WrongStateExcetion(s"Unexpected delimiter $delimiter, before $nextPortion!")))
-                    case None =>
-                        return Left(GetFieldsParseError("Unexpected end of object!"))
-            )
+            val (before, delimiterAndNextPotionOpt) = getNextMatch(currPortion)
+            delimiterAndNextPotionOpt match
+                case Some(delimiter, nextPortion) =>
+                    delimiter match
+                        case `fieldsDelimiter` =>
+                            val res = addToFieldsNextDecriptor(before)
+                            if (isFailed(res))
+                                return res.asInstanceOf[Either[GetFieldsParseError, Try[(ObjectGetFieldsDescriptor | SubObjectGetFieldsDescriptor, String)]]]
+                            currPortion = nextPortion
+                        case `subobjectStartMark` =>
+                            if (nextDescriptorOpt.isDefined || nextFrom.isDefined || nextTo.isDefined || boundaryMarkFound)
+                                return Left(GetFieldsParseError(s"Unexpected $subobjectStartMark before $nextPortion!" +
+                                    s"nextDescriptorOpt=$nextDescriptorOpt, nextFrom=$nextFrom, nextTo=$nextTo, boundaryMarkFound=$boundaryMarkFound"))
+                            if (before.isEmpty)
+                                return Left(GetFieldsParseError(s"Empty field name of object before $nextPortion!"))
+                            val err = filterFailures(
+                                parseObjectDescriptor(nextPortion, Some(before))
+                            ) { (descriptor, nextPortion) =>
+                                nextDescriptorOpt = Some(descriptor.asInstanceOf[SubObjectGetFieldsDescriptor])
+                                currPortion = nextPortion
+                                None
+                            }
+                            if (err.isDefined)
+                                return err.get
+                        case `subobjectEndMark` =>
+                            val res = addToFieldsNextDecriptor(before)
+                            if (isFailed(res))
+                                return res.asInstanceOf[Either[GetFieldsParseError, Try[(ObjectGetFieldsDescriptor | SubObjectGetFieldsDescriptor, String)]]]
+                            currPortion = nextPortion
+                            stopFound = true
+                        case `intervalMark` =>
+                            val res = addDataToNextDescriptor(before, currPortion)
+                            if (isFailed(res))
+                                return res.asInstanceOf[Either[GetFieldsParseError, Try[(ObjectGetFieldsDescriptor | SubObjectGetFieldsDescriptor, String)]]]
+                            currPortion = nextPortion
+                        case _ =>
+                            return Right(Failure(WrongStateExcetion(s"Unexpected delimiter $delimiter, before $nextPortion!")))
+                case None =>
+                    return Left(GetFieldsParseError("Unexpected end of object!"))
             !stopFound
         do ()
 
         fieldName match
             case Some(fieldName) =>
-                Right(Success(SubObjectGetFieldsDescriptor(fieldName, Right(fields.toList)), currPortionOpt))
+                Right(Success(SubObjectGetFieldsDescriptor(fieldName, Right(fields.toList)), currPortion))
             case None =>
-                Right(Success(ObjectGetFieldsDescriptor(Right(fields.toList)), currPortionOpt))
+                Right(Success(ObjectGetFieldsDescriptor(Right(fields.toList)), currPortion))
     }
 
     private def parseSearchCondition[Res](searchQuery: Option[String], entityType: EntityType[_, _, _])

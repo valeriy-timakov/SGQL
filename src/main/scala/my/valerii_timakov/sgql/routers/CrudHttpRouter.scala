@@ -38,8 +38,7 @@ class CrudHttpRouter(
     private val searchPathPrefix = conf.getString("search-path-prefix")
     private val subobjectStartMark = conf.getString("subobject-start-mark")
     private val subobjectEndMark = conf.getString("subobject-end-mark")
-    private val intervalFromMark = conf.getString("interval-from-mark")
-    private val intervalToMark = conf.getString("interval-to-mark")
+    private val intervalMark = conf.getString("interval-mark")
 
     private val logger = LoggerFactory.getLogger(getClass)
 
