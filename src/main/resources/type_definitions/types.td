@@ -34,6 +34,8 @@ i.valerii_timakov.home_finances {
 		currency: Currency
 		description: String
 		owner: User
+		incomes: Operation+accountTo
+		outcomes: Operation+accountFrom
 	}
 
 	OperationName: (UUID) {
@@ -50,6 +52,7 @@ i.valerii_timakov.home_finances {
 		description: String
 		operationDate: DateTime
 		addDate: DateTime
+		details: OperationDetail+operation
 	}
 
 	CurrencyExchange: (UUID) {
