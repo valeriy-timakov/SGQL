@@ -512,7 +512,7 @@ class PostgresCrudRepository(
                 case Right(fields) => fields.map(fieldDsc =>
                     val nestedField: NestedGetFieldsDescriptor =  fieldDsc match
                         case subObjectDsc: SubObjectGetFieldsDescriptor =>
-                            val fieldObjecDef: FieldsContainer = objectTypeDef.getFieldType(subObjectDsc.fieldName, false).valueType match
+                            val fieldObjecDef: FieldsContainer = objectTypeDef.getFieldType(subObjectDsc.fieldName, true).valueType match
                                 case soDef: SimpleObjectTypeDefinition[_] =>
                                     soDef
                                 case ref: TypeReferenceDefinition[_] =>
