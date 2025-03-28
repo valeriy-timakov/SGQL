@@ -4,7 +4,7 @@ import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.domain.type_definitions.{ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, ItemValueTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, ByteId, CustomPrimitiveValue, Entity, EntityId, EntityValue, FixedStringId, IntId, ItemValue, LongId, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, SimpleObjectValue, StringId, UUIDId, ValueTypes}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, AbstractPrimitiveEntityType, ArrayEntityType, CustomPrimitiveEntityType, EntityType, ObjectEntitySuperType, ObjectEntityType, PrimitiveEntitySuperType}
-import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, AllInReferenceGetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, AllInReferenceGetFieldsDescriptor, GetDescriptorChainCell, ListGetFieldsDescriptor, ListSubObjectGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, PrimitiveGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, DbTableMigrationException, NotInitializedException}
 import my.valerii_timakov.sgql.services.*
 import scalikejdbc.*
@@ -31,10 +31,10 @@ private case class RefererTableData(
 
 private case class RefererTablePartialData(
                                               tableName: String,
-                                              prevReferef: Option[RefererTableData]
+                                              prevReferer: Option[RefererTableData]
                                           ):
     def toRefererTableData(columnName: String): RefererTableData =
-        RefererTableData(tableName, columnName, prevReferef)
+        RefererTableData(tableName, columnName, prevReferer)
 
 
 class PostgresCrudRepository(
@@ -351,24 +351,24 @@ class PostgresCrudRepository(
 
 
         def extractRefObject2(
-            refFieldTypeDef: TypeReferenceDefinition[_],
-            subFieldsDscs: List[NestedGetFieldsDescriptor],
-            ownerDsc: GetDescriptorChainCell,
-            refFieldIdx: Int,
-            refFieldName: String,
-            rs: WrappedResultSet,
-            fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
+                                 refFieldTypeDef: TypeReferenceDefinition[_],
+                                 subFieldsDscs: List[NestedGetFieldsDescriptor],
+                                 ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
+                                 refFieldIdx: Int,
+                                 refFieldName: String,
+                                 rs: WrappedResultSet,
+                                 fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
         ): ReferenceValue[_] =
             extractRefObject(refFieldTypeDef, subFieldsDscs, ownerDsc, refFieldIdx, refFieldName, rs, fieldsMap)
 
         def extractRefObject[ID2 <: EntityId[_, ID2]](
                                                                refFieldTypeDef: TypeReferenceDefinition[ID2],
                                                                subFieldsDscs: List[NestedGetFieldsDescriptor],
-                                                               ownerDsc: GetDescriptorChainCell,
+                                                               ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
                                                                refFieldIdx: Int,
                                                                refFieldName: String,
                                                                rs: WrappedResultSet,
-                                                               fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
+                                                               fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
                        ): ReferenceValue[ID2] =
             val refEntity = refFieldTypeDef.referencedType match
                 case refType: ObjectEntityType[ID2, _] =>
@@ -386,10 +386,10 @@ class PostgresCrudRepository(
         def extractObjectSuperTypeEntity[ID2 <: EntityId[_, ID2]](
                                                                            refType: ObjectEntitySuperType[ID2, _],
                                                                            subFieldsDscs: List[NestedGetFieldsDescriptor],
-                                                                           ownerDsc: GetDescriptorChainCell,
+                                                                           ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
                                                                            refFieldName: String,
                                                                            rs: WrappedResultSet,
-                                                                           fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
+                                                                           fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
                                                                            fieldValuesMap: Map[String, EntityValue] = Map()
         ) =
             val entities = typesDefinitionsProvider.getAllLeafObjectsSubtypesTyped(refType).map(leafSubType =>
@@ -406,9 +406,9 @@ class PostgresCrudRepository(
 
         def getLastExistingChild[ID2 <: EntityId[_, ID2]](
                                                                    objectType: AbstractObjectEntityType[ID2, _],
-                                                                   ownerDsc: GetDescriptorChainCell,
+                                                                   ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
                                                                    rs: WrappedResultSet,
-                                                                   fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                                                                   fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
         ): Option[(ID2, AbstractObjectEntityType[ID2, _])] =
             extractObjectId(objectType, Some(ownerDsc), rs, fieldsMap).map(id =>
                 objectType match
@@ -430,18 +430,18 @@ class PostgresCrudRepository(
         def extractSimpleObject2(
                                                             objectType: SimpleObjectTypeDefinition[_],
                                                             getFieldsDscs: List[NestedGetFieldsDescriptor],
-                                                            ownerDsc: GetDescriptorChainCell,
+                                                            ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
                                                             rs: WrappedResultSet,
-                                                            fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                                                            fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
                                                         ): Option[SimpleObjectValue[_]] =
             extractSimpleObject(objectType, getFieldsDscs, ownerDsc, rs, fieldsMap)
 
         def extractSimpleObject[ID2 <: EntityId[_, ID2]](
                                                                   objectType: SimpleObjectTypeDefinition[ID2],
                                                                   getFieldsDscs: List[NestedGetFieldsDescriptor],
-                                                                  ownerDsc: GetDescriptorChainCell,
+                                                                  ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
                                                                   rs: WrappedResultSet,
-                                                                  fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                                                                  fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
         ): Option[SimpleObjectValue[ID2]] =
             val fields: List[(String, EntityValue)] =
                 extractFieldsValues(getFieldsDscs, Some(ownerDsc), rs, fieldsMap)
@@ -460,9 +460,9 @@ class PostgresCrudRepository(
         def extractObject[ID2 <: EntityId[_, ID2]](
                                                             objectType: ObjectEntityType[ID2, _],
                                                             mainObjectGetFieldsDscs: List[NestedGetFieldsDescriptor],
-                                                            ownerDsc: Option[GetDescriptorChainCell],
+                                                            ownerDsc: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
                                                             rs: WrappedResultSet,
-                                                            fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                                                            fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
                    ): Option[ObjectValue[ID2, _]] =
             extractObjectId(objectType, ownerDsc, rs, fieldsMap).map(id =>
                 val fields = extractFieldsValues(mainObjectGetFieldsDscs, ownerDsc, rs, fieldsMap).toMap
@@ -471,9 +471,9 @@ class PostgresCrudRepository(
             
         def extractObjectId[ID2 <: EntityId[_, ID2]](
                                                               objectType: AbstractObjectEntityType[ID2, _],
-                                                              ownerDsc: Option[GetDescriptorChainCell],
+                                                              ownerDsc: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
                                                               rs: WrappedResultSet,
-                                                              fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                                                              fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
         ): Option[ID2] =
             val idDscChainCell = GetDescriptorChainCell(SingleGetFieldsDescriptor(entityIdFieldNameForDsc), ownerDsc)
             fieldsMap.get((idDscChainCell, Some(objectType.name))) match
@@ -484,23 +484,22 @@ class PostgresCrudRepository(
             
         def extractFieldsValues(
             getFieldsDscs: List[NestedGetFieldsDescriptor],
-            ownerDsc: Option[GetDescriptorChainCell],
+            ownerDsc: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
             rs: WrappedResultSet,
-            fieldsMap: Map[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+            fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
         ): List[(String, Option[EntityValue])] =
             getFieldsDscs.map(fieldGDsc =>
-                val currFieldDsc = GetDescriptorChainCell(fieldGDsc, ownerDsc)
-                val (fieldIdx, fieldType) = fieldsMap.getOrElse((currFieldDsc, None),
+                val (fieldIdx, fieldType) = fieldsMap.getOrElse((GetDescriptorChainCell(fieldGDsc, ownerDsc), None),
                     throw new ConsistencyException(s"Field $fieldGDsc not found in fields map!"))
                 (fieldGDsc, fieldType) match
                     case (SingleGetFieldsDescriptor(fieldName), fieldTypeDef: RootPrimitiveTypeDefinition[_]) =>
                         fieldName -> fieldTypeDef.extract(rs, fieldIdx)
                     case (SingleGetFieldsDescriptor(fieldName), fieldTypeDef: TypeReferenceDefinition[_]) =>
                         fieldName -> fieldTypeDef.extract(rs, fieldIdx)
-                    case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), fieldTypeDef: TypeReferenceDefinition[_]) =>
-                        fieldName -> Some(extractRefObject2(fieldTypeDef, subFieldsDscs, currFieldDsc, fieldIdx, fieldName, rs, fieldsMap))
-                    case (SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), soTypeDef: SimpleObjectTypeDefinition[_]) =>
-                        fieldName -> extractSimpleObject2(soTypeDef, subFieldsDscs, currFieldDsc, rs, fieldsMap)
+                    case (soDsc @ SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), fieldTypeDef: TypeReferenceDefinition[_]) =>
+                        fieldName -> Some(extractRefObject2(fieldTypeDef, subFieldsDscs, GetDescriptorChainCell(soDsc, ownerDsc), fieldIdx, fieldName, rs, fieldsMap))
+                    case (soDsc @ SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), soTypeDef: SimpleObjectTypeDefinition[_]) =>
+                        fieldName -> extractSimpleObject2(soTypeDef, subFieldsDscs, GetDescriptorChainCell(soDsc, ownerDsc), rs, fieldsMap)
             )
 
         def checkAndExpandNotExpandedDescriptors(
@@ -531,6 +530,17 @@ class PostgresCrudRepository(
                                 case Right(fields) =>
                                     checkAndExpandNotExpandedDescriptors(subObjectDsc, fieldObjecDef)
                             SubObjectGetFieldsDescriptor(subObjectDsc.fieldName, Right(subFieldsDescriptors))
+                        case singleDsc: SingleGetFieldsDescriptor =>
+                            objectTypeDef.getFieldType(singleDsc.fieldName, true).valueType match
+                                case ref: TypeReferenceDefinition[_] =>
+                                    ref.referencedType match
+                                        case _: AbstractPrimitiveEntityType[_, _, _] =>
+                                            PrimitiveGetFieldsDescriptor(singleDsc.fieldName)
+                                        case _ =>
+                                            throw new ConsistencyException(s"Referenced type ${ref.name} is not primitive " +
+                                                s"when described as SingleGetFieldsDescriptor for field ${singleDsc.fieldName}!")
+                                case _ =>
+                                    singleDsc                            
                         case _ =>
                             fieldDsc
                     nestedField
@@ -549,11 +559,15 @@ class PostgresCrudRepository(
                             case _: ArrayTypeDefinition[_, _] =>
                                 ListGetFieldsDescriptor(fieldName, None, None)
                             case _: CustomPrimitiveTypeDefinition[_, _, _] =>
-                                SingleGetFieldsDescriptor(fieldName)
+                                PrimitiveGetFieldsDescriptor(fieldName)
                             case objectDef: ObjectTypeDefinition[_, _] =>                                
                                 SubObjectGetFieldsDescriptor(fieldName, Right(expandAllFieldsGetDescriptor(objectDef)))
                     case definition: TypeBackReferenceDefinition[_] =>
-                        AllInReferenceGetFieldsDescriptor(fieldName)
+                        val backRefFields = definition.referencedType.typeDefinition.fields
+                            //exclude back reference field to prevent cyclyc references
+                            .filter(field => field._1 != definition.refField)
+                            .map(backRefField =>SubObjectGetFieldsDescriptor(backRefField._1, Left(AllGetFieldsDescriptor)));
+                        ListSubObjectGetFieldsDescriptor(fieldName, Right(backRefFields.toList), None, None)
                     case _ =>
                         throw new ConsistencyException(s"Field $fieldName type $fieldType is not supported!")
             }.toList
@@ -582,7 +596,7 @@ class PostgresCrudRepository(
                 }).toMap
                 //Option[String] contains subtype name when field is ID of one of some subtypes referenced by to parent type
                 //None - for any value type
-                val fieldsMap = mutable.HashMap[(GetDescriptorChainCell, Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]()
+                val fieldsMap = mutable.HashMap[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]()
                 var currFieldIdx = 0
                 val (tableLines, columnsLines, refData) = tableGetDescriptors.foldLeft((Nil, Nil, Nil)) (
                     (
@@ -730,17 +744,11 @@ class PostgresCrudRepository(
     private val tableAliasInQueryPrefix = persistenceConf.getString("table-alias-in-query-prefix")
 //    private val nameSubnamesDelimiter = persistenceConf.getString("column-name-subnames-delimiter")
     private val parentObjectReferenceSubfieldName = persistenceConf.getString("parent-object-reference-subfield-name")
-    private val subobjectFieldsDelimiter = "."
     private val primitiveTypeValueFieldNameForDsc = "value"
     private val entityIdFieldNameForDsc = "id"
 
     private var typesPersistenceData: Map[AbstractEntityType[_, _, _], TypePersistenceData] = Map()
-
-    private case class GetDescriptorChainCell(currDsc: NestedGetFieldsDescriptor, parentDsc: Option[GetDescriptorChainCell] = None):
-        lazy val fieldName: String = parentDsc.map(_.fieldName + subobjectFieldsDelimiter).getOrElse("") + currDsc.fieldName
-        lazy val asParentPrefix: String = fieldName + subobjectFieldsDelimiter
-
-    private case class GetFieldData(getDescriptorChainCell: GetDescriptorChainCell, fieldTypeDefinition: FieldTypeDefinition[_] | AbstractPrimitiveEntityType[_, _, _])
+    private case class GetFieldData(getDescriptorChainCell: GetDescriptorChainCell[_], fieldTypeDefinition: FieldTypeDefinition[_] | AbstractPrimitiveEntityType[_, _, _])
 
     private def getAllObjectTables(
                                       objectType: AbstractObjectEntityType[_, _],
@@ -760,7 +768,7 @@ class PostgresCrudRepository(
         tableName: String,
         idColumn: String,
         idType: EntityIdTypeDefinition[_],
-        parentDsc: Option[GetDescriptorChainCell],
+        parentDsc: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
         referer: Option[RefererTableData],
         fields: List[GetFieldData],
         realObjectTypeName: String, 
@@ -771,12 +779,12 @@ class PostgresCrudRepository(
                                                     objectType: AbstractObjectEntityType[_, _],
                                                     fieldsDescriptors: List[NestedGetFieldsDescriptor],
                                                     referer: Option[RefererTableData],
-                                                    referrersPrefix: Option[GetDescriptorChainCell],
+                                                    referrersPrefix: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
                                                     ignoreParentTypes: Option[mutable.Set[ObjectEntitySuperType[_, _]]] = None
                                   ): List[TableGetDescriptor] =
-//        val simpleObjectsParentsCache = mutable.HashMap[String, List[GetDescriptorChainCell]]()
+//        val simpleObjectsParentsCache = mutable.HashMap[String, List[GetDescriptorChainCell[_]]]()
 //        def getSimpleObjectFieldParentPersistenceData(
-//                                                         getFieldDescriptorChain: GetDescriptorChainCell,
+//                                                         getFieldDescriptorChain: GetDescriptorChainCell[_],
 //                                                         referenceData: ReferenceValuePersistenceDataFinal,
 //                                                     ): (ObjectTypeDefinition[_,  _], ValuePersistenceDataFinal) =
 //            val fields = getFieldDescriptorChain.parentDsc match
@@ -838,7 +846,7 @@ class PostgresCrudRepository(
             ))
 
     private def getSimpleObjectTablesGetDescriptors(
-                                      parentsPrefix: GetDescriptorChainCell,
+                                      parentsPrefix: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
                                       simpleObjectPersistenceData: SimpleObjectValuePersistenceDataFinal,
                                       simpleObjectTypeDef: SimpleObjectTypeDefinition[_],
                                       fieldsDescriptors: List[NestedGetFieldsDescriptor],
@@ -878,7 +886,7 @@ class PostgresCrudRepository(
                                            fieldsDescriptors: List[NestedGetFieldsDescriptor],
                                            objectTypeDef: FieldsContainer,
                                            refererPart: RefererTablePartialData,
-                                           referrersPrefix: Option[GetDescriptorChainCell],
+                                           referrersPrefix: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
                                            currTypeName: String
                                        ): (List[GetFieldData], List[NestedGetFieldsDescriptor], List[TableGetDescriptor]) =
 
@@ -891,55 +899,59 @@ class PostgresCrudRepository(
                 parentGFDs: List[NestedGetFieldsDescriptor],
                 nestedTDs: List[TableGetDescriptor]
                 ) = acc
-            val currFieldChainCell = GetDescriptorChainCell(gfd, referrersPrefix)
             objectTypeDef.fields.get(gfd.fieldName) match
-                case Some(fieldTypeDef) => (fieldTypeDef.persistenceData, fieldTypeDef.valueType) match
-                    case (None, typeDef: TypeBackReferenceDefinition[_]) =>
-                        (GetFieldData(currFieldChainCell, fieldTypeDef) :: sameTableData, parentGFDs, nestedTDs)
-                    case (Some(primitiveValueFieldPersistenceData: PrimitiveValuePersistenceDataFinal), typeDef: RootPrimitiveTypeDefinition[_]) =>
-                        (GetFieldData(currFieldChainCell, fieldTypeDef) :: sameTableData, parentGFDs, nestedTDs)
-                    case (Some(simpleObjectPersistenceData: SimpleObjectValuePersistenceDataFinal), typeDef: SimpleObjectTypeDefinition[_]) =>
-                        gfd match
-                            case SubObjectGetFieldsDescriptor(_, Right(fieldsDescriptors)) =>
-                                val soSubfieldsData = getSimpleObjectTablesGetDescriptors(currFieldChainCell,
-                                    simpleObjectPersistenceData, typeDef, fieldsDescriptors, refererPart, currTypeName)
-                                val soParentSubtypesTgds = typeDef.parent.map((parentType: ObjectEntitySuperType[_, _]) =>
-                                    typesDefinitionsProvider.getAllLeafObjectsSubtypes(parentType).flatMap(subtype =>
-                                        getAllObjectTablesGetDescriptors(subtype, fieldsDescriptors, refererPart.prevReferef, 
-                                            Some(currFieldChainCell), Some(mutable.Set[ObjectEntitySuperType[_, _]]())))
-                                ).getOrElse(Set())
-                                (soSubfieldsData._1 ++ sameTableData, parentGFDs, soSubfieldsData._2 ++ soParentSubtypesTgds ++ nestedTDs)
-                            case _ =>
-                                throw new ConsistencyException(s"Get field descriptor $gfd is not supported for $fieldTypeDef and $typeDef!")
-                    case (Some(referenceValueFieldPersistenceData: ReferenceValuePersistenceDataFinal), typeDef: TypeReferenceDefinition[_]) =>
-                        val nextReferer = Some(refererPart.toRefererTableData(referenceValueFieldPersistenceData.columnName))
-                        val referencedType: AbstractEntityType[_, _, _] = typeDef.referencedType
-                        val refererGDF = GetFieldData(currFieldChainCell, fieldTypeDef)
-                        (gfd, referencedType) match
-                            case (SubObjectGetFieldsDescriptor(_, Right(fieldsDescriptors)), objectType: ObjectEntityType[_, _]) =>
-                                val tablesGetDefinitions = getAllObjectTablesGetDescriptors(objectType, fieldsDescriptors, nextReferer, Some(currFieldChainCell))
-                                (refererGDF :: sameTableData, parentGFDs, tablesGetDefinitions ++ nestedTDs)
-                            case (SubObjectGetFieldsDescriptor(_, Right(fieldsDescriptors)), objectType: ObjectEntitySuperType[_, _]) =>
-                                val processedParentsSet = Some(mutable.Set[ObjectEntitySuperType[_, _]]())
-                                val subTypesTablesGetDefinitions = typesDefinitionsProvider.getAllLeafObjectsSubtypes(objectType).flatMap(subtype =>
-                                        getAllObjectTablesGetDescriptors(subtype, fieldsDescriptors, nextReferer, Some(currFieldChainCell), processedParentsSet))
-                                (refererGDF :: sameTableData, parentGFDs, subTypesTablesGetDefinitions.toList ++ nestedTDs)
-                            case (SingleGetFieldsDescriptor(_), primitiveType: AbstractPrimitiveEntityType[_, _, _]) =>
-                                def getPrimitiveTGDsWithChildren(primitiveType: AbstractPrimitiveEntityType[_, _, _]): List[TableGetDescriptor] =
-                                    val childrenTGDs = primitiveType match
-                                        case leafPrimitiveType: CustomPrimitiveEntityType[_, _, _] => Nil
-                                        case primitiveSuperType: PrimitiveEntitySuperType[_, _, _] =>
-                                            primitiveSuperType.directChildren.flatMap(getPrimitiveTGDsWithChildren)
-                                    val persistenceData = primitiveType.persistenceData
-                                    TableGetDescriptor(persistenceData.tableName, persistenceData.idColumn.columnName,
-                                        primitiveType.typeDefinition.idType, Some(currFieldChainCell), nextReferer,
-                                        List(GetFieldData(GetDescriptorChainCell(SingleGetFieldsDescriptor(primitiveTypeValueFieldNameForDsc),
-                                            Some(currFieldChainCell)), primitiveType)), primitiveType.name) :: childrenTGDs
-                                (refererGDF :: sameTableData, parentGFDs, getPrimitiveTGDsWithChildren(primitiveType) ++ nestedTDs)
-                            case _ =>
-                                (GetFieldData(currFieldChainCell, fieldTypeDef) :: sameTableData, parentGFDs, nestedTDs)
-                    case _ =>
-                        throw new ConsistencyException(s"Field persistence data $fieldTypeDef is not supported!")
+                case Some(fieldTypeDef) =>
+                    (fieldTypeDef.persistenceData, fieldTypeDef.valueType) match
+                        case (None, typeDef: TypeBackReferenceDefinition[_]) =>
+                            (GetFieldData(GetDescriptorChainCell(gfd, referrersPrefix), fieldTypeDef) :: sameTableData, parentGFDs, nestedTDs)
+                        case (Some(primitiveValueFieldPersistenceData: PrimitiveValuePersistenceDataFinal), typeDef: RootPrimitiveTypeDefinition[_]) =>
+                            (GetFieldData(GetDescriptorChainCell(gfd, referrersPrefix), fieldTypeDef) :: sameTableData, parentGFDs, nestedTDs)
+                        case (Some(simpleObjectPersistenceData: SimpleObjectValuePersistenceDataFinal), typeDef: SimpleObjectTypeDefinition[_]) =>
+                            gfd match
+                                case soGfd @ SubObjectGetFieldsDescriptor(_, Right(fieldsDescriptors)) =>
+                                    val currFieldChainCell = GetDescriptorChainCell(soGfd, referrersPrefix)
+                                    val soSubfieldsData = getSimpleObjectTablesGetDescriptors(currFieldChainCell,
+                                        simpleObjectPersistenceData, typeDef, fieldsDescriptors, refererPart, currTypeName)
+                                    val soParentSubtypesTgds = typeDef.parent.map((parentType: ObjectEntitySuperType[_, _]) =>
+                                        typesDefinitionsProvider.getAllLeafObjectsSubtypes(parentType).flatMap(subtype =>
+                                            getAllObjectTablesGetDescriptors(subtype, fieldsDescriptors, refererPart.prevReferer,
+                                                Some(currFieldChainCell), Some(mutable.Set[ObjectEntitySuperType[_, _]]())))
+                                    ).getOrElse(Set())
+                                    (soSubfieldsData._1 ++ sameTableData, parentGFDs, soSubfieldsData._2 ++ soParentSubtypesTgds ++ nestedTDs)
+                                case _ =>
+                                    throw new ConsistencyException(s"Get field descriptor $gfd is not supported for $fieldTypeDef and $typeDef!")
+                        case (Some(referenceValueFieldPersistenceData: ReferenceValuePersistenceDataFinal), typeDef: TypeReferenceDefinition[_]) =>
+                            val nextReferer = Some(refererPart.toRefererTableData(referenceValueFieldPersistenceData.columnName))
+                            val referencedType: AbstractEntityType[_, _, _] = typeDef.referencedType
+                            val refererGDF = GetFieldData(GetDescriptorChainCell(gfd, referrersPrefix), fieldTypeDef)
+                            (gfd, referencedType) match
+                                case (soGfd @ SubObjectGetFieldsDescriptor(_, Right(fieldsDescriptors)), objectType: ObjectEntityType[_, _]) =>
+                                    val currFieldChainCell = GetDescriptorChainCell(soGfd, referrersPrefix)
+                                    val tablesGetDefinitions = getAllObjectTablesGetDescriptors(objectType, fieldsDescriptors, nextReferer, Some(currFieldChainCell))
+                                    (refererGDF :: sameTableData, parentGFDs, tablesGetDefinitions ++ nestedTDs)
+                                case (soGfd @ SubObjectGetFieldsDescriptor(_, Right(fieldsDescriptors)), objectType: ObjectEntitySuperType[_, _]) =>
+                                    val currFieldChainCell = GetDescriptorChainCell(soGfd, referrersPrefix)
+                                    val processedParentsSet = Some(mutable.Set[ObjectEntitySuperType[_, _]]())
+                                    val subTypesTablesGetDefinitions = typesDefinitionsProvider.getAllLeafObjectsSubtypes(objectType).flatMap(subtype =>
+                                            getAllObjectTablesGetDescriptors(subtype, fieldsDescriptors, nextReferer, Some(currFieldChainCell), processedParentsSet))
+                                    (refererGDF :: sameTableData, parentGFDs, subTypesTablesGetDefinitions.toList ++ nestedTDs)
+                                case (primitiveGFD: PrimitiveGetFieldsDescriptor, primitiveType: AbstractPrimitiveEntityType[_, _, _]) =>
+                                    def getPrimitiveTGDsWithChildren(primitiveType: AbstractPrimitiveEntityType[_, _, _]): List[TableGetDescriptor] =
+                                        val childrenTGDs = primitiveType match
+                                            case leafPrimitiveType: CustomPrimitiveEntityType[_, _, _] => Nil
+                                            case primitiveSuperType: PrimitiveEntitySuperType[_, _, _] =>
+                                                primitiveSuperType.directChildren.flatMap(getPrimitiveTGDsWithChildren)
+                                        val persistenceData = primitiveType.persistenceData
+                                        val currFieldChainCell = GetDescriptorChainCell(primitiveGFD, referrersPrefix)
+                                        TableGetDescriptor(persistenceData.tableName, persistenceData.idColumn.columnName,
+                                            primitiveType.typeDefinition.idType, Some(currFieldChainCell), nextReferer,
+                                            List(GetFieldData(GetDescriptorChainCell(SingleGetFieldsDescriptor(primitiveTypeValueFieldNameForDsc),
+                                                Some(currFieldChainCell)), primitiveType)), primitiveType.name) :: childrenTGDs
+                                    (refererGDF :: sameTableData, parentGFDs, getPrimitiveTGDsWithChildren(primitiveType) ++ nestedTDs)
+                                case _ =>
+                                    (GetFieldData(GetDescriptorChainCell(gfd, referrersPrefix), fieldTypeDef) :: sameTableData, parentGFDs, nestedTDs)
+                        case _ =>
+                            throw new ConsistencyException(s"Field persistence data $fieldTypeDef is not supported!")
                 case None =>
                     if (objectTypeDef.allFields.contains(gfd.fieldName))
                         (sameTableData, gfd :: parentGFDs, nestedTDs)

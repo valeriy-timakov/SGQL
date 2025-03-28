@@ -8,7 +8,7 @@ import my.valerii_timakov.sgql.entity.domain.type_definitions.EntityIdTypeDefini
 import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, EntitySuperType, EntityType}
 import my.valerii_timakov.sgql.entity.read_modiriers.{AllGetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
-import my.valerii_timakov.sgql.entity.{AbstractTypeError, GetFieldsParseError, TypeNotFountError}
+import my.valerii_timakov.sgql.entity.{AbstractTypeError, GetFieldsParseError, SearchConditionParseError, TypeNotFountError}
 import my.valerii_timakov.sgql.exceptions.WrongStateExcetion
 import my.valerii_timakov.sgql.services.{CrudRepository, TypesDefinitionProvider}
 import spray.json.JsValue
@@ -138,8 +138,65 @@ class CrudActor(
             case Right(Failure(ex)) =>
                 Right(Failure(ex))
             case Right(Success(res)) =>
-                res 
-                        
+                res
+
+
+    private def parseExpression(input: String, expectParenthesis: Boolean): (Either[SearchConditionParseError, SearchCondition], String) = ???
+
+    private final val EqConditionSign = "="
+    private final val GraterThanConditionSign = ">"
+    private final val LessThanConditionSign = "<"
+    private final val GraterOrEqualConditionSign = ">="
+    private final val LessOrEqualConditionSign = "<="
+    private final val LikeConditionSign = "~"
+    private final val InConditionSign = ":"
+    private final val AndOperatorSign = "*"
+    private final val OrOperatorSign = "+"
+    private final val NotOperatorSign = "!"
+    private final val AllConditionsLine = List(EqConditionSign, GraterThanConditionSign, LessThanConditionSign,
+        GraterOrEqualConditionSign, LessOrEqualConditionSign, LikeConditionSign, InConditionSign)
+        .map(Pattern.quote)
+        .mkString("|")
+    private final val ConditionStartRE = s"""^([\\w_]+(\\.[\\w_]+)*)($AllConditionsLine)""".r
+    private final val ValueEndRE = """\+|\*""".r
+    private final val ValueEndInsideParenthesisRE = """(?<!\\)[+*)]""".r
+    private final val IntervalMiddleMark = ".."
+    private final val ValueEndInsideListRE = """(?<!\\),""".r
+
+    private def parseCondition(input: String, insideParenthesis: Boolean): Either[SearchConditionParseError, (SearchCondition, String)] =
+        def parseValue(input: String, insideParenthesis: Boolean): (String, String) =
+            val valueEndRE = if (insideParenthesis) ValueEndInsideParenthesisRE else ValueEndRE
+            valueEndRE.findFirstMatchIn(input).map(endMatch =>
+                (input.substring(0, endMatch.start), input.substring(endMatch.start))
+            ).getOrElse((input, ""))
+        def parseValues(input: String, insideParenthesis: Boolean): (Array[String], String) =
+            val (listValues, inputAfterList) = parseValue(input, insideParenthesis)
+            (listValues.split(ValueEndInsideListRE.regex), inputAfterList)
+        def parseInterval(input: String, insideParenthesis: Boolean): Either[SearchConditionParseError, ((String, String), String)] =
+            val intervalMiddle = input.indexOf(IntervalMiddleMark)
+            if (intervalMiddle == -1)
+                Left(SearchConditionParseError(s"Interval end not found in $input!"))
+            else
+                val startOfIntervalValue = input.substring(0, intervalMiddle)
+                val inputRest = input.substring(intervalMiddle + IntervalMiddleMark.length)
+                val (endOfIntervalValue, afterIntervalInputRest) = parseValue(inputRest, insideParenthesis)
+                Right((startOfIntervalValue, endOfIntervalValue), afterIntervalInputRest)
+        ConditionStartRE.findFirstMatchIn(input).map(match1 =>
+            val fieldName = match1.group(1)
+            val operator = match1.group(3)
+            val inputRest = input.substring(match1.end(0))
+            val value = operator match
+                case `EqConditionSign` | `GraterThanConditionSign` | `LessThanConditionSign` |
+                     `GraterOrEqualConditionSign` | `LessOrEqualConditionSign` | `LikeConditionSign` =>
+                    parseValue(inputRest, insideParenthesis)
+                case `InConditionSign` =>
+                    parseInterval(inputRest, insideParenthesis) match
+                        case Right(value) =>
+                            Right(value)
+                        case Left(_) =>
+                            Left(parseValues(inputRest, insideParenthesis))
+        )
+        Left(SearchConditionParseError(s"Interval end not found in $input!"))
 
 
     private def parseGetFieldsDescriptor(getFieldsOpt: Option[String]): Either[GetFieldsParseError, Try[ObjectGetFieldsDescriptor]] =
