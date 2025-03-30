@@ -3,7 +3,7 @@ package my.valerii_timakov.sgql.services
 import my.valerii_timakov.sgql.entity
 import my.valerii_timakov.sgql.entity.domain.type_values.EntityId
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, GlobalTypesMap, ObjectEntitySuperType, ObjectEntityType}
-import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, GetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, CombinedSearchCondition, GetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, NotSearchCondition, ObjectGetFieldsDescriptor, SearchCondition, SingleFieldSearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
 import my.valerii_timakov.sgql.entity.{GetFieldsFieldValidateError, GetFieldsFieldsValidateError, GetFieldsParseError, SearchConditionParseError}
 
 import scala.annotation.tailrec
@@ -24,8 +24,8 @@ trait TypesDefinitionProvider:
     def getAllLeafObjectsSubtypes(entityType: ObjectEntitySuperType[_, _]): Set[ObjectEntityType[_, _]]
     def validateGetFieldsDescriptor(descriptor: ObjectGetFieldsDescriptor, entityType: AbstractEntityType[_, _, _]):
         Either[entity.Error, Unit]
-    def parseSearchCondition(condition: Option[String], entityType: AbstractEntityType[_, _, _]):
-        Try[Either[SearchConditionParseError, SearchCondition]]
+    def validateSearchCondition(condition: SearchCondition, entityType: AbstractEntityType[_, _, _]):
+        Try[Either[SearchConditionParseError, Unit]]
 
 object TypesDefinitionProvider:
 
@@ -77,7 +77,26 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                     case _ =>
                         Left(GetFieldsParseError(s"Cannot use GetFieldsDescriptor $descriptor for non object type $entityType!"))
 
-    def parseSearchCondition(condition: Option[String], entityType: AbstractEntityType[_, _, _]): Try[Either[SearchConditionParseError, SearchCondition]] = ???
+    def validateSearchCondition(
+                                   condition: SearchCondition, 
+                                   entityType: AbstractEntityType[_, _, _]
+                               ): Either[SearchConditionParseError, Unit] =
+        condition match
+            case combined: CombinedSearchCondition =>
+                combined.conditions.map(validateSearchCondition(_, entityType)).collectFirst({ case Left(error) => error })
+                    .map(Left(_))
+                    .getOrElse(Right(Success(())))
+            case not: NotSearchCondition =>
+                validateSearchCondition(not.condition, entityType)
+            case single: SingleFieldSearchCondition => 
+                entityType.typeDefinition.allFields.get(single.field.fieldName)
+                    .map {
+                        case _: AbstractObjectEntityType[_, _] =>
+                            Left(SearchConditionParseError(s"Cannot use SearchCondition $single for object type $entityType!"))
+                        case _ =>
+                            Right(Success(()))
+                    }
+                    .getOrElse(Left(SearchConditionParseError(s"SearchCondition field ${single.field.fieldName} not present in corresponding type $entityType!")))
 
     private def validateObjectGetFieldsDescriptor(
                                                descriptor: AbstractObjectGetFieldsDescriptor,

@@ -31,19 +31,30 @@ case class GetDescriptorChainCell[CFD <: NestedGetFieldsDescriptor](current: CFD
     lazy val fieldName: String = referer.map(_.fieldName + subobjectFieldsDelimiter).getOrElse("") + current.fieldName
     lazy val asParentPrefix: String = fieldName + subobjectFieldsDelimiter
     
+case class SearchFieldChainCell(fieldName: String, nextCell: Option[SearchFieldChainCell] = None)
+    
 
-
+final case class Range(from: String, to: String)
 sealed trait SearchCondition
-final case class EmptySearchCondition() extends SearchCondition
-final case class EqSearchCondition(field: GetDescriptorChainCell[SingleGetFieldsDescriptor], value: ValueTypes) extends SearchCondition
-final case class NeSearchCondition(field: GetDescriptorChainCell[SingleGetFieldsDescriptor], value: ValueTypes) extends SearchCondition
-final case class GtSearchCondition(field: GetDescriptorChainCell[SingleGetFieldsDescriptor], value: ValueTypes) extends SearchCondition
-final case class GeSearchCondition(field: GetDescriptorChainCell[SingleGetFieldsDescriptor], value: ValueTypes) extends SearchCondition
-final case class LtSearchCondition(field: GetDescriptorChainCell[SingleGetFieldsDescriptor], value: ValueTypes) extends SearchCondition
-final case class LeSearchCondition(field: GetDescriptorChainCell[SingleGetFieldsDescriptor], value: ValueTypes) extends SearchCondition
-final case class BetweenSearchCondition(field: GetDescriptorChainCell[SingleGetFieldsDescriptor], from: ValueTypes, to: ValueTypes) extends SearchCondition
-final case class LikeSearchCondition(field: GetDescriptorChainCell[SingleGetFieldsDescriptor], value: String) extends SearchCondition
-final case class InSearchCondition[T <: ValueTypes](field: GetDescriptorChainCell[SingleGetFieldsDescriptor], value: List[_ <: ValueTypes]) extends SearchCondition
-final case class AndSearchCondition(conditions: List[SearchCondition]) extends SearchCondition
-final case class OrSearchCondition(conditions: List[SearchCondition]) extends SearchCondition
+sealed trait SingleFieldSearchCondition extends SearchCondition:
+    def field: SearchFieldChainCell
+final case class EqSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition
+final case class GtSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition
+final case class GeSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition
+final case class LtSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition
+final case class LeSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition
+final case class BetweenSearchCondition(field: SearchFieldChainCell, value: Range) extends SingleFieldSearchCondition
+final case class LikeSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition
+final case class InSearchCondition[T <: ValueTypes](field: SearchFieldChainCell, value: Array[String]) extends SingleFieldSearchCondition
 final case class NotSearchCondition(condition: SearchCondition) extends SearchCondition
+sealed trait CombinedSearchCondition extends SearchCondition:
+    def conditions: List[SearchCondition]
+    def ::(condition: SearchCondition): CombinedSearchCondition
+final case class AndSearchCondition(conditions: List[SearchCondition]) extends CombinedSearchCondition:
+    def ::(condition: SearchCondition): AndSearchCondition = AndSearchCondition(condition :: conditions)
+object AndSearchCondition:
+    def apply(conditions: SearchCondition*): AndSearchCondition = AndSearchCondition(conditions.toList)
+final case class OrSearchCondition(conditions: List[SearchCondition]) extends CombinedSearchCondition:
+    def ::(condition: SearchCondition): OrSearchCondition = OrSearchCondition(condition :: conditions)
+object OrSearchCondition:
+    def apply(conditions: SearchCondition*): OrSearchCondition = OrSearchCondition(conditions.toList)
