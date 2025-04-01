@@ -248,7 +248,7 @@ final case class TypeBackReferenceDefinition[ID <: EntityId[_, ID]](
                                                                              //reference to abstract type to make it possible to reference to any concrete nested type
                                                                              referencedType: AbstractObjectEntityType[ID, _],
                                                                              refField: String
-                                            ) extends FieldValueTypeDefinition[BackReferenceValue[ID]], ReferenceDefinition[ID, BackReferenceValue[ID]]:
+                                            ) extends ReferenceDefinition[ID, BackReferenceValue[ID]]:
     lazy val idType: EntityIdTypeDefinition[ID] = referencedType.typeDefinition.idType
     override def name: String = referencedType.name + "." + refField + "[]"
     def toJson(value: BackReferenceValue[ID]): JsValue =
