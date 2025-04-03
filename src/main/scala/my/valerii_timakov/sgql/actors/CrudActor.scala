@@ -93,7 +93,7 @@ class CrudActor(
                 replyTo ! getType(entityTypeName) { entityType =>
                     parseAndProcessGetFieldsDescriptor(getFields, entityType) { getFields =>
                         parseSearchCondition(searchQuery, entityType) { searchQuery =>
-                            processAndWrapError(() => repository.find(entityType, searchQuery, getFields), "Error sjearching entities!")
+                            processAndWrapError(() => repository.find(entityType, searchQuery, getFields), "Error searching entities!")
                         }
                     }
                 }
@@ -144,16 +144,19 @@ class CrudActor(
 
 
 
-    private def parseSearchCondition[Res](searchQuery: Option[String], entityType: EntityType[_, _, _])
-                                         (searchConditionMapper: SearchCondition => Either[entity.Error, Try[Res]])
+    private def parseSearchCondition[Res](searchQueryOpt: Option[String], entityType: EntityType[_, _, _])
+                                         (searchConditionMapper: Option[SearchCondition] => Either[entity.Error, Try[Res]])
     : Either[entity.Error, Try[Res]] =
-        typesDefinitionProvider.parseSearchCondition(searchQuery, entityType) match
-            case Failure(ex) =>
-                Right(Failure(ex))
-            case Success(Left(error)) =>
-                Left(error)
-            case Success(Right(searchQuery)) =>
-                searchConditionMapper(searchQuery)
+        val searchConditionRes: Either[SearchConditionParseError, Option[SearchCondition]] = searchQueryOpt match
+            case Some(searchQuery) => 
+                searchConditionsParser.parse(searchQuery)
+                    .flatMap(searchCondition =>
+                        typesDefinitionProvider.validateSearchCondition(searchCondition, entityType)
+                            .map(_ => Some(searchCondition))
+                    )
+            case None =>
+                Right(None)
+        searchConditionRes.flatMap(searchConditionMapper) 
 
 
 object CrudActor:

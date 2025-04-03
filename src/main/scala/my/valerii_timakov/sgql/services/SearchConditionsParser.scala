@@ -19,11 +19,16 @@ class SearchConditionsParser(conf: Config):
     private final val AndOperatorSign = conf.getString("and")
     private final val OrOperatorSign = conf.getString("or")
     private final val NotOperatorSign = conf.getString("not")
+    private final val ReferencedSubtypeSpecifierStartMark = conf.getString("ref-subtype-specifier-start")
+    private final val ReferencedSubtypeSpecifierEndMark = conf.getString("ref-subtype-specifier-end")
+    private final val RefSbtpSpcStMrk = Pattern.quote(ReferencedSubtypeSpecifierStartMark)
+    private final val RefSbtpSpcEnMrk = Pattern.quote(ReferencedSubtypeSpecifierEndMark)
     private final val AllConditionsLine = List(EqConditionSign, GraterThanConditionSign, LessThanConditionSign,
         GraterOrEqualConditionSign, LessOrEqualConditionSign, LikeConditionSign, InConditionSign)
         .map(Pattern.quote)
         .mkString("|")
-    private final val ConditionStartRE = s"""^([\\w_]+(\\.[\\w_]+)*)($AllConditionsLine)""".r
+    val typeRef = TypesDefinitionsParser.typeRefNameRE.regex
+    private final val ConditionStartRE = s"""^([\\w_]+(($RefSbtpSpcStMrk$typeRef+$RefSbtpSpcEnMrk)?\\.[\\w_]+)*)($AllConditionsLine)""".r
     private final val ValueEndRE = """\+|\*""".r
     private final val ValueEndInsideParenthesisRE = """(?<!\\)[+*)]""".r
     private final val IntervalMiddleMark = ".."
@@ -112,13 +117,20 @@ class SearchConditionsParser(conf: Config):
                 Left(error)
 
     private def parseCondition(input: String, insideParenthesis: Boolean): Either[SearchConditionParseError, (SearchCondition, String)] =
+
         def parseFieldsChain(input: String): SearchFieldChainCell =
+            //todo FIX REF TYPE NAME PARSE WITH END MART AND NAMESPACES
             val firstFieldEnd = input.indexOf(FieldsDelimiterInChain)
             if (firstFieldEnd == -1)
-                SearchFieldChainCell(input)
+                SearchFieldChainCell(input, None, None)
             else
-                SearchFieldChainCell(input.substring(0, firstFieldEnd), Some(parseFieldsChain(
-                    input.substring(firstFieldEnd + FieldsDelimiterInChain.length))))
+                val currFieldName = input.substring(0, firstFieldEnd)
+                val nextChain = Some(parseFieldsChain(input.substring(firstFieldEnd + FieldsDelimiterInChain.length)))
+                val rsssmIndex = currFieldName.indexOf(ReferencedSubtypeSpecifierStartMark)
+                if (rsssmIndex != -1)
+                    SearchFieldChainCell(currFieldName.substring(0, rsssmIndex), Some(currFieldName.substring(rsssmIndex)), nextChain)
+                else
+                    SearchFieldChainCell(currFieldName, None, nextChain)
         def parseValue(input: String, insideParenthesis: Boolean): (String, String) =
             val valueEndRE = if (insideParenthesis) ValueEndInsideParenthesisRE else ValueEndRE
             valueEndRE.findFirstMatchIn(input).map(endMatch =>
@@ -142,7 +154,7 @@ class SearchConditionsParser(conf: Config):
                     Left(SearchConditionParseError(s"Empty field name in search condition $input!"))
                 else
                     val fieldsChain = parseFieldsChain(fieldName)
-                    val operator = match1.group(3)
+                    val operator = match1.group(4)
                     val inputRest = input.substring(match1.end(0))
                     val searchCondition = operator match
                         case `EqConditionSign` | `GraterThanConditionSign` | `LessThanConditionSign` |

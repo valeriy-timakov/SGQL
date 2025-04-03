@@ -31,7 +31,7 @@ case class GetDescriptorChainCell[CFD <: NestedGetFieldsDescriptor](current: CFD
     lazy val fieldName: String = referer.map(_.fieldName + subobjectFieldsDelimiter).getOrElse("") + current.fieldName
     lazy val asParentPrefix: String = fieldName + subobjectFieldsDelimiter
     
-case class SearchFieldChainCell(fieldName: String, nextCell: Option[SearchFieldChainCell] = None)
+case class SearchFieldChainCell(fieldName: String, subType: Option[String], nextCell: Option[SearchFieldChainCell] = None)
     
 
 final case class Range(from: String, to: String)

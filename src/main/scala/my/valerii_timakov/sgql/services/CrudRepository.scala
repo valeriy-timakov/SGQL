@@ -26,7 +26,7 @@ trait CrudRepository:
 
     def get[ID <: EntityId[_, ID]](entityType: EntityType[ID, _, _], id: EntityId[_, ID], getFields: ObjectGetFieldsDescriptor): Option[Entity[ID, _, _]]
 
-    def find(entityType: EntityType[_, _, _], query: SearchCondition, getFields: ObjectGetFieldsDescriptor): Seq[Entity[_, _, _]]
+    def find(entityType: EntityType[_, _, _], query: Option[SearchCondition], getFields: ObjectGetFieldsDescriptor): Seq[Entity[_, _, _]]
 
     def init(typesDefinitionsProvider: TypesDefinitionProviderInitializer): Version
 
