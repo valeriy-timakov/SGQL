@@ -97,10 +97,9 @@ object TypesDefinitionsParser extends DefinitionsParser[TypesRootPackageData]:
     }
     case class IdTypeRef(name: String)
     
-    val typeRefNameRE = """[\w_]+([\w_.]+[\w_]+)?""".r
         
     private def itemName: Parser[String] = log("""[\w_]+""".r, "itemName")
-    private def typeRefName: Parser[String] = log(typeRefNameRE, "typeRefName")
+    private def typeRefName: Parser[String] = log("""[\w_]+([\w_.]+[\w_]+)?""".r, "typeRefName")
     private def typeReference: Parser[ReferenceData] = log(opt("$") ~ typeRefName ~ opt("+" ~> itemName) ^^ {
         case uniqueMark ~ refTypeName ~ refFieldName => ReferenceData(refTypeName, refFieldName, uniqueMark.isDefined)
     }, "typeReference")

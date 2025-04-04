@@ -656,13 +656,18 @@ class PostgresCrudRepository(
                     .apply()
                     .flatten
             case ArrayEntityType(typeName, _) =>
+                //TODO implement
                 //values: Seq[ItemValue],
                 //           persData: ArrayTypePersistenceDataFinal
                 None
             case _ => throw new ConsistencyException(s"Entity type $entityType is not known!")
         res
 
-    def find(entityType: EntityType[_, _, _], query: Option[SearchCondition], getFields: ObjectGetFieldsDescriptor)(implicit session: DBSession): Vector[Entity[_, _, _]] = ???
+    def find(
+                entityType: EntityType[_, _, _],
+                query: Option[SearchCondition],
+                getFields: ObjectGetFieldsDescriptor
+    )(implicit session: DBSession): Vector[Entity[_, _, _]] = ???
     
     def setTypesDefinitionsProvider(typesDefinitionsProvider: TypesDefinitionProvider): Unit =
         this.typesDefinitionsProviderContainer = Some(typesDefinitionsProvider)
