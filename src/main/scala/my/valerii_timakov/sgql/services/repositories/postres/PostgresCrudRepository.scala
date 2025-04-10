@@ -304,7 +304,7 @@ class PostgresCrudRepository(
         def deleteArrayValues(tablesData: Set[ItemTypePersistenceDataFinal]): Option[Unit] =
             val res = tablesData.map(tableData =>
                 SQL(s"""DELETE FROM $typesSchemaName.${tableData.tableName} WHERE ${esc(tableData.idColumn.columnName)} = ?""")
-                    .bind(true, id.value)
+                    .bind(id.value)
                     .update.apply()
             ).sum
             if (res == 0)
@@ -332,247 +332,7 @@ class PostgresCrudRepository(
                                         id: EntityId[_, ID1],
                                         getFields: ObjectGetFieldsDescriptor
                                   )(implicit session: DBSession): Option[Entity[ID1, _, _]] =
-        def getTableAliace(map:  Map[(Option[RefererTableData], String), String], tgd: ReferredTable) =
-            map.getOrElse((tgd.referer, tgd.tableName), throw new ConsistencyException(s"Table aliace not found for ${(tgd.referer, tgd.tableName)}"))
-            
-        def getTablesLineReversedInner(tablesLines: List[String], prevLength: Int, currDelimiter: String, nextDelimiter: String): StringBuilder =
-            if (tablesLines.nonEmpty)
-                val currValue = tablesLines.head
-                val result = getTablesLineReversedInner(tablesLines.tail, 
-                    prevLength + currValue.length + currDelimiter.length, nextDelimiter, nextDelimiter)
-                result.append(currValue)
-                result.append(currDelimiter)
-                result
-            else 
-                new StringBuilder(prevLength)
-                
-        def getListLineReversed(tablesLines: List[String], delimiter: String): String =
-            getTablesLineReversedInner(tablesLines, 0, "", delimiter).toString
-
-
-        def extractRefObject2(
-                                 refFieldTypeDef: TypeReferenceDefinition[_],
-                                 subFieldsDscs: List[NestedGetFieldsDescriptor],
-                                 ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
-                                 refFieldIdx: Int,
-                                 refFieldName: String,
-                                 rs: WrappedResultSet,
-                                 fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
-        ): ReferenceValue[_] =
-            extractRefObject(refFieldTypeDef, subFieldsDscs, ownerDsc, refFieldIdx, refFieldName, rs, fieldsMap)
-
-        def extractRefObject[ID2 <: EntityId[_, ID2]](
-                                                               refFieldTypeDef: TypeReferenceDefinition[ID2],
-                                                               subFieldsDscs: List[NestedGetFieldsDescriptor],
-                                                               ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
-                                                               refFieldIdx: Int,
-                                                               refFieldName: String,
-                                                               rs: WrappedResultSet,
-                                                               fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
-                       ): ReferenceValue[ID2] =
-            val refEntity = refFieldTypeDef.referencedType match
-                case refType: ObjectEntityType[ID2, _] =>
-                    extractObject(refType, subFieldsDscs, Some(ownerDsc), rs, fieldsMap).getOrElse(
-                        throw new ConsistencyException(s"Referenced object for field $refFieldName is absent in DB!")
-                    )
-                case refType: ObjectEntitySuperType[ID2, _] =>
-                    extractObjectSuperTypeEntity(refType, subFieldsDscs, ownerDsc, refFieldName, rs, fieldsMap)
-            val reference: ReferenceValue[ID2] = refFieldTypeDef.extract(rs, refFieldIdx).getOrElse(
-                throw new ConsistencyException(s"Reference for field $refFieldName is absent in DB!")
-            )
-            reference.setRefValue(refEntity)
-            reference
-
-        def extractObjectSuperTypeEntity[ID2 <: EntityId[_, ID2]](
-                                                                           refType: ObjectEntitySuperType[ID2, _],
-                                                                           subFieldsDscs: List[NestedGetFieldsDescriptor],
-                                                                           ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
-                                                                           refFieldName: String,
-                                                                           rs: WrappedResultSet,
-                                                                           fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
-                                                                           fieldValuesMap: Map[String, EntityValue] = Map()
-        ) =
-            val entities = typesDefinitionsProvider.getAllLeafObjectsSubtypesTyped(refType).map(leafSubType =>
-                    extractObject(leafSubType, subFieldsDscs, Some(ownerDsc), rs, fieldsMap)
-                )
-                .collect({ case Some(entity) => entity })
-            if (entities.size == 1)
-                entities.iterator.next()
-            else if (entities.isEmpty)
-                throw new ConsistencyException(s"Referenced object for field $refFieldName is absent in DB!")
-            else
-                throw new ConsistencyException(s"Multiple entities found for field $refFieldName! Found: $entities")
-
-
-        def getLastExistingChild[ID2 <: EntityId[_, ID2]](
-                                                                   objectType: AbstractObjectEntityType[ID2, _],
-                                                                   ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
-                                                                   rs: WrappedResultSet,
-                                                                   fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
-        ): Option[(ID2, AbstractObjectEntityType[ID2, _])] =
-            extractObjectId(objectType, Some(ownerDsc), rs, fieldsMap).map(id =>
-                objectType match
-                    case leafType: ObjectEntityType[ID2, _] =>
-                        (id, leafType.asInstanceOf[ObjectEntityType[ID2, _]])
-                    case superType: ObjectEntitySuperType[ID2, _] =>
-                        val existingChildren = superType.directChildren
-                            .map(getLastExistingChild(_, ownerDsc, rs, fieldsMap))
-                            .collect({ case Some(childType) => childType })
-                        if (existingChildren.size == 1)
-                            existingChildren.iterator.next()
-                        else if (existingChildren.isEmpty)
-                            (id, superType.asInstanceOf[ObjectEntitySuperType[ID2, _]])
-                        else
-                            throw new ConsistencyException(s"Multiple entities found for type $objectType! Found: $existingChildren")
-            )
-
-
-        def extractSimpleObject2(
-                                                            objectType: SimpleObjectTypeDefinition[_],
-                                                            getFieldsDscs: List[NestedGetFieldsDescriptor],
-                                                            ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
-                                                            rs: WrappedResultSet,
-                                                            fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
-                                                        ): Option[SimpleObjectValue[_]] =
-            extractSimpleObject(objectType, getFieldsDscs, ownerDsc, rs, fieldsMap)
-
-        def extractSimpleObject[ID2 <: EntityId[_, ID2]](
-                                                                  objectType: SimpleObjectTypeDefinition[ID2],
-                                                                  getFieldsDscs: List[NestedGetFieldsDescriptor],
-                                                                  ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
-                                                                  rs: WrappedResultSet,
-                                                                  fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
-        ): Option[SimpleObjectValue[ID2]] =
-            val fields: List[(String, EntityValue)] =
-                extractFieldsValues(getFieldsDscs, Some(ownerDsc), rs, fieldsMap)
-                .collect({case (fieldName, Some(fieldValue)) => (fieldName, fieldValue) })
-
-            objectType.parent match
-                case Some(refType) =>
-                    getLastExistingChild(refType, ownerDsc, rs, fieldsMap)
-                        .map(idAndParent => objectType.createValue(Some(idAndParent), fields.toMap))                    
-                case None =>
-                    if (fields.isEmpty)
-                        None
-                    else
-                        Some(objectType.createValue(None, fields.toMap))
-
-        def extractObject[ID2 <: EntityId[_, ID2]](
-                                                            objectType: ObjectEntityType[ID2, _],
-                                                            mainObjectGetFieldsDscs: List[NestedGetFieldsDescriptor],
-                                                            ownerDsc: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
-                                                            rs: WrappedResultSet,
-                                                            fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
-                   ): Option[ObjectValue[ID2, _]] =
-            extractObjectId(objectType, ownerDsc, rs, fieldsMap).map(id =>
-                val fields = extractFieldsValues(mainObjectGetFieldsDscs, ownerDsc, rs, fieldsMap).toMap
-                objectType.createEntityAndCheckFields(id, fields)
-            )
-            
-        def extractObjectId[ID2 <: EntityId[_, ID2]](
-                                                              objectType: AbstractObjectEntityType[ID2, _],
-                                                              ownerDsc: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
-                                                              rs: WrappedResultSet,
-                                                              fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
-        ): Option[ID2] =
-            val idDscChainCell = GetDescriptorChainCell(SingleGetFieldsDescriptor(entityIdFieldNameForDsc), ownerDsc)
-            fieldsMap.get((idDscChainCell, Some(objectType.name))) match
-                case Some((idx, idType: EntityIdTypeDefinition[ID2])) =>
-                    idType.extract(rs, idx)
-                case _ =>
-                    throw new ConsistencyException(s"ID data $idDscChainCell not found in fields map!")
-            
-        def extractFieldsValues(
-            getFieldsDscs: List[NestedGetFieldsDescriptor],
-            ownerDsc: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
-            rs: WrappedResultSet,
-            fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
-        ): List[(String, Option[EntityValue])] =
-            getFieldsDscs.map(fieldGDsc =>
-                val (fieldIdx, fieldType) = fieldsMap.getOrElse((GetDescriptorChainCell(fieldGDsc, ownerDsc), None),
-                    throw new ConsistencyException(s"Field $fieldGDsc not found in fields map!"))
-                (fieldGDsc, fieldType) match
-                    case (SingleGetFieldsDescriptor(fieldName), fieldTypeDef: RootPrimitiveTypeDefinition[_]) =>
-                        fieldName -> fieldTypeDef.extract(rs, fieldIdx)
-                    case (SingleGetFieldsDescriptor(fieldName), fieldTypeDef: TypeReferenceDefinition[_]) =>
-                        fieldName -> fieldTypeDef.extract(rs, fieldIdx)
-                    case (soDsc @ SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), fieldTypeDef: TypeReferenceDefinition[_]) =>
-                        fieldName -> Some(extractRefObject2(fieldTypeDef, subFieldsDscs, GetDescriptorChainCell(soDsc, ownerDsc), fieldIdx, fieldName, rs, fieldsMap))
-                    case (soDsc @ SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), soTypeDef: SimpleObjectTypeDefinition[_]) =>
-                        fieldName -> extractSimpleObject2(soTypeDef, subFieldsDscs, GetDescriptorChainCell(soDsc, ownerDsc), rs, fieldsMap)
-            )
-
-        def checkAndExpandNotExpandedDescriptors(
-                                                    getFields: AbstractObjectGetFieldsDescriptor, objectTypeDef: FieldsContainer
-                                                ): List[NestedGetFieldsDescriptor] =
-            getFields.fields match
-                case Left(AllGetFieldsDescriptor) =>
-                    expandAllFieldsGetDescriptor(objectTypeDef)
-                case Right(fields) => fields.map(fieldDsc =>
-                    val nestedField: NestedGetFieldsDescriptor =  fieldDsc match
-                        case subObjectDsc: SubObjectGetFieldsDescriptor =>
-                            val fieldObjecDef: FieldsContainer = objectTypeDef.getFieldType(subObjectDsc.fieldName, true).valueType match
-                                case soDef: SimpleObjectTypeDefinition[_] =>
-                                    soDef
-                                case ref: TypeReferenceDefinition[_] =>
-                                    ref.referencedType match
-                                        case refObjType: AbstractObjectEntityType[_, _] =>
-                                            refObjType.typeDefinition
-                                        case _ =>
-                                            throw new ConsistencyException(s"Referenced type ${ref.name} is not object " +
-                                                s"when described as SubObjectGetFieldsDescriptor for field ${subObjectDsc.fieldName}!")
-                                case other =>
-                                    throw new ConsistencyException(s"Type of ${subObjectDsc.fieldName} field $other is " +
-                                        s"not object when described as SubObjectGetFieldsDescriptor!")
-                            val subFieldsDescriptors: List[NestedGetFieldsDescriptor] = subObjectDsc.fields match
-                                case Left(AllGetFieldsDescriptor) =>
-                                    expandAllFieldsGetDescriptor(fieldObjecDef)
-                                case Right(fields) =>
-                                    checkAndExpandNotExpandedDescriptors(subObjectDsc, fieldObjecDef)
-                            SubObjectGetFieldsDescriptor(subObjectDsc.fieldName, Right(subFieldsDescriptors))
-                        case singleDsc: SingleGetFieldsDescriptor =>
-                            objectTypeDef.getFieldType(singleDsc.fieldName, true).valueType match
-                                case ref: TypeReferenceDefinition[_] =>
-                                    ref.referencedType match
-                                        case _: AbstractPrimitiveEntityType[_, _, _] =>
-                                            PrimitiveGetFieldsDescriptor(singleDsc.fieldName)
-                                        case _ =>
-                                            throw new ConsistencyException(s"Referenced type ${ref.name} is not primitive " +
-                                                s"when described as SingleGetFieldsDescriptor for field ${singleDsc.fieldName}!")
-                                case _ =>
-                                    singleDsc                            
-                        case _ =>
-                            fieldDsc
-                    nestedField
-                )
-
-            
-        def expandAllFieldsGetDescriptor(objecDef: FieldsContainer): List[NestedGetFieldsDescriptor] =
-           objecDef.allFields.map { case (fieldName, fieldType) =>
-                fieldType.valueType match
-                    case definition: SimpleObjectTypeDefinition[_] =>
-                        SubObjectGetFieldsDescriptor(fieldName, Right(expandAllFieldsGetDescriptor(definition)))
-                    case definition: RootPrimitiveTypeDefinition[_] =>
-                        SingleGetFieldsDescriptor(fieldName)
-                    case definition: TypeReferenceDefinition[_] =>
-                        definition.referencedType.typeDefinition match
-                            case _: ArrayTypeDefinition[_, _] =>
-                                ListGetFieldsDescriptor(fieldName, None, None)
-                            case _: CustomPrimitiveTypeDefinition[_, _, _] =>
-                                PrimitiveGetFieldsDescriptor(fieldName)
-                            case objectDef: ObjectTypeDefinition[_, _] =>                                
-                                SubObjectGetFieldsDescriptor(fieldName, Right(expandAllFieldsGetDescriptor(objectDef)))
-                    case definition: TypeBackReferenceDefinition[_] =>
-                        val backRefFields = definition.referencedType.typeDefinition.fields
-                            //exclude back reference field to prevent cyclyc references
-                            .filter(field => field._1 != definition.refField)
-                            .map(backRefField =>SubObjectGetFieldsDescriptor(backRefField._1, Left(AllGetFieldsDescriptor)));
-                        ListSubObjectGetFieldsDescriptor(fieldName, Right(backRefFields.toList), None, None)
-                    case _ =>
-                        throw new ConsistencyException(s"Field $fieldName type $fieldType is not supported!")
-            }.toList
-
-        val res: Option[Entity[ID1, _, _]] = entityType match
+        entityType match
             case primType: CustomPrimitiveEntityType[ID1, _, _] =>
                 val persData = primType.persistenceData
                 val valueOpt =
@@ -588,70 +348,56 @@ class PostgresCrudRepository(
                         .flatten
                 valueOpt.map(value => primType.createEntityRaw(id, value))
             case objectType: ObjectEntityType[ID1, _] =>
-                val expandedDescriptors = checkAndExpandNotExpandedDescriptors(getFields, objectType.typeDefinition)
-                val tableGetDescriptors = getAllObjectTablesGetDescriptors(objectType, expandedDescriptors, None, None)
-                val tablesAliasesMap = tableGetDescriptors.zipWithIndex.map((tgd, rowIdx) => {
-                    val tableAlias = tableAliasInQueryPrefix + tgd.tableName + rowIdx
-                    (tgd.referer, tgd.tableName) -> tableAlias
-                }).toMap
-                //Option[String] contains subtype name when field is ID of one of some subtypes referenced by to parent type
-                //None - for any value type
-                val fieldsMap = mutable.HashMap[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]()
-                var currFieldIdx = 0
-                val (tableLines, columnsLines, refData) = tableGetDescriptors.foldLeft((Nil, Nil, Nil)) (
-                    (
-                        acc: (List[String], List[String], List[GetFieldData]),
-                        tgd: TableGetDescriptor
-                    ) =>
-                        val (tablesList, columnsList, backRefFieldsList) = acc
-                        val tableAlias = getTableAliace(tablesAliasesMap, tgd)
-                        currFieldIdx += 1
-                        val idDscChainCell = GetDescriptorChainCell(SingleGetFieldsDescriptor(entityIdFieldNameForDsc), tgd.parentDsc)
-                        fieldsMap += (idDscChainCell, Some(tgd.realObjectTypeName)) -> (currFieldIdx, tgd.idType)
-                        val tableLine = s"$typesSchemaName.${esc(tgd.tableName)} as $tableAlias" + tgd.referer.map(ref =>
-                                val refAlias = getTableAliace(tablesAliasesMap, ref)
-                                s" on $refAlias.${ref.columnName} = $tableAlias.${tgd.idColumn}"
-                            ).getOrElse("")
-                        val (updatedColumnsList, updatedBackRefFieldsList) = tgd.fields.foldLeft((
-                            s"$tableAlias.${tgd.idColumn}" :: columnsList,
-                            backRefFieldsList
-                        ))(
-                            (
-                                acc: (List[String], List[GetFieldData]),
-                                gfd: GetFieldData
-                            ) =>
-                                val (columnsList, backRefFieldsList) = acc
-                                gfd.fieldTypeDefinition match
-                                    case fieldTypeDef: FieldTypeDefinition[_] =>
-                                        (fieldTypeDef.valueType, fieldTypeDef.persistenceData) match
-                                            case (fieldTypeDef: ItemValueTypeDefinition[_], Some(persistenceData: OneValuePersistenceDataFinal)) =>
-                                                currFieldIdx += 1
-                                                fieldsMap += (gfd.getDescriptorChainCell, None) -> (currFieldIdx, fieldTypeDef)
-                                                (s"$tableAlias.${esc(persistenceData.columnName)}" :: columnsList, backRefFieldsList)
-                                            case (_: TypeBackReferenceDefinition[_], None) =>
-                                                (columnsList, gfd :: backRefFieldsList)
-                                            case (_, persistanceData) => throw new ConsistencyException(s"Unknown combination of field " +
-                                                s"descriptor ${gfd.getDescriptorChainCell} and field persistence data $persistanceData is not supported!")
-
-                                    case primitiveEntityType: AbstractPrimitiveEntityType[_, _, _] =>
-                                        currFieldIdx += 1
-                                        fieldsMap += (gfd.getDescriptorChainCell, None) -> (currFieldIdx, primitiveEntityType.typeDefinition.rootType.asInstanceOf[FieldValueTypeDefinition[_]])
-                                        (s"$tableAlias.${esc(primitiveEntityType.persistenceData.valueColumn.columnName)}" :: columnsList, backRefFieldsList)
-                        )
-                        (
-                            tableLine :: tablesList,
-                            updatedColumnsList,
-                            updatedBackRefFieldsList
-                        )
-                )
-                val firstTableAlias = getTableAliace(tablesAliasesMap, tableGetDescriptors.head)
+                val (tableLines, columnsLines, refData, fieldsMap, firstTableAlias, expandedDescriptors) =
+                    getSelectData(objectType, getFields)
                 SQL(s"""
                    SELECT ${getListLineReversed(columnsLines, ", ")}
                    FROM ${getListLineReversed(tableLines, " LEFT JOIN ")}
                    WHERE $firstTableAlias.${esc(objectType.persistenceData.idColumn.columnName)} = ?
                 """)
                     .bind(id.value)
-                    .map(rs => extractObject(objectType, expandedDescriptors, None, rs, fieldsMap.toMap))
+                    .map(rs => extractObject(objectType, expandedDescriptors, None, rs, fieldsMap))
+                    .single
+                    .apply()
+                    .flatten
+                //TODO add Back reference values and Arrays Refernce values
+            case ArrayEntityType(typeName, _) =>
+                //TODO implement
+                //values: Seq[ItemValue],
+                //           persData: ArrayTypePersistenceDataFinal
+                None
+            case _ => throw new ConsistencyException(s"Entity type $entityType is not known!")
+
+    def find[ID1 <: EntityId[_, ID1]](
+                entityType: EntityType[ID1, _, _],
+                query: Option[SearchCondition],
+                getFields: ObjectGetFieldsDescriptor
+    )(implicit session: DBSession): Vector[Entity[ID1, _, _]] =
+        entityType match
+            case primType: CustomPrimitiveEntityType[ID1, _, _] =>
+                val persData = primType.persistenceData
+                val valueOpt =
+                    SQL(s"""
+                       SELECT ${esc(persData.valueColumn.columnName)}
+                       FROM $typesSchemaName.${persData.tableName}
+                       WHERE ${esc(persData.idColumn.columnName)} = ?
+                    """)
+                        .bind(id.value)
+                        .map(rs => primType.typeDefinition.rootType.extract(rs, 1))
+                        .single
+                        .apply()
+                        .flatten
+                valueOpt.map(value => primType.createEntityRaw(id, value))
+            case objectType: ObjectEntityType[ID1, _] =>
+                val (tableLines, columnsLines, refData, fieldsMap, firstTableAlias, expandedDescriptors) =
+                    getSelectData(objectType, getFields)
+                SQL(s"""
+                   SELECT ${getListLineReversed(columnsLines, ", ")}
+                   FROM ${getListLineReversed(tableLines, " LEFT JOIN ")}
+                   WHERE $firstTableAlias.${esc(objectType.persistenceData.idColumn.columnName)} = ?
+                """)
+                    .bind(id.value)
+                    .map(rs => extractObject(objectType, expandedDescriptors, None, rs, fieldsMap))
                     .single
                     .apply()
                     .flatten
@@ -661,13 +407,324 @@ class PostgresCrudRepository(
                 //           persData: ArrayTypePersistenceDataFinal
                 None
             case _ => throw new ConsistencyException(s"Entity type $entityType is not known!")
-        res
 
-    def find(
-                entityType: EntityType[_, _, _],
-                query: Option[SearchCondition],
-                getFields: ObjectGetFieldsDescriptor
-    )(implicit session: DBSession): Vector[Entity[_, _, _]] = ???
+
+    private def getSelectData[ID1 <: EntityId[_, ID1]](objectType: ObjectEntityType[ID1, _], getFields: ObjectGetFieldsDescriptor): (
+        List[String],
+        List[String],
+        List[GetFieldData],
+        Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
+        String,
+        List[NestedGetFieldsDescriptor]
+    ) =
+
+        val expandedDescriptors = checkAndExpandNotExpandedDescriptors(getFields, objectType.typeDefinition)
+        val tableGetDescriptors = getAllObjectTablesGetDescriptors(objectType, expandedDescriptors, None, None)
+        val tablesAliasesMap = tableGetDescriptors.zipWithIndex.map((tgd, rowIdx) => {
+            val tableAlias = tableAliasInQueryPrefix + tgd.tableName + rowIdx
+            (tgd.referer, tgd.tableName) -> tableAlias
+        }).toMap
+        //Option[String] contains subtype name when field is ID of one of some subtypes referenced by to parent type
+        //None - for any value type
+        val fieldsMap = mutable.HashMap[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]()
+        var currFieldIdx = 0
+        val (tableLines, columnsLines, refData) = tableGetDescriptors.foldLeft((Nil, Nil, Nil))(
+            (
+                acc: (List[String], List[String], List[GetFieldData]),
+                tgd: TableGetDescriptor
+            ) =>
+                val (tablesList, columnsList, backRefFieldsList) = acc
+                val tableAlias = getTableAliace(tablesAliasesMap, tgd)
+                currFieldIdx += 1
+                val idDscChainCell = GetDescriptorChainCell(SingleGetFieldsDescriptor(entityIdFieldNameForDsc), tgd.parentDsc)
+                fieldsMap += (idDscChainCell, Some(tgd.realObjectTypeName)) -> (currFieldIdx, tgd.idType)
+                val tableLine = s"$typesSchemaName.${esc(tgd.tableName)} as $tableAlias" + tgd.referer.map(ref =>
+                    val refAlias = getTableAliace(tablesAliasesMap, ref)
+                    s" on $refAlias.${ref.columnName} = $tableAlias.${tgd.idColumn}"
+                ).getOrElse("")
+                val (updatedColumnsList, updatedBackRefFieldsList) = tgd.fields.foldLeft((
+                    s"$tableAlias.${tgd.idColumn}" :: columnsList,
+                    backRefFieldsList
+                ))(
+                    (
+                        acc: (List[String], List[GetFieldData]),
+                        gfd: GetFieldData
+                    ) =>
+                        val (columnsList, backRefFieldsList) = acc
+                        gfd.fieldTypeDefinition match
+                            case fieldTypeDef: FieldTypeDefinition[_] =>
+                                (fieldTypeDef.valueType, fieldTypeDef.persistenceData) match
+                                    case (fieldTypeDef: ItemValueTypeDefinition[_], Some(persistenceData: OneValuePersistenceDataFinal)) =>
+                                        currFieldIdx += 1
+                                        fieldsMap += (gfd.getDescriptorChainCell, None) -> (currFieldIdx, fieldTypeDef)
+                                        (s"$tableAlias.${esc(persistenceData.columnName)}" :: columnsList, backRefFieldsList)
+                                    case (_: TypeBackReferenceDefinition[_], None) =>
+                                        (columnsList, gfd :: backRefFieldsList)
+                                    case (_, persistanceData) => throw new ConsistencyException(s"Unknown combination of field " +
+                                        s"descriptor ${gfd.getDescriptorChainCell} and field persistence data $persistanceData is not supported!")
+
+                            case primitiveEntityType: AbstractPrimitiveEntityType[_, _, _] =>
+                                currFieldIdx += 1
+                                fieldsMap += (gfd.getDescriptorChainCell, None) -> (currFieldIdx, primitiveEntityType.typeDefinition.rootType.asInstanceOf[FieldValueTypeDefinition[_]])
+                                (s"$tableAlias.${esc(primitiveEntityType.persistenceData.valueColumn.columnName)}" :: columnsList, backRefFieldsList)
+                )
+                (
+                    tableLine :: tablesList,
+                    updatedColumnsList,
+                    updatedBackRefFieldsList
+                )
+        )
+        val firstTableAlias = getTableAliace(tablesAliasesMap, tableGetDescriptors.head)
+        (tableLines, columnsLines, refData, fieldsMap.toMap, firstTableAlias, expandedDescriptors)
+
+
+    private def getTableAliace(map: Map[(Option[RefererTableData], String), String], tgd: ReferredTable): String =
+        map.getOrElse((tgd.referer, tgd.tableName), throw new ConsistencyException(s"Table aliace not found for ${(tgd.referer, tgd.tableName)}"))
+
+    private def getTablesLineReversedInner(tablesLines: List[String], prevLength: Int, currDelimiter: String, nextDelimiter: String): StringBuilder =
+        if (tablesLines.nonEmpty)
+            val currValue = tablesLines.head
+            val result = getTablesLineReversedInner(tablesLines.tail,
+                prevLength + currValue.length + currDelimiter.length, nextDelimiter, nextDelimiter)
+            result.append(currValue)
+            result.append(currDelimiter)
+            result
+        else
+            new StringBuilder(prevLength)
+
+    private def getListLineReversed(tablesLines: List[String], delimiter: String): String =
+        getTablesLineReversedInner(tablesLines, 0, "", delimiter).toString
+
+
+    private def extractRefObject2(
+                             refFieldTypeDef: TypeReferenceDefinition[_],
+                             subFieldsDscs: List[NestedGetFieldsDescriptor],
+                             ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
+                             refFieldIdx: Int,
+                             refFieldName: String,
+                             rs: WrappedResultSet,
+                             fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
+                         ): ReferenceValue[_] =
+        extractRefObject(refFieldTypeDef, subFieldsDscs, ownerDsc, refFieldIdx, refFieldName, rs, fieldsMap)
+
+    private def extractRefObject[ID2 <: EntityId[_, ID2]](
+                                                     refFieldTypeDef: TypeReferenceDefinition[ID2],
+                                                     subFieldsDscs: List[NestedGetFieldsDescriptor],
+                                                     ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
+                                                     refFieldIdx: Int,
+                                                     refFieldName: String,
+                                                     rs: WrappedResultSet,
+                                                     fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
+                                                 ): ReferenceValue[ID2] =
+        val refEntity = refFieldTypeDef.referencedType match
+            case refType: ObjectEntityType[ID2, _] =>
+                extractObject(refType, subFieldsDscs, Some(ownerDsc), rs, fieldsMap).getOrElse(
+                    throw new ConsistencyException(s"Referenced object for field $refFieldName is absent in DB!")
+                )
+            case refType: ObjectEntitySuperType[ID2, _] =>
+                extractObjectSuperTypeEntity(refType, subFieldsDscs, ownerDsc, refFieldName, rs, fieldsMap)
+        val reference: ReferenceValue[ID2] = refFieldTypeDef.extract(rs, refFieldIdx).getOrElse(
+            throw new ConsistencyException(s"Reference for field $refFieldName is absent in DB!")
+        )
+        reference.setRefValue(refEntity)
+        reference
+
+
+    private def extractObjectSuperTypeEntity[ID2 <: EntityId[_, ID2]](
+                                                                 refType: ObjectEntitySuperType[ID2, _],
+                                                                 subFieldsDscs: List[NestedGetFieldsDescriptor],
+                                                                 ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
+                                                                 refFieldName: String,
+                                                                 rs: WrappedResultSet,
+                                                                 fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])],
+                                                                 fieldValuesMap: Map[String, EntityValue] = Map()
+                                                             ) =
+        val entities = typesDefinitionsProvider.getAllLeafObjectsSubtypesTyped(refType).map(leafSubType =>
+                extractObject(leafSubType, subFieldsDscs, Some(ownerDsc), rs, fieldsMap)
+            )
+            .collect({ case Some(entity) => entity })
+        if (entities.size == 1)
+            entities.iterator.next()
+        else if (entities.isEmpty)
+            throw new ConsistencyException(s"Referenced object for field $refFieldName is absent in DB!")
+        else
+            throw new ConsistencyException(s"Multiple entities found for field $refFieldName! Found: $entities")
+
+
+    private def getLastExistingChild[ID2 <: EntityId[_, ID2]](
+                                                         objectType: AbstractObjectEntityType[ID2, _],
+                                                         ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
+                                                         rs: WrappedResultSet,
+                                                         fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                                                     ): Option[(ID2, AbstractObjectEntityType[ID2, _])] =
+        extractObjectId(objectType, Some(ownerDsc), rs, fieldsMap).map(id =>
+            objectType match
+                case leafType: ObjectEntityType[ID2, _] =>
+                    (id, leafType.asInstanceOf[ObjectEntityType[ID2, _]])
+                case superType: ObjectEntitySuperType[ID2, _] =>
+                    val existingChildren = superType.directChildren
+                        .map(getLastExistingChild(_, ownerDsc, rs, fieldsMap))
+                        .collect({ case Some(childType) => childType })
+                    if (existingChildren.size == 1)
+                        existingChildren.iterator.next()
+                    else if (existingChildren.isEmpty)
+                        (id, superType.asInstanceOf[ObjectEntitySuperType[ID2, _]])
+                    else
+                        throw new ConsistencyException(s"Multiple entities found for type $objectType! Found: $existingChildren")
+        )
+
+
+    private def extractSimpleObject2(
+                                objectType: SimpleObjectTypeDefinition[_],
+                                getFieldsDscs: List[NestedGetFieldsDescriptor],
+                                ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
+                                rs: WrappedResultSet,
+                                fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                            ): Option[SimpleObjectValue[_]] =
+        extractSimpleObject(objectType, getFieldsDscs, ownerDsc, rs, fieldsMap)
+
+    private def extractSimpleObject[ID2 <: EntityId[_, ID2]](
+                                                        objectType: SimpleObjectTypeDefinition[ID2],
+                                                        getFieldsDscs: List[NestedGetFieldsDescriptor],
+                                                        ownerDsc: GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor],
+                                                        rs: WrappedResultSet,
+                                                        fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                                                    ): Option[SimpleObjectValue[ID2]] =
+        val fields: List[(String, EntityValue)] =
+            extractFieldsValues(getFieldsDscs, Some(ownerDsc), rs, fieldsMap)
+                .collect({ case (fieldName, Some(fieldValue)) => (fieldName, fieldValue) })
+
+        objectType.parent match
+            case Some(refType) =>
+                getLastExistingChild(refType, ownerDsc, rs, fieldsMap)
+                    .map(idAndParent => objectType.createValue(Some(idAndParent), fields.toMap))
+            case None =>
+                if (fields.isEmpty)
+                    None
+                else
+                    Some(objectType.createValue(None, fields.toMap))
+
+    private def extractObject[ID2 <: EntityId[_, ID2]](
+                                                  objectType: ObjectEntityType[ID2, _],
+                                                  mainObjectGetFieldsDscs: List[NestedGetFieldsDescriptor],
+                                                  ownerDsc: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
+                                                  rs: WrappedResultSet,
+                                                  fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                                              ): Option[ObjectValue[ID2, _]] =
+        extractObjectId(objectType, ownerDsc, rs, fieldsMap).map(id =>
+            val fields = extractFieldsValues(mainObjectGetFieldsDscs, ownerDsc, rs, fieldsMap).toMap
+            objectType.createEntityAndCheckFields(id, fields)
+        )
+
+    private def extractObjectId[ID2 <: EntityId[_, ID2]](
+                                                    objectType: AbstractObjectEntityType[ID2, _],
+                                                    ownerDsc: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
+                                                    rs: WrappedResultSet,
+                                                    fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                                                ): Option[ID2] =
+        val idDscChainCell = GetDescriptorChainCell(SingleGetFieldsDescriptor(entityIdFieldNameForDsc), ownerDsc)
+        fieldsMap.get((idDscChainCell, Some(objectType.name))) match
+            case Some((idx, idType: EntityIdTypeDefinition[ID2])) =>
+                idType.extract(rs, idx)
+            case _ =>
+                throw new ConsistencyException(s"ID data $idDscChainCell not found in fields map!")
+
+    private def extractFieldsValues(
+                               getFieldsDscs: List[NestedGetFieldsDescriptor],
+                               ownerDsc: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
+                               rs: WrappedResultSet,
+                               fieldsMap: Map[(GetDescriptorChainCell[_], Option[String]), (Int, FieldValueTypeDefinition[_] | EntityIdTypeDefinition[_])]
+                           ): List[(String, Option[EntityValue])] =
+        getFieldsDscs.map(fieldGDsc =>
+            val (fieldIdx, fieldType) = fieldsMap.getOrElse((GetDescriptorChainCell(fieldGDsc, ownerDsc), None),
+                throw new ConsistencyException(s"Field $fieldGDsc not found in fields map!"))
+            (fieldGDsc, fieldType) match
+                case (SingleGetFieldsDescriptor(fieldName), fieldTypeDef: RootPrimitiveTypeDefinition[_]) =>
+                    fieldName -> fieldTypeDef.extract(rs, fieldIdx)
+                case (SingleGetFieldsDescriptor(fieldName), fieldTypeDef: TypeReferenceDefinition[_]) =>
+                    fieldName -> fieldTypeDef.extract(rs, fieldIdx)
+                case (soDsc@SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), fieldTypeDef: TypeReferenceDefinition[_]) =>
+                    fieldName -> Some(extractRefObject2(fieldTypeDef, subFieldsDscs, GetDescriptorChainCell(soDsc, ownerDsc), fieldIdx, fieldName, rs, fieldsMap))
+                case (soDsc@SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), soTypeDef: SimpleObjectTypeDefinition[_]) =>
+                    fieldName -> extractSimpleObject2(soTypeDef, subFieldsDscs, GetDescriptorChainCell(soDsc, ownerDsc), rs, fieldsMap)
+        )
+
+    private def checkAndExpandNotExpandedDescriptors(
+                                                getFields: AbstractObjectGetFieldsDescriptor, objectTypeDef: FieldsContainer
+                                            ): List[NestedGetFieldsDescriptor] =
+        getFields.fields match
+            case Left(AllGetFieldsDescriptor) =>
+                expandAllFieldsGetDescriptor(objectTypeDef)
+            case Right(fields) => fields.map(fieldDsc =>
+                val nestedField: NestedGetFieldsDescriptor = fieldDsc match
+                    case subObjectDsc: SubObjectGetFieldsDescriptor =>
+                        val fieldObjecDef: FieldsContainer = objectTypeDef.getFieldType(subObjectDsc.fieldName, true).valueType match
+                            case soDef: SimpleObjectTypeDefinition[_] =>
+                                soDef
+                            case ref: TypeReferenceDefinition[_] =>
+                                ref.referencedType match
+                                    case refObjType: AbstractObjectEntityType[_, _] =>
+                                        refObjType.typeDefinition
+                                    case _ =>
+                                        throw new ConsistencyException(s"Referenced type ${ref.name} is not object " +
+                                            s"when described as SubObjectGetFieldsDescriptor for field ${subObjectDsc.fieldName}!")
+                            case other =>
+                                throw new ConsistencyException(s"Type of ${subObjectDsc.fieldName} field $other is " +
+                                    s"not object when described as SubObjectGetFieldsDescriptor!")
+                        val subFieldsDescriptors: List[NestedGetFieldsDescriptor] = subObjectDsc.fields match
+                            case Left(AllGetFieldsDescriptor) =>
+                                expandAllFieldsGetDescriptor(fieldObjecDef)
+                            case Right(fields) =>
+                                checkAndExpandNotExpandedDescriptors(subObjectDsc, fieldObjecDef)
+                        SubObjectGetFieldsDescriptor(subObjectDsc.fieldName, Right(subFieldsDescriptors))
+                    case singleDsc: SingleGetFieldsDescriptor =>
+                        objectTypeDef.getFieldType(singleDsc.fieldName, true).valueType match
+                            case ref: TypeReferenceDefinition[_] =>
+                                ref.referencedType match
+                                    case _: AbstractPrimitiveEntityType[_, _, _] =>
+                                        PrimitiveGetFieldsDescriptor(singleDsc.fieldName)
+                                    case _ =>
+                                        throw new ConsistencyException(s"Referenced type ${ref.name} is not primitive " +
+                                            s"when described as SingleGetFieldsDescriptor for field ${singleDsc.fieldName}!")
+                            case _ =>
+                                singleDsc
+                    case _ =>
+                        fieldDsc
+                nestedField
+            )
+
+
+    private def expandAllFieldsGetDescriptor(objecDef: FieldsContainer): List[NestedGetFieldsDescriptor] =
+        objecDef.allFields.map { case (fieldName, fieldType) =>
+            fieldType.valueType match
+                case definition: SimpleObjectTypeDefinition[_] =>
+                    SubObjectGetFieldsDescriptor(fieldName, Right(expandAllFieldsGetDescriptor(definition)))
+                case definition: RootPrimitiveTypeDefinition[_] =>
+                    SingleGetFieldsDescriptor(fieldName)
+                case definition: TypeReferenceDefinition[_] =>
+                    definition.referencedType.typeDefinition match
+                        case _: ArrayTypeDefinition[_, _] =>
+                            ListGetFieldsDescriptor(fieldName, None, None)
+                        case _: CustomPrimitiveTypeDefinition[_, _, _] =>
+                            PrimitiveGetFieldsDescriptor(fieldName)
+                        case objectDef: ObjectTypeDefinition[_, _] =>
+                            SubObjectGetFieldsDescriptor(fieldName, Right(expandAllFieldsGetDescriptor(objectDef)))
+                case definition: TypeBackReferenceDefinition[_] =>
+                    val backRefFields = definition.referencedType.typeDefinition.fields
+                        //exclude back reference field to prevent cyclyc references
+                        .filter(field => field._1 != definition.refField)
+                        .map(backRefField => SubObjectGetFieldsDescriptor(backRefField._1, Left(AllGetFieldsDescriptor)));
+                    ListSubObjectGetFieldsDescriptor(fieldName, Right(backRefFields.toList), None, None)
+                case _ =>
+                    throw new ConsistencyException(s"Field $fieldName type $fieldType is not supported!")
+        }.toList
+
+
+
+
+
+
+
     
     def setTypesDefinitionsProvider(typesDefinitionsProvider: TypesDefinitionProvider): Unit =
         this.typesDefinitionsProviderContainer = Some(typesDefinitionsProvider)

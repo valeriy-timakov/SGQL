@@ -30,6 +30,28 @@ private val subobjectFieldsDelimiter = "."
 case class GetDescriptorChainCell[CFD <: NestedGetFieldsDescriptor](current: CFD, referer: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]] = None):
     lazy val fieldName: String = referer.map(_.fieldName + subobjectFieldsDelimiter).getOrElse("") + current.fieldName
     lazy val asParentPrefix: String = fieldName + subobjectFieldsDelimiter
+
+    private def equalSearchFieldChainCell(searchFieldChainCell: SearchFieldChainCell): (Boolean, Option[SearchFieldChainCell]) =
+        referer match
+            case Some(ref) =>
+                val (refererResult, nextSearchCellOpt) = ref.equalSearchFieldChainCell(searchFieldChainCell)
+                if (refererResult)
+                    nextSearchCellOpt
+                        .map(nextSearchCell => (current.fieldName == nextSearchCell.fieldName, nextSearchCell.nextCell))
+                        .getOrElse((false, None))
+                else
+                    (false, None)
+            case None =>
+                //on top of this referers chain
+                (current.fieldName == searchFieldChainCell.fieldName, searchFieldChainCell.nextCell)
+    
+    override def equals(obj: Any): Boolean =
+        obj match
+            case searchFieldChainCell: SearchFieldChainCell =>
+                val result = equalSearchFieldChainCell(searchFieldChainCell)
+                result._1 && result._2.isEmpty
+            case _ => 
+                super.equals(obj)
     
 case class SearchFieldChainCell(fieldName: String, subType: Option[String], nextCell: Option[SearchFieldChainCell] = None)
     
