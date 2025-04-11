@@ -4,7 +4,7 @@ import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.domain.type_definitions.{ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, ItemValueTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, ByteId, CustomPrimitiveValue, Entity, EntityId, EntityValue, FixedStringId, IntId, ItemValue, LongId, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, SimpleObjectValue, StringId, UUIDId, ValueTypes}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, AbstractPrimitiveEntityType, ArrayEntityType, CustomPrimitiveEntityType, EntityType, ObjectEntitySuperType, ObjectEntityType, PrimitiveEntitySuperType}
-import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, AllInReferenceGetFieldsDescriptor, GetDescriptorChainCell, ListGetFieldsDescriptor, ListSubObjectGetFieldsDescriptor, NestedGetFieldsDescriptor, ObjectGetFieldsDescriptor, PrimitiveGetFieldsDescriptor, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, AllInReferenceGetFieldsDescriptor, CombinedSearchCondition, GetDescriptorChainCell, ListGetFieldsDescriptor, ListSubObjectGetFieldsDescriptor, NestedGetFieldsDescriptor, NotSearchCondition, ObjectGetFieldsDescriptor, PrimitiveGetFieldsDescriptor, SearchCondition, SearchFieldChainCell, SingleFieldSearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, DbTableMigrationException, NotInitializedException}
 import my.valerii_timakov.sgql.services.*
 import scalikejdbc.*
@@ -639,15 +639,43 @@ class PostgresCrudRepository(
             val (fieldIdx, fieldType) = fieldsMap.getOrElse((GetDescriptorChainCell(fieldGDsc, ownerDsc), None),
                 throw new ConsistencyException(s"Field $fieldGDsc not found in fields map!"))
             (fieldGDsc, fieldType) match
-                case (SingleGetFieldsDescriptor(fieldName), fieldTypeDef: RootPrimitiveTypeDefinition[_]) =>
+                case (SingleGetFieldsDescriptor(fieldName, true, _), fieldTypeDef: RootPrimitiveTypeDefinition[_]) =>
                     fieldName -> fieldTypeDef.extract(rs, fieldIdx)
-                case (SingleGetFieldsDescriptor(fieldName), fieldTypeDef: TypeReferenceDefinition[_]) =>
+                case (SingleGetFieldsDescriptor(fieldName, true, _), fieldTypeDef: TypeReferenceDefinition[_]) =>
                     fieldName -> fieldTypeDef.extract(rs, fieldIdx)
                 case (soDsc@SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), fieldTypeDef: TypeReferenceDefinition[_]) =>
                     fieldName -> Some(extractRefObject2(fieldTypeDef, subFieldsDscs, GetDescriptorChainCell(soDsc, ownerDsc), fieldIdx, fieldName, rs, fieldsMap))
                 case (soDsc@SubObjectGetFieldsDescriptor(fieldName, Right(subFieldsDscs)), soTypeDef: SimpleObjectTypeDefinition[_]) =>
                     fieldName -> extractSimpleObject2(soTypeDef, subFieldsDscs, GetDescriptorChainCell(soDsc, ownerDsc), rs, fieldsMap)
         )
+        
+    private def collectAllSearchConditionFieldsChains(
+                                                         searchCondition: SearchCondition, 
+                                                         fieldsChains: mutable.Set[SearchFieldChainCell]
+                                                     ): Unit =
+        searchCondition match
+            case singleFieldSearchCondition: SingleFieldSearchCondition =>
+                fieldsChains += singleFieldSearchCondition.field
+            case notSearchCondition: NotSearchCondition =>
+                collectAllSearchConditionFieldsChains(notSearchCondition.condition, fieldsChains)
+            case combinedSearchCondition: CombinedSearchCondition =>
+                combinedSearchCondition.conditions.foreach(subCondition => 
+                    collectAllSearchConditionFieldsChains(subCondition, fieldsChains)
+                )
+        
+    private def mergeSearchToGetDescriptors(
+                                               getDescriptors: List[NestedGetFieldsDescriptor], 
+                                               searchCondition: SearchCondition
+                                           ): List[NestedGetFieldsDescriptor] =
+        val fieldsChains: mutable.Set[SearchFieldChainCell] = mutable.Set()
+        collectAllSearchConditionFieldsChains(searchCondition, fieldsChains)
+        mergeSearchToGetDescriptors(getDescriptors, fieldsChains.toSet)
+
+    private def mergeSearchToGetDescriptors(
+                                               getDescriptors: List[NestedGetFieldsDescriptor],
+                                               searchFieldsDescriptors: Set[SearchFieldChainCell]
+                                           ): List[NestedGetFieldsDescriptor] = 
+        
 
     private def checkAndExpandNotExpandedDescriptors(
                                                 getFields: AbstractObjectGetFieldsDescriptor, objectTypeDef: FieldsContainer
@@ -682,7 +710,7 @@ class PostgresCrudRepository(
                             case ref: TypeReferenceDefinition[_] =>
                                 ref.referencedType match
                                     case _: AbstractPrimitiveEntityType[_, _, _] =>
-                                        PrimitiveGetFieldsDescriptor(singleDsc.fieldName)
+                                        PrimitiveGetFieldsDescriptor(singleDsc.fieldName, true, None)
                                     case _ =>
                                         throw new ConsistencyException(s"Referenced type ${ref.name} is not primitive " +
                                             s"when described as SingleGetFieldsDescriptor for field ${singleDsc.fieldName}!")
@@ -706,7 +734,7 @@ class PostgresCrudRepository(
                         case _: ArrayTypeDefinition[_, _] =>
                             ListGetFieldsDescriptor(fieldName, None, None)
                         case _: CustomPrimitiveTypeDefinition[_, _, _] =>
-                            PrimitiveGetFieldsDescriptor(fieldName)
+                            PrimitiveGetFieldsDescriptor(fieldName, true, None)
                         case objectDef: ObjectTypeDefinition[_, _] =>
                             SubObjectGetFieldsDescriptor(fieldName, Right(expandAllFieldsGetDescriptor(objectDef)))
                 case definition: TypeBackReferenceDefinition[_] =>

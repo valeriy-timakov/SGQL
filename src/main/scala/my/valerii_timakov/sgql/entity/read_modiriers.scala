@@ -13,9 +13,21 @@ case class ObjectGetFieldsDescriptor(fields: Either[AllGetFieldsDescriptor, List
     extends AbstractObjectGetFieldsDescriptor
 case class SubObjectGetFieldsDescriptor(fieldName: String, fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]])
     extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor
-case class PrimitiveGetFieldsDescriptor(fieldName: String) extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor:
+//Field descriptor for referenced primitive type
+case class PrimitiveGetFieldsDescriptor(
+    fieldName: String, 
+    isGet: Boolean, 
+    searchCondition: Option[SearchFieldChainCell]
+) extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor:
     def fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]] = Left(AllGetFieldsDescriptor)
-case class SingleGetFieldsDescriptor(fieldName: String) extends NestedGetFieldsDescriptor
+case class SingleGetFieldsDescriptor(
+    fieldName: String,
+    isGet: Boolean,
+    searchCondition: Option[SearchFieldChainCell]
+) extends NestedGetFieldsDescriptor
+object SingleGetFieldsDescriptor:
+    def apply(fieldName: String): SingleGetFieldsDescriptor =
+        SingleGetFieldsDescriptor(fieldName)
 case class ListGetFieldsDescriptor(fieldName: String, limit: Option[Int], offset: Option[Int]) extends NestedGetFieldsDescriptor
 case class ListSubObjectGetFieldsDescriptor(
                                                fieldName: String,
@@ -27,7 +39,10 @@ case class AllInReferenceGetFieldsDescriptor(fieldName: String) extends NestedGe
 
 
 private val subobjectFieldsDelimiter = "."
-case class GetDescriptorChainCell[CFD <: NestedGetFieldsDescriptor](current: CFD, referer: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]] = None):
+case class GetDescriptorChainCell[CFD <: NestedGetFieldsDescriptor](
+   current: CFD, 
+   referer: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]] = None
+):
     lazy val fieldName: String = referer.map(_.fieldName + subobjectFieldsDelimiter).getOrElse("") + current.fieldName
     lazy val asParentPrefix: String = fieldName + subobjectFieldsDelimiter
 
@@ -53,7 +68,13 @@ case class GetDescriptorChainCell[CFD <: NestedGetFieldsDescriptor](current: CFD
             case _ => 
                 super.equals(obj)
     
-case class SearchFieldChainCell(fieldName: String, subType: Option[String], nextCell: Option[SearchFieldChainCell] = None)
+case class SearchFieldChainCell(fieldName: String, subType: Option[String], nextCell: Option[SearchFieldChainCell] = None):
+    override def equals(obj: Any): Boolean =
+        obj match
+            case getDescChainCell: GetDescriptorChainCell[_] =>
+                getDescChainCell.equals(this)
+            case _ =>
+                super.equals(obj)
     
 
 final case class Range(from: String, to: String)

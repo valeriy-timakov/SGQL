@@ -167,7 +167,7 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                 Left(GetFieldsFieldValidateError(s"GetFieldDescriptor field $fieldName not present in corresponding " +
                     s"type $entityType!"))
         descriptor match
-            case SingleGetFieldsDescriptor(fieldName) =>
+            case SingleGetFieldsDescriptor(fieldName, _, _) =>
                 checkFieldPresent(fieldName)
             case ListGetFieldsDescriptor(fieldName, _, _) =>
                 checkFieldPresent(fieldName)
