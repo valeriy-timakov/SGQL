@@ -844,40 +844,6 @@ class PostgresCrudRepository(
                                                     referrersPrefix: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]],
                                                     ignoreParentTypes: Option[mutable.Set[ObjectEntitySuperType[_, _]]] = None
                                   ): List[TableGetDescriptor] =
-//        val simpleObjectsParentsCache = mutable.HashMap[String, List[GetDescriptorChainCell[_]]]()
-//        def getSimpleObjectFieldParentPersistenceData(
-//                                                         getFieldDescriptorChain: GetDescriptorChainCell[_],
-//                                                         referenceData: ReferenceValuePersistenceDataFinal,
-//                                                     ): (ObjectTypeDefinition[_,  _], ValuePersistenceDataFinal) =
-//            val fields = getFieldDescriptorChain.parentDsc match
-//                case None =>
-//                    val parentRefType = objectType.valueType.fields
-//                        .get(getFieldDescriptorChain.currDsc.fieldName)
-//                        .map(_.valueType)
-//                        .getOrElse(throw new ConsistencyException(s"Field ${getFieldDescriptorChain.currDsc.fieldName} " +
-//                            s"is not found in object type ${objectType.name}!"))
-//                    parentRefType match
-//                        case TypeReferenceDefinition(ObjectEntitySuperType(name, parentTypeDef)) =>
-//                            persistenceData.fields.get(name) match
-//                                case Some(parentPersistenceData) =>
-//                                    (parentTypeDef, parentPersistenceData)
-//                                case None =>
-//                                    throw new ConsistencyException(s"Parent type $name is not found in persistence data!")
-//                        case _ =>
-//                            throw new ConsistencyException(s"Field type definition $parentRefType is not reference to ObjectEntitySuperType!")
-//                case Some(parent) =>
-//                    val parentFields = getSimpleObjectFieldParentPersistenceData(parent)
-//                    //  .map(persistenceData.fields.get(getFieldDescriptorChain.currDsc.fieldName))//ValuePersistenceDataFinal
-//                    parentFields match
-//                        case TypeReferenceDefinition(parentType) =>
-//                            parentType match
-//                                case objectParentType: ObjectEntitySuperType[_, _] => 
-//                                    objectParentType
-//                                case _ =>
-//                                    throw new ConsistencyException(s"Type $parentType is not of ObjectEntitySuperType!")
-//                        case _ =>
-//                            throw new ConsistencyException(s"Field type definition $parentFields is not of type TypeReferenceDefinition!")
-//            fields
 
         val persistenceData: ObjectTypePersistenceDataFinal = objectType.persistenceData
         val objectTypeDef: ObjectTypeDefinition[_, _] = objectType.typeDefinition
