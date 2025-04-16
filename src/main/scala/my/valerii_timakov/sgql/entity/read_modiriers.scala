@@ -11,8 +11,16 @@ sealed trait AbstractObjectGetFieldsDescriptor extends GetFieldsDescriptor:
 object AllGetFieldsDescriptor extends AllGetFieldsDescriptor
 case class ObjectGetFieldsDescriptor(fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]])
     extends AbstractObjectGetFieldsDescriptor
-case class SubObjectGetFieldsDescriptor(fieldName: String, fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]])
-    extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor
+case class SubObjectGetFieldsDescriptor(
+    fieldName: String, 
+    subType: Option[String], 
+    fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]]
+) extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor
+
+object SubObjectGetFieldsDescriptor: 
+    def apply(fieldName: String, fields: List[NestedGetFieldsDescriptor]): SubObjectGetFieldsDescriptor =
+        SubObjectGetFieldsDescriptor(fieldName, None, Right(fields))
+
 //Field descriptor for referenced primitive type
 case class PrimitiveGetFieldsDescriptor(
     fieldName: String, 

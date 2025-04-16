@@ -370,7 +370,7 @@ class PostgresCrudRepository(
 
     def find[ID1 <: EntityId[_, ID1]](
                 entityType: EntityType[ID1, _, _],
-                query: Option[SearchCondition],
+                searchQuery: Option[SearchCondition],
                 getFields: ObjectGetFieldsDescriptor
     )(implicit session: DBSession): Vector[Entity[ID1, _, _]] =
         entityType match
@@ -409,7 +409,11 @@ class PostgresCrudRepository(
             case _ => throw new ConsistencyException(s"Entity type $entityType is not known!")
 
 
-    private def getSelectData[ID1 <: EntityId[_, ID1]](objectType: ObjectEntityType[ID1, _], getFields: ObjectGetFieldsDescriptor): (
+    private def getSelectData[ID1 <: EntityId[_, ID1]](
+        objectType: ObjectEntityType[ID1, _],
+        getFields: ObjectGetFieldsDescriptor,
+        searchQuery: Option[SearchCondition]
+    ): (
         List[String],
         List[String],
         List[GetFieldData],
@@ -417,8 +421,10 @@ class PostgresCrudRepository(
         String,
         List[NestedGetFieldsDescriptor]
     ) =
-
         val expandedDescriptors = checkAndExpandNotExpandedDescriptors(getFields, objectType.typeDefinition)
+        val getDscsWithSearchDscs = searchQuery
+            .map(mergeSearchToGetDescriptors(expandedDescriptors, _))
+            .getOrElse(expandedDescriptors)
         val tableGetDescriptors = getAllObjectTablesGetDescriptors(objectType, expandedDescriptors, None, None)
         val tablesAliasesMap = tableGetDescriptors.zipWithIndex.map((tgd, rowIdx) => {
             val tableAlias = tableAliasInQueryPrefix + tgd.tableName + rowIdx
@@ -674,7 +680,19 @@ class PostgresCrudRepository(
     private def mergeSearchToGetDescriptors(
                                                getDescriptors: List[NestedGetFieldsDescriptor],
                                                searchFieldsDescriptors: Set[SearchFieldChainCell]
-                                           ): List[NestedGetFieldsDescriptor] = 
+                                           ): List[NestedGetFieldsDescriptor] =
+        searchFieldsDescriptors.foreach(sfd =>
+            getDescriptors.filter(_.fieldName == sfd.fieldName).
+        )
+
+    private def searchFieldChainCell2NestedGetFieldsDescriptor(from: SearchFieldChainCell): NestedGetFieldsDescriptor =
+        from.nextCell match
+            case Some(nextCell) =>
+                SubObjectGetFieldsDescriptor(from.fieldName, from.subType, Right(List(searchFieldChainCell2NestedGetFieldsDescriptor(nextCell))))
+            case None =>
+                SubObjectGetFieldsDescriptor(from.fieldName, from.subType, from.nextCell.map(searchFieldChainCell2NestedGetFieldsDescriptor))
+
+        
         
 
     private def checkAndExpandNotExpandedDescriptors(
@@ -726,7 +744,7 @@ class PostgresCrudRepository(
         objecDef.allFields.map { case (fieldName, fieldType) =>
             fieldType.valueType match
                 case definition: SimpleObjectTypeDefinition[_] =>
-                    SubObjectGetFieldsDescriptor(fieldName, Right(expandAllFieldsGetDescriptor(definition)))
+                    SubObjectGetFieldsDescriptor(fieldName, expandAllFieldsGetDescriptor(definition))
                 case definition: RootPrimitiveTypeDefinition[_] =>
                     SingleGetFieldsDescriptor(fieldName)
                 case definition: TypeReferenceDefinition[_] =>
@@ -736,7 +754,7 @@ class PostgresCrudRepository(
                         case _: CustomPrimitiveTypeDefinition[_, _, _] =>
                             PrimitiveGetFieldsDescriptor(fieldName, true, None)
                         case objectDef: ObjectTypeDefinition[_, _] =>
-                            SubObjectGetFieldsDescriptor(fieldName, Right(expandAllFieldsGetDescriptor(objectDef)))
+                            SubObjectGetFieldsDescriptor(fieldName, expandAllFieldsGetDescriptor(objectDef))
                 case definition: TypeBackReferenceDefinition[_] =>
                     val backRefFields = definition.referencedType.typeDefinition.fields
                         //exclude back reference field to prevent cyclyc references
