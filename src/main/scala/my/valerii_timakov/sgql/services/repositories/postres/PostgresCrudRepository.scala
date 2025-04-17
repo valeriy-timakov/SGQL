@@ -704,16 +704,18 @@ class PostgresCrudRepository(
                 val nextCellTransformed = searchFieldChainCell2NestedGetFieldsDescriptor(nextCell,
                     objectTypeRef.typeDefinition, fromRoot)
                 SubObjectGetFieldsDescriptor(from.fieldName, from.subType, Right(List(nextCellTransformed)))
-            case (Some(nextCell), TypeReferenceDefinition(objectTypeRef: AbstractPrimitiveEntityType[_, _, _])) =>
+            case (Some(nextCell), TypeBackReferenceDefinition(backRefType, _)) =>
+                val nextCellTransformed = searchFieldChainCell2NestedGetFieldsDescriptor(nextCell,
+                    backRefType.typeDefinition, fromRoot)
+                SubObjectGetFieldsDescriptor(from.fieldName, from.subType, Right(List(nextCellTransformed)))
+            case (None, TypeReferenceDefinition(objectTypeRef: AbstractPrimitiveEntityType[_, _, _])) =>
                 PrimitiveGetFieldsDescriptor(from.fieldName, true, Some(fromRoot))
-            case (Some(nextCell), TypeReferenceDefinition(objectTypeRef: AbstractArrayEntityType[_, _])) =>
-                throw new ConsistencyException(s"Field ${from.fieldName} type $fieldTypeDef is not supported!")
-            case (Some(nextCell), backRef: TypeBackReferenceDefinition[_]) =>
-                throw new ConsistencyException(s"Field ${from.fieldName} type $fieldTypeDef is not supported!")
+            case (None, TypeReferenceDefinition(objectTypeRef: AbstractArrayEntityType[_, _])) =>
+                SingleGetFieldsDescriptor(from.fieldName, false, Some(fromRoot))
             case (None, primDef: RootPrimitiveTypeDefinition[_]) =>
                 SingleGetFieldsDescriptor(from.fieldName, false, Some(fromRoot))
             case _ => 
-                throw new ConsistencyException(s"Field ${from.fieldName} type $fieldTypeDef is not supported!")
+                throw new ConsistencyException(s"Field path $from and type $fieldTypeDef are not compatible!")
 
         
         
