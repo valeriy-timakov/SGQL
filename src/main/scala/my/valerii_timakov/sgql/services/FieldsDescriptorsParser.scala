@@ -192,7 +192,7 @@ class FieldsDescriptorsParser(conf: Config):
     
         fieldName match
             case Some(fieldName) =>
-                Right(Success(SubObjectGetFieldsDescriptor(fieldName, Right(fields.toList)), currPortion))
+                Right(Success(SubObjectGetFieldsDescriptor(fieldName, fields.toList), currPortion))
             case None =>
                 Right(Success(ObjectGetFieldsDescriptor(Right(fields.toList)), currPortion))
     
