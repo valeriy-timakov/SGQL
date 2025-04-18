@@ -425,7 +425,7 @@ class PostgresCrudRepository(
         val getDscsWithSearchDscs = searchQuery
             .map(mergeSearchToGetDescriptors(expandedDescriptors, _, objectType.typeDefinition))
             .getOrElse(expandedDescriptors)
-        val tableGetDescriptors = getAllObjectTablesGetDescriptors(objectType, expandedDescriptors, None, None)
+        val tableGetDescriptors = getAllObjectTablesGetDescriptors(objectType, getDscsWithSearchDscs, None, None)
         val tablesAliasesMap = tableGetDescriptors.zipWithIndex.map((tgd, rowIdx) => {
             val tableAlias = tableAliasInQueryPrefix + tgd.tableName + rowIdx
             (tgd.referer, tgd.tableName) -> tableAlias
@@ -676,18 +676,59 @@ class PostgresCrudRepository(
                                            ): List[NestedGetFieldsDescriptor] =
         val fieldsChains: mutable.Set[SearchFieldChainCell] = mutable.Set()
         collectAllSearchConditionFieldsChains(searchCondition, fieldsChains)
-        mergeSearchToGetDescriptors(getDescriptors, fieldsChains.toSet, objectTypeDef)
+        var result = getDescriptors
+        fieldsChains.foreach(fieldsChain =>
+            result = mergeSearchToGetDescriptors(result, fieldsChain, objectTypeDef, fieldsChain)
+        )
+        result
 
     private def mergeSearchToGetDescriptors(
                                                getDescriptors: List[NestedGetFieldsDescriptor],
-                                               searchFieldsDescriptors: Set[SearchFieldChainCell],
-                                               objectTypeDef: FieldsContainer
+                                               searchFieldsDescriptor: SearchFieldChainCell,
+                                               objectTypeDef: FieldsContainer,
+                                               fromRoot: SearchFieldChainCell
                                            ): List[NestedGetFieldsDescriptor] =
-        val result = mutable.ListBuffer[NestedGetFieldsDescriptor]()
-        searchFieldsDescriptors.foreach(sfd =>
-            getDescriptors.filter(_.fieldName == sfd.fieldName).
+        var found = false
+        val copy = getDescriptors.map(gfd =>
+            if (gfd.fieldName == searchFieldsDescriptor.fieldName)
+                (searchFieldsDescriptor.nextCell, gfd) match
+                    case (Some(nextSearchCell), SubObjectGetFieldsDescriptor(getFieldName, getFieldSubType, Right(getFields))) =>
+                        if (getFieldSubType.isEmpty || searchFieldsDescriptor.subType == getFieldSubType)
+                            val fieldObjectDef: FieldsContainer = objectTypeDef.getFieldType(getFieldName, true).valueType match
+                                case soDef: SimpleObjectTypeDefinition[_] =>
+                                    soDef
+                                case TypeReferenceDefinition(objectTypeRef: AbstractObjectEntityType[_, _]) =>
+                                    objectTypeRef.typeDefinition
+                                case TypeBackReferenceDefinition(backRefType, _) =>
+                                    backRefType.typeDefinition
+                                case _ =>
+                                    throw new ConsistencyException(s"Field $getFieldName of path $searchFieldsDescriptor type is not object! Type is ${objectTypeDef.getFieldType(getFieldName, true)}")
+                            found = true
+                            val nextChainCell = mergeSearchToGetDescriptors(getFields, nextSearchCell, objectTypeDef, fromRoot)
+                            SubObjectGetFieldsDescriptor(getFieldName, getFieldSubType, Right(nextChainCell))
+                        else
+                            gfd
+                    case (None, PrimitiveGetFieldsDescriptor(getFieldName, isGet, searchPath)) =>
+                        if (searchPath.isDefined)
+                            throw new ConsistencyException(s"Field $getFieldName of path $searchFieldsDescriptor  and type ${gfd.fieldTypeDefinition} are not compatible!")
+                        found = true
+                        PrimitiveGetFieldsDescriptor(getFieldName, isGet, Some(fromRoot))
+                    case (None, SingleGetFieldsDescriptor(getFieldName, isGet, searchPath)) =>
+                        if (searchPath.isDefined)
+                            throw new ConsistencyException(s"Field path $searchFieldsDescriptor and type ${gfd.fieldTypeDefinition} are not compatible!")
+                        found = true
+                        SingleGetFieldsDescriptor(getFieldName, isGet, Some(fromRoot))
+                    case _ =>
+                        throw new ConsistencyException(s"Field path $from and type $fieldTypeDef are not compatible!")
+            else
+                gfd
+
         )
-        result.toList
+        if (found)
+            copy
+        else
+            searchFieldChainCell2NestedGetFieldsDescriptor(searchFieldsDescriptor, objectTypeDef, fromRoot) :: copy
+
 
     private def searchFieldChainCell2NestedGetFieldsDescriptor(
                                                                   from: SearchFieldChainCell, 
@@ -709,7 +750,7 @@ class PostgresCrudRepository(
                     backRefType.typeDefinition, fromRoot)
                 SubObjectGetFieldsDescriptor(from.fieldName, from.subType, Right(List(nextCellTransformed)))
             case (None, TypeReferenceDefinition(objectTypeRef: AbstractPrimitiveEntityType[_, _, _])) =>
-                PrimitiveGetFieldsDescriptor(from.fieldName, true, Some(fromRoot))
+                PrimitiveGetFieldsDescriptor(from.fieldName, false, Some(fromRoot))
             case (None, TypeReferenceDefinition(objectTypeRef: AbstractArrayEntityType[_, _])) =>
                 SingleGetFieldsDescriptor(from.fieldName, false, Some(fromRoot))
             case (None, primDef: RootPrimitiveTypeDefinition[_]) =>

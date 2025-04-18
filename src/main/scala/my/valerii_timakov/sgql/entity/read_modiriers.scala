@@ -25,13 +25,13 @@ object SubObjectGetFieldsDescriptor:
 case class PrimitiveGetFieldsDescriptor(
     fieldName: String,
     isGet: Boolean,
-    fieldPath: Option[SearchFieldChainCell]
+    searchPath: Option[SearchFieldChainCell]
 ) extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor:
     def fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]] = Left(AllGetFieldsDescriptor)
 case class SingleGetFieldsDescriptor(
     fieldName: String,
     isGet: Boolean,
-    fieldPath: Option[SearchFieldChainCell]
+    searchPath: Option[SearchFieldChainCell]
 ) extends NestedGetFieldsDescriptor
 object SingleGetFieldsDescriptor:
     def apply(fieldName: String): SingleGetFieldsDescriptor =
