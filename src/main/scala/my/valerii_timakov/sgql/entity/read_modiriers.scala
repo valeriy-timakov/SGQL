@@ -6,50 +6,86 @@ sealed trait GetFieldsDescriptor
 sealed trait AllGetFieldsDescriptor extends GetFieldsDescriptor
 sealed trait NestedGetFieldsDescriptor extends GetFieldsDescriptor:
     def fieldName: String
+sealed trait NestedGetFieldsDescriptorExpanded extends GetFieldsDescriptor:
+    def fieldName: String
+sealed trait AbstractSingleFieldGetFieldsDescriptor extends NestedGetFieldsDescriptor, NestedGetFieldsDescriptorExpanded:
+    def isGet: Boolean
 sealed trait AbstractObjectGetFieldsDescriptor extends GetFieldsDescriptor:
     def fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]]
+sealed trait AbstractObjectGetFieldsDescriptorExpanded extends GetFieldsDescriptor:
+    def fields: List[NestedGetFieldsDescriptorExpanded]
+sealed trait AbstractSubObjectGetFieldsDescriptor extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor:
+    def subType: Option[String]
+sealed trait AbstractSubObjectGetFieldsDescriptorExpanded extends NestedGetFieldsDescriptorExpanded, AbstractObjectGetFieldsDescriptorExpanded:
+    def subType: Option[String]
+    
 object AllGetFieldsDescriptor extends AllGetFieldsDescriptor
+
 case class ObjectGetFieldsDescriptor(fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]])
     extends AbstractObjectGetFieldsDescriptor
+
+case class ObjectGetFieldsDescriptorExpanded(fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptorExpanded]])
+    extends AbstractObjectGetFieldsDescriptorExpanded
+
 case class SubObjectGetFieldsDescriptor(
     fieldName: String, 
     subType: Option[String], 
     fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]]
-) extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor
+) extends AbstractSubObjectGetFieldsDescriptor
 
-object SubObjectGetFieldsDescriptor: 
-    def apply(fieldName: String, fields: List[NestedGetFieldsDescriptor]): SubObjectGetFieldsDescriptor =
-        SubObjectGetFieldsDescriptor(fieldName, None, Right(fields))
+object SubObjectGetFieldsDescriptor:
+    def apply(fieldName: String, subType: Option[String], fields: List[NestedGetFieldsDescriptor]): SubObjectGetFieldsDescriptor =
+        SubObjectGetFieldsDescriptor(fieldName, subType, Right(fields))
+
+case class SubObjectGetFieldsDescriptorExpanded(
+    fieldName: String,
+    subType: Option[String],
+    fields: List[NestedGetFieldsDescriptorExpanded]
+) extends NestedGetFieldsDescriptorExpanded, AbstractSubObjectGetFieldsDescriptorExpanded
 
 //Field descriptor for referenced primitive type
 case class PrimitiveGetFieldsDescriptor(
     fieldName: String,
     isGet: Boolean,
     searchPathes: List[SearchFieldChainCell]
-) extends NestedGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor:
+) extends AbstractSingleFieldGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor, AbstractObjectGetFieldsDescriptorExpanded:
     def fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]] = Left(AllGetFieldsDescriptor)
+    
 case class SingleGetFieldsDescriptor(
     fieldName: String,
     isGet: Boolean,
     searchPathes: List[SearchFieldChainCell]
-) extends NestedGetFieldsDescriptor
-object SingleGetFieldsDescriptor:
-    def apply(fieldName: String): SingleGetFieldsDescriptor =
-        SingleGetFieldsDescriptor(fieldName)
-case class ListGetFieldsDescriptor(fieldName: String, limit: Option[Int], offset: Option[Int]) extends NestedGetFieldsDescriptor
+) extends AbstractSingleFieldGetFieldsDescriptor
+        
+case class ListGetFieldsDescriptor(
+    fieldName: String, 
+    limit: Option[Int], 
+    offset: Option[Int]
+) extends AbstractSingleFieldGetFieldsDescriptor
+
 case class ListSubObjectGetFieldsDescriptor(
     fieldName: String,
+    subType: Option[String],
     fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]],
     limit: Option[Int],
     offset: Option[Int]
-                                           ) extends NestedGetFieldsDescriptor
-case class AllInReferenceGetFieldsDescriptor(fieldName: String) extends NestedGetFieldsDescriptor
+) extends AbstractSubObjectGetFieldsDescriptor
+
+case class ListSubObjectGetFieldsDescriptorExpanded(
+    fieldName: String,
+    subType: Option[String],
+    fields: List[NestedGetFieldsDescriptorExpanded], 
+    limit: Option[Int],
+    offset: Option[Int]
+) extends NestedGetFieldsDescriptorExpanded, AbstractSubObjectGetFieldsDescriptorExpanded
+
+case class AllInBackReferenceGetFieldsDescriptor(fieldName: String) extends NestedGetFieldsDescriptorExpanded
 
 
 private val subObjectFieldsDelimiter = "."
-case class GetDescriptorChainCell[CFD <: NestedGetFieldsDescriptor](
+case class GetDescriptorChainCell[CFD <: NestedGetFieldsDescriptorExpanded](
    current: CFD, 
-   referer: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptor]] = None
+   referer: Option[GetDescriptorChainCell[_ <: AbstractObjectGetFieldsDescriptorExpanded]] = None
 ):
     lazy val fieldName: String = referer.map(_.fieldName + subObjectFieldsDelimiter).getOrElse("") + current.fieldName
     lazy val asParentPrefix: String = fieldName + subObjectFieldsDelimiter

@@ -120,7 +120,7 @@ class FieldsDescriptorsParser(conf: Config):
             else
                 if (data.isBlank)
                     return Left(GetFieldsParseError(s"Empty field name in start of $rawParsedData!"))
-                nextDescriptorOpt = Some(SingleGetFieldsDescriptor(data))
+                nextDescriptorOpt = Some(SingleGetFieldsDescriptor(data, true, Nil))
             boundaryMarkFound = true
             Right(Success(()))
     
@@ -144,7 +144,7 @@ class FieldsDescriptorsParser(conf: Config):
                 nextTo = None
                 Right(Failure(WrongStateExcetion(s"One of or both nextFrom=$nextFrom and nextTo=$nextTo are set but no descriptor defined!")))
             else
-                fields += SingleGetFieldsDescriptor(currMatch)
+                fields += SingleGetFieldsDescriptor(currMatch, true, Nil)
                 Right(Success(()))
     
         while
@@ -192,7 +192,7 @@ class FieldsDescriptorsParser(conf: Config):
     
         fieldName match
             case Some(fieldName) =>
-                Right(Success(SubObjectGetFieldsDescriptor(fieldName, fields.toList), currPortion))
+                Right(Success(SubObjectGetFieldsDescriptor(fieldName, None, fields.toList), currPortion))
             case None =>
                 Right(Success(ObjectGetFieldsDescriptor(Right(fields.toList)), currPortion))
     
