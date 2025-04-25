@@ -2,6 +2,8 @@ package my.valerii_timakov.sgql.entity.read_modiriers
 
 import my.valerii_timakov.sgql.entity.domain.type_values.{EntityValue, ValueTypes}
 
+import scala.annotation.tailrec
+
 sealed trait GetFieldsDescriptor
 sealed trait AllGetFieldsDescriptor extends GetFieldsDescriptor
 sealed trait NestedGetFieldsDescriptor extends GetFieldsDescriptor:
@@ -47,14 +49,14 @@ case class SubObjectGetFieldsDescriptorExpanded(
 case class PrimitiveGetFieldsDescriptor(
     fieldName: String,
     isGet: Boolean,
-    searchPathes: List[SearchFieldChainCell]
+    searchPathes: List[FieldPathChainCell]
 ) extends AbstractSingleFieldGetFieldsDescriptor, AbstractObjectGetFieldsDescriptor, AbstractObjectGetFieldsDescriptorExpanded:
     def fields: Either[AllGetFieldsDescriptor, List[NestedGetFieldsDescriptor]] = Left(AllGetFieldsDescriptor)
     
 case class SingleGetFieldsDescriptor(
     fieldName: String,
     isGet: Boolean,
-    searchPathes: List[SearchFieldChainCell]
+    searchPathes: List[FieldPathChainCell]
 ) extends AbstractSingleFieldGetFieldsDescriptor
         
 case class ListGetFieldsDescriptor(
@@ -89,6 +91,17 @@ case class GetDescriptorChainCell[CFD <: NestedGetFieldsDescriptorExpanded](
 ):
     lazy val fieldName: String = referer.map(_.fieldName + subObjectFieldsDelimiter).getOrElse("") + current.fieldName
     lazy val asParentPrefix: String = fieldName + subObjectFieldsDelimiter
+    lazy val path: FieldPathChainCell = buildPath(None)
+    @tailrec
+    private def buildPath(next: Option[FieldPathChainCell]): FieldPathChainCell = 
+        val subType: Option[String] = current match
+            case subObj: SubObjectGetFieldsDescriptorExpanded => subObj.subType
+            case subObj: SubObjectGetFieldsDescriptor => subObj.subType
+            case _ => None
+        val currentNode = FieldPathChainCell(fieldName, subType, next)
+        referer match
+            case Some(ref) => ref.buildPath(Some(currentNode))
+            case None => currentNode
 
 //    private def equalSearchFieldChainCell(searchFieldChainCell: SearchFieldChainCell): (Boolean, Option[SearchFieldChainCell]) =
 //        referer match
@@ -112,7 +125,7 @@ case class GetDescriptorChainCell[CFD <: NestedGetFieldsDescriptorExpanded](
 //            case _ => 
 //                super.equals(obj)
     
-case class SearchFieldChainCell(fieldName: String, subType: Option[String], nextCell: Option[SearchFieldChainCell] = None):
+case class FieldPathChainCell(fieldName: String, subType: Option[String], nextCell: Option[FieldPathChainCell] = None):
     override def equals(obj: Any): Boolean =
         obj match
             case getDescChainCell: GetDescriptorChainCell[_] =>
@@ -129,48 +142,48 @@ sealed trait SearchCondition:
      * @param bindParameter - function to parse parameter string representation, bind it to SQL statement and return parameter placeholder with correct number
      * @return SQL representation of the condition
      */    
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String
 sealed trait SingleFieldSearchCondition extends SearchCondition:
-    def field: SearchFieldChainCell
-final case class EqSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition:
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String =
+    def field: FieldPathChainCell
+final case class EqSearchCondition(field: FieldPathChainCell, value: String) extends SingleFieldSearchCondition:
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String =
         translateFieldPath(field) + " = " + bindParameter(value)
-final case class GtSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition:
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String =
+final case class GtSearchCondition(field: FieldPathChainCell, value: String) extends SingleFieldSearchCondition:
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String =
         translateFieldPath(field) + " > " + bindParameter(value)
-final case class GeSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition:
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String =
+final case class GeSearchCondition(field: FieldPathChainCell, value: String) extends SingleFieldSearchCondition:
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String =
         translateFieldPath(field) + " >= " + bindParameter(value)
-final case class LtSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition:
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String =
+final case class LtSearchCondition(field: FieldPathChainCell, value: String) extends SingleFieldSearchCondition:
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String =
         translateFieldPath(field) + " < " + bindParameter(value)
-final case class LeSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition:
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String =
+final case class LeSearchCondition(field: FieldPathChainCell, value: String) extends SingleFieldSearchCondition:
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String =
         translateFieldPath(field) + " <= " + bindParameter(value)
-final case class BetweenSearchCondition(field: SearchFieldChainCell, value: Range) extends SingleFieldSearchCondition:
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String =
+final case class BetweenSearchCondition(field: FieldPathChainCell, value: Range) extends SingleFieldSearchCondition:
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String =
         translateFieldPath(field) + " BETWEEN " + bindParameter(value.from) + " AND " + bindParameter(value.to)
-final case class LikeSearchCondition(field: SearchFieldChainCell, value: String) extends SingleFieldSearchCondition:
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String =
+final case class LikeSearchCondition(field: FieldPathChainCell, value: String) extends SingleFieldSearchCondition:
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String =
         translateFieldPath(field) + " LIKE " + bindParameter(value)
-final case class InSearchCondition[T <: ValueTypes](field: SearchFieldChainCell, value: Array[String]) extends SingleFieldSearchCondition:
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String =
+final case class InSearchCondition[T <: ValueTypes](field: FieldPathChainCell, value: Array[String]) extends SingleFieldSearchCondition:
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String =
         translateFieldPath(field) + " IN (" + bindParameter(value) + ")"
 final case class NotSearchCondition(condition: SearchCondition) extends SearchCondition:
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String =
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String =
         "NOT (" + condition.toSQL(translateFieldPath, bindParameter) + ")"
 sealed trait CombinedSearchCondition extends SearchCondition:
     def conditions: List[SearchCondition]
     def ::(condition: SearchCondition): CombinedSearchCondition
 final case class AndSearchCondition(conditions: List[SearchCondition]) extends CombinedSearchCondition:
     def ::(condition: SearchCondition): AndSearchCondition = AndSearchCondition(condition :: conditions)
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String =
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String =
         conditions.map("(" + _.toSQL(translateFieldPath, bindParameter) + ")").mkString(" AND ")
 object AndSearchCondition:
     def apply(conditions: SearchCondition*): AndSearchCondition = AndSearchCondition(conditions.toList)
 final case class OrSearchCondition(conditions: List[SearchCondition]) extends CombinedSearchCondition:
     def ::(condition: SearchCondition): OrSearchCondition = OrSearchCondition(condition :: conditions)
-    def toSQL(translateFieldPath: SearchFieldChainCell => String, bindParameter: String | Array[String] => String): String =
+    def toSQL(translateFieldPath: FieldPathChainCell => String, bindParameter: String | Array[String] => String): String =
         conditions.map(_.toSQL(translateFieldPath, bindParameter)).mkString(" OR ")
 object OrSearchCondition:
     def apply(conditions: SearchCondition*): OrSearchCondition = OrSearchCondition(conditions.toList)

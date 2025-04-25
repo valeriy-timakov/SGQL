@@ -7,7 +7,7 @@ import my.valerii_timakov.sgql.entity
 import my.valerii_timakov.sgql.entity.domain.type_definitions.EntityIdTypeDefinition
 import my.valerii_timakov.sgql.entity.domain.type_values.{Entity, EntityId}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, EntitySuperType, EntityType}
-import my.valerii_timakov.sgql.entity.read_modiriers.{AllGetFieldsDescriptor, AndSearchCondition, BetweenSearchCondition, CombinedSearchCondition, EqSearchCondition, GeSearchCondition, GetDescriptorChainCell, GtSearchCondition, InSearchCondition, LeSearchCondition, LikeSearchCondition, ListGetFieldsDescriptor, LtSearchCondition, NestedGetFieldsDescriptor, NotSearchCondition, ObjectGetFieldsDescriptor, OrSearchCondition, Range, SearchCondition, SearchFieldChainCell, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AllGetFieldsDescriptor, AndSearchCondition, BetweenSearchCondition, CombinedSearchCondition, EqSearchCondition, GeSearchCondition, GetDescriptorChainCell, GtSearchCondition, InSearchCondition, LeSearchCondition, LikeSearchCondition, ListGetFieldsDescriptor, LtSearchCondition, NestedGetFieldsDescriptor, NotSearchCondition, ObjectGetFieldsDescriptor, OrSearchCondition, Range, SearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
 import my.valerii_timakov.sgql.entity.{AbstractTypeError, GetFieldsParseError, SearchConditionParseError, TypeNotFountError}
 import my.valerii_timakov.sgql.exceptions.WrongStateExcetion
 import my.valerii_timakov.sgql.services.{CrudRepository, SearchConditionsParser, TypesDefinitionProvider}

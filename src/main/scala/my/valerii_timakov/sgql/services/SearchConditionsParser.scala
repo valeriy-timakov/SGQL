@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.services
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.SearchConditionParseError
-import my.valerii_timakov.sgql.entity.read_modiriers.{AndSearchCondition, BetweenSearchCondition, CombinedSearchCondition, EqSearchCondition, GeSearchCondition, GtSearchCondition, InSearchCondition, LeSearchCondition, LikeSearchCondition, LtSearchCondition, NotSearchCondition, OrSearchCondition, Range, SearchCondition, SearchFieldChainCell}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AndSearchCondition, BetweenSearchCondition, CombinedSearchCondition, EqSearchCondition, GeSearchCondition, GtSearchCondition, InSearchCondition, LeSearchCondition, LikeSearchCondition, LtSearchCondition, NotSearchCondition, OrSearchCondition, Range, SearchCondition, FieldPathChainCell}
 
 import java.util.regex.Pattern
 
@@ -34,7 +34,7 @@ class SearchConditionsParser(conf: Config):
     private final val ValueEndInsideListRE = """(?<!\\),""".r
     private final val NAMESPACES_DELIMITER = "" + TypesDefinitionsParser.NAMESPACES_DELIMITER
 
-    private final val conditionConstructors: Map[String, (SearchFieldChainCell, String) => SearchCondition] = Map(
+    private final val conditionConstructors: Map[String, (FieldPathChainCell, String) => SearchCondition] = Map(
         EqConditionSign -> EqSearchCondition.apply,
         GraterThanConditionSign -> GtSearchCondition.apply,
         LessThanConditionSign -> LtSearchCondition.apply,
@@ -117,10 +117,10 @@ class SearchConditionsParser(conf: Config):
 
     private def parseCondition(input: String, insideParenthesis: Boolean): Either[SearchConditionParseError, (SearchCondition, String)] =
 
-        def parseFieldsChain(input: String): SearchFieldChainCell =
+        def parseFieldsChain(input: String): FieldPathChainCell =
             val firstFieldEnd = input.indexOf(FieldsDelimiterInChain)
             if (firstFieldEnd == -1)
-                SearchFieldChainCell(input, None, None)
+                FieldPathChainCell(input, None, None)
             else
                 val currFieldName = input.substring(0, firstFieldEnd)
                 val nextChain = Some(parseFieldsChain(input.substring(firstFieldEnd + FieldsDelimiterInChain.length)))
@@ -128,9 +128,9 @@ class SearchConditionsParser(conf: Config):
                 if (rsssmIndex != -1)
                     val subTypeRef = currFieldName.substring(rsssmIndex + ReferencedSubtypeSpecifierStartMark.length)
                         .replaceAll(ReferencedSubtypeNamespacesDelimiterMark, NAMESPACES_DELIMITER)
-                    SearchFieldChainCell(currFieldName.substring(0, rsssmIndex), Some(subTypeRef), nextChain)
+                    FieldPathChainCell(currFieldName.substring(0, rsssmIndex), Some(subTypeRef), nextChain)
                 else
-                    SearchFieldChainCell(currFieldName, None, nextChain)
+                    FieldPathChainCell(currFieldName, None, nextChain)
         def parseValue(input: String, insideParenthesis: Boolean): (String, String) =
             val valueEndRE = if (insideParenthesis) ValueEndInsideParenthesisRE else ValueEndRE
             valueEndRE.findFirstMatchIn(input).map(endMatch =>

@@ -4,7 +4,7 @@ import my.valerii_timakov.sgql.entity
 import my.valerii_timakov.sgql.entity.domain.type_definitions.{FieldsContainer, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeReferenceDefinition}
 import my.valerii_timakov.sgql.entity.domain.type_values.EntityId
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractArrayEntityType, AbstractEntityType, AbstractObjectEntityType, AbstractPrimitiveEntityType, GlobalTypesMap, ObjectEntitySuperType, ObjectEntityType}
-import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, CombinedSearchCondition, GetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, NotSearchCondition, ObjectGetFieldsDescriptor, SearchCondition, SearchFieldChainCell, SingleFieldSearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, CombinedSearchCondition, GetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, NotSearchCondition, ObjectGetFieldsDescriptor, SearchCondition, FieldPathChainCell, SingleFieldSearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
 import my.valerii_timakov.sgql.entity.{GetFieldsFieldValidateError, GetFieldsFieldsValidateError, GetFieldsParseError, SearchConditionParseError}
 
 import scala.annotation.tailrec
@@ -93,9 +93,9 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                 validateSingleSearchCondition(Some(single.field), entityType, "")
                 
     private def validateSingleSearchCondition(
-                                           fieldsChainOpt: Option[SearchFieldChainCell],
-                                           entityType: AbstractEntityType[_, _, _],
-                                           typePrefix: String
+                                                 fieldsChainOpt: Option[FieldPathChainCell],
+                                                 entityType: AbstractEntityType[_, _, _],
+                                                 typePrefix: String
                                        ): Either[SearchConditionParseError, Unit] =
         (entityType, fieldsChainOpt) match
             case (objDef: ObjectEntityType[_, _], Some(fieldsChain)) =>
@@ -113,20 +113,20 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                                 Left(SearchConditionParseError(s"Sub type $subTypeName in condition $fieldsChain not found!"))
                     case None =>
                         validateSingleSearchCondition(fieldsChain, objDef.typeDefinition, s" $typePrefix${objDef.name}")
-            case (objDef: AbstractPrimitiveEntityType[_, _, _], Some(SearchFieldChainCell("value", None, None))) =>
+            case (objDef: AbstractPrimitiveEntityType[_, _, _], Some(FieldPathChainCell("value", None, None))) =>
                 Right(Success(()))
             case (objDef: AbstractPrimitiveEntityType[_, _, _], None) =>
                 Right(Success(()))
             case (objDef: AbstractArrayEntityType[_, _], None) =>
                 Right(Success(()))
-            case (objDef: AbstractArrayEntityType[_, _], Some(SearchFieldChainCell("value", None, None))) =>
+            case (objDef: AbstractArrayEntityType[_, _], Some(FieldPathChainCell("value", None, None))) =>
                 Right(Success(()))
             case _ =>
                 Left(SearchConditionParseError(s"SearchCondition field $fieldsChainOpt is not compatible with type $entityType!"))
 
     @tailrec
     private def validateSingleSearchCondition(
-                                                 fieldsChain: SearchFieldChainCell,
+                                                 fieldsChain: FieldPathChainCell,
                                                  fieldsContainer: FieldsContainer,
                                                  typeName: String, 
                                              ): Either[SearchConditionParseError, Unit] =
