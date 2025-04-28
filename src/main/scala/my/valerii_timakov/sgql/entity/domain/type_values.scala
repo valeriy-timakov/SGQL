@@ -9,7 +9,10 @@ import java.time.{LocalDate, LocalDateTime, LocalTime}
 import java.util.UUID
 
 
-sealed trait EntityId[T, V <: EntityId[T, V]]:
+sealed trait TypeValue:
+    def value: Any
+
+sealed trait EntityId[T, V <: EntityId[T, V]] extends TypeValue:
     def serialize: String
     def typeDefinition: EntityIdTypeDefinition[V]
     def toJson: JsValue = typeDefinition.toJson(this.asInstanceOf[V])
@@ -52,8 +55,7 @@ sealed abstract class ItemValue extends EntityValue:
 final case class EmptyValue(valueType: FieldValueType) extends EntityValue:
     def toJson: JsValue = JsNull
 
-sealed abstract class RootPrimitiveValue[V <: RootPrimitiveValue[V]] extends ItemValue:
-    def value: Any
+sealed abstract class RootPrimitiveValue[V <: RootPrimitiveValue[V]] extends ItemValue with TypeValue:
     override def valueType: RootPrimitiveType[V]
     
 final case class StringValue(value: String) extends RootPrimitiveValue[StringValue]:

@@ -2,11 +2,17 @@ package my.valerii_timakov.sgql.services
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.SearchConditionParseError
-import my.valerii_timakov.sgql.entity.read_modiriers.{AndSearchCondition, BetweenSearchCondition, CombinedSearchCondition, EqSearchCondition, GeSearchCondition, GtSearchCondition, InSearchCondition, LeSearchCondition, LikeSearchCondition, LtSearchCondition, NotSearchCondition, OrSearchCondition, Range, SearchCondition, FieldPathChainCell}
+import my.valerii_timakov.sgql.entity.domain.types.EntityType
+import my.valerii_timakov.sgql.entity.read_modiriers.{AndSearchCondition, BetweenRawSearchCondition, BetweenSearchCondition, CombinedSearchCondition, EqRawSearchCondition, EqSearchCondition, FieldPathChainCell, GeRawSearchCondition, GeSearchCondition, GlobalConstants, GtRawSearchCondition, GtSearchCondition, InRawSearchCondition, InSearchCondition, IsOfTypeRawSearchCondition, IsOfTypeSearchCondition, LeRawSearchCondition, LeSearchCondition, LikeRawSearchCondition, LikeSearchCondition, LtRawSearchCondition, LtSearchCondition, NotSearchCondition, OrSearchCondition, Range, RawSearchCondition, SearchCondition}
 
 import java.util.regex.Pattern
+import scala.jdk.StreamConverters.*
 
-class SearchConditionsParser(conf: Config):
+
+class SearchConditionsParser(
+                                conf: Config,
+                                typesDefinitionProvider: TypesDefinitionProvider,
+                            ):
 
     private final val FieldsDelimiterInChain = conf.getString("fields-delimiter")
     private final val EqConditionSign = conf.getString("eq")
@@ -16,35 +22,33 @@ class SearchConditionsParser(conf: Config):
     private final val LessOrEqualConditionSign = conf.getString("le")
     private final val LikeConditionSign = conf.getString("like")
     private final val InConditionSign = conf.getString("in")
+    private final val IsConditionSign = conf.getString("is")
     private final val AndOperatorSign = conf.getString("and")
     private final val OrOperatorSign = conf.getString("or")
     private final val NotOperatorSign = conf.getString("not")
-    private final val ReferencedSubtypeSpecifierStartMark = conf.getString("ref-subtype-specifier-start")
-    private final val ReferencedSubtypeNamespacesDelimiterMark = conf.getString("ref-subtype-namespaces-delimiter")
-    private final val RefSbtpSpcStMrk = Pattern.quote(ReferencedSubtypeSpecifierStartMark)
-    private final val RefSbtpNmspDlmMrk = Pattern.quote(ReferencedSubtypeNamespacesDelimiterMark)
+    private final val Wildcard = conf.getString("wildcard")
     private final val AllConditionsLine = List(EqConditionSign, GraterThanConditionSign, LessThanConditionSign,
-        GraterOrEqualConditionSign, LessOrEqualConditionSign, LikeConditionSign, InConditionSign)
+        GraterOrEqualConditionSign, LessOrEqualConditionSign, LikeConditionSign, InConditionSign, IsConditionSign)
         .map(Pattern.quote)
         .mkString("|")
-    private final val ConditionStartRE = s"""^([\\w_]+(($RefSbtpSpcStMrk[\\w_$RefSbtpNmspDlmMrk]+)?\\.[\\w_]+)*)($AllConditionsLine)""".r
+    private final val ConditionStartRE = s"""^([\\w_]+(\\.[\\w_]+)*)($AllConditionsLine)""".r
     private final val ValueEndRE = """\+|\*""".r
     private final val ValueEndInsideParenthesisRE = """(?<!\\)[+*)]""".r
     private final val IntervalMiddleMark = ".."
     private final val ValueEndInsideListRE = """(?<!\\),""".r
-    private final val NAMESPACES_DELIMITER = "" + TypesDefinitionsParser.NAMESPACES_DELIMITER
 
-    private final val conditionConstructors: Map[String, (FieldPathChainCell, String) => SearchCondition] = Map(
-        EqConditionSign -> EqSearchCondition.apply,
-        GraterThanConditionSign -> GtSearchCondition.apply,
-        LessThanConditionSign -> LtSearchCondition.apply,
-        GraterOrEqualConditionSign -> GeSearchCondition.apply,
-        LessOrEqualConditionSign -> LeSearchCondition.apply,
-        LikeConditionSign -> LikeSearchCondition.apply,
+    private final val conditionConstructors: Map[String, (FieldPathChainCell, String) => RawSearchCondition] = Map(
+        EqConditionSign -> EqRawSearchCondition.apply,
+        GraterThanConditionSign -> GtRawSearchCondition.apply,
+        LessThanConditionSign -> LtRawSearchCondition.apply,
+        GraterOrEqualConditionSign -> GeRawSearchCondition.apply,
+        LessOrEqualConditionSign -> LeRawSearchCondition.apply,
+        LikeConditionSign -> LikeRawSearchCondition.apply,
+        IsConditionSign -> IsOfTypeRawSearchCondition.apply,
     )
 
-    def parse(input: String): Either[SearchConditionParseError, SearchCondition] =
-        parseExpression(input, None, false) match
+    def parse(input: String, entityType: EntityType[_, _, _]): Either[SearchConditionParseError, SearchCondition] =
+        parseExpression(input, None, false, entityType) match
             case Right((condition, "")) =>
                 Right(condition)
             case Right((_, rest)) =>
@@ -56,7 +60,8 @@ class SearchConditionsParser(conf: Config):
     private def parseExpression(
                                    input: String,
                                    prevCondition: Option[CombinedSearchCondition],
-                                   expectParenthesis: Boolean
+                                   expectParenthesis: Boolean,
+                                   entityType: EntityType[_, _, _]
                                ): Either[SearchConditionParseError, (SearchCondition, String)] =
         val (isNot, inputRestAfterNot) =
             if (input.startsWith(NotOperatorSign))
@@ -65,7 +70,7 @@ class SearchConditionsParser(conf: Config):
                 (false, input)
         val currConditionRes: Either[SearchConditionParseError, (SearchCondition, String)] =
             if (inputRestAfterNot.startsWith("("))
-                parseExpression(inputRestAfterNot.substring(1), None, true) match
+                parseExpression(inputRestAfterNot.substring(1), None, true, entityType) match
                     case Right((experrsion, rest)) =>
                         if (rest.isEmpty || rest(0) != ')')
                             Left(SearchConditionParseError(s"Closing parenthesis not found in ...$rest!"))
@@ -74,7 +79,7 @@ class SearchConditionsParser(conf: Config):
                     case Left(error) =>
                         Left(error)
             else
-                parseCondition(inputRestAfterNot, expectParenthesis)
+                parseCondition(inputRestAfterNot, expectParenthesis, entityType)
 
         currConditionRes match
             case Right((condition, inputRestAfter1Condition)) =>
@@ -91,21 +96,21 @@ class SearchConditionsParser(conf: Config):
                         val inputAfterCombineOperator = inputRestAfter1Condition.substring(AndOperatorSign.length)
                         prevCondition match
                             case Some(prevCondition: AndSearchCondition) =>
-                                parseExpression(inputAfterCombineOperator, Some(conditionWithNot :: prevCondition), expectParenthesis)
+                                parseExpression(inputAfterCombineOperator, Some(conditionWithNot :: prevCondition), expectParenthesis, entityType)
                             case Some(prevCondition: OrSearchCondition) =>
-                                parseExpression(inputAfterCombineOperator, Some(AndSearchCondition(conditionWithNot)), expectParenthesis)
+                                parseExpression(inputAfterCombineOperator, Some(AndSearchCondition(conditionWithNot)), expectParenthesis, entityType)
                                     .map((nextCondition, inputAfterNextCondition) => (nextCondition :: prevCondition, inputAfterNextCondition))
                             case None =>
-                                parseExpression(inputAfterCombineOperator, Some(AndSearchCondition(conditionWithNot)), expectParenthesis)
+                                parseExpression(inputAfterCombineOperator, Some(AndSearchCondition(conditionWithNot)), expectParenthesis, entityType)
                     else if (inputRestAfter1Condition.startsWith(OrOperatorSign))
                         val inputAfterCombineOperator = inputRestAfter1Condition.substring(OrOperatorSign.length)
                         prevCondition match
                             case Some(prevCondition: OrSearchCondition) =>
-                                parseExpression(inputAfterCombineOperator, Some(conditionWithNot :: prevCondition), expectParenthesis)
+                                parseExpression(inputAfterCombineOperator, Some(conditionWithNot :: prevCondition), expectParenthesis, entityType)
                             case Some(prevCondition: AndSearchCondition) =>
-                                parseExpression(inputAfterCombineOperator, Some(prevCondition :: OrSearchCondition(conditionWithNot)), expectParenthesis)
+                                parseExpression(inputAfterCombineOperator, Some(prevCondition :: OrSearchCondition(conditionWithNot)), expectParenthesis, entityType)
                             case None =>
-                                parseExpression(inputAfterCombineOperator, Some(OrSearchCondition(conditionWithNot)), expectParenthesis)
+                                parseExpression(inputAfterCombineOperator, Some(OrSearchCondition(conditionWithNot)), expectParenthesis, entityType)
                         Left(SearchConditionParseError(""))
                     else if (expectParenthesis && inputRestAfter1Condition.startsWith(")"))
                         Right((conditionWithNot, inputRestAfter1Condition))
@@ -115,31 +120,30 @@ class SearchConditionsParser(conf: Config):
             case Left(error) =>
                 Left(error)
 
-    private def parseCondition(input: String, insideParenthesis: Boolean): Either[SearchConditionParseError, (SearchCondition, String)] =
+    private def parseCondition(
+                                  input: String,
+                                  insideParenthesis: Boolean,
+                                  entityType: EntityType[_, _, _]
+                              ): Either[SearchConditionParseError, (SearchCondition, String)] =
 
         def parseFieldsChain(input: String): FieldPathChainCell =
             val firstFieldEnd = input.indexOf(FieldsDelimiterInChain)
             if (firstFieldEnd == -1)
-                FieldPathChainCell(input, None, None)
+                FieldPathChainCell(input, None)
             else
                 val currFieldName = input.substring(0, firstFieldEnd)
                 val nextChain = Some(parseFieldsChain(input.substring(firstFieldEnd + FieldsDelimiterInChain.length)))
-                val rsssmIndex = currFieldName.indexOf(ReferencedSubtypeSpecifierStartMark)
-                if (rsssmIndex != -1)
-                    val subTypeRef = currFieldName.substring(rsssmIndex + ReferencedSubtypeSpecifierStartMark.length)
-                        .replaceAll(ReferencedSubtypeNamespacesDelimiterMark, NAMESPACES_DELIMITER)
-                    FieldPathChainCell(currFieldName.substring(0, rsssmIndex), Some(subTypeRef), nextChain)
-                else
-                    FieldPathChainCell(currFieldName, None, nextChain)
+                FieldPathChainCell(currFieldName, nextChain)
         def parseValue(input: String, insideParenthesis: Boolean): (String, String) =
             val valueEndRE = if (insideParenthesis) ValueEndInsideParenthesisRE else ValueEndRE
             valueEndRE.findFirstMatchIn(input).map(endMatch =>
                 (input.substring(0, endMatch.start), input.substring(endMatch.start))
             ).getOrElse((input, ""))
-        def parseValues(input: String, insideParenthesis: Boolean): (Array[String], String) =
+        def parseValues(input: String, insideParenthesis: Boolean): (List[String], String) =
             val (listValues, inputAfterList) = parseValue(input, insideParenthesis)
-            (listValues.split(ValueEndInsideListRE.regex), inputAfterList)
-        def parseInterval(input: String, insideParenthesis: Boolean): Either[SearchConditionParseError, (Range, String)] =
+            val result = ValueEndInsideListRE.pattern.splitAsStream(inputAfterList).toScala(List)
+            (result, inputAfterList)
+        def parseInterval(input: String, insideParenthesis: Boolean): Either[SearchConditionParseError, (Range[String], String)] =
             val intervalMiddle = input.indexOf(IntervalMiddleMark)
             if (intervalMiddle == -1)
                 Left(SearchConditionParseError(s"Interval end not found in $input!"))
@@ -154,23 +158,30 @@ class SearchConditionsParser(conf: Config):
                     Left(SearchConditionParseError(s"Empty field name in search condition $input!"))
                 else
                     val fieldsChain = parseFieldsChain(fieldName)
-                    val operator = match1.group(4)
+                    val operator = match1.group(3)
                     val inputRest = input.substring(match1.end(0))
                     val searchCondition = operator match
                         case `EqConditionSign` | `GraterThanConditionSign` | `LessThanConditionSign` |
-                             `GraterOrEqualConditionSign` | `LessOrEqualConditionSign` | `LikeConditionSign` =>
+                             `GraterOrEqualConditionSign` | `LessOrEqualConditionSign` | `LikeConditionSign` | `IsConditionSign` =>
                             val constructor = conditionConstructors(operator)
-                            val (value, rest) = parseValue(inputRest, insideParenthesis)
-                            (EqSearchCondition(fieldsChain, value), rest)
+                            var (value, rest) = parseValue(inputRest, insideParenthesis)
+                            if (operator == LikeConditionSign) {
+                                value = value.replace(Wildcard, GlobalConstants.searchWildcard)
+                            }
+                            (constructor(fieldsChain, value), rest)
                         case `InConditionSign` =>
                             parseInterval(inputRest, insideParenthesis) match
                                 case Right((value, rest)) =>
-                                    (BetweenSearchCondition(fieldsChain, value), rest)
+                                    (BetweenRawSearchCondition(fieldsChain, value), rest)
                                 case Left(_) =>
                                     val (value, rest) = parseValues(inputRest, insideParenthesis)
-                                    (InSearchCondition(fieldsChain, value), rest)
+                                    (InRawSearchCondition(fieldsChain, value), rest)
                     Right(searchCondition)
             )
             .getOrElse(Left(SearchConditionParseError(s"Search condition not found! Invalid input: $input!")))
+            .flatMap(conditionRawRes => typesDefinitionProvider
+                .validateAndParseSearchCondition(conditionRawRes._1, entityType)
+                .map(condition => (condition, conditionRawRes._2))
+            )
 
     

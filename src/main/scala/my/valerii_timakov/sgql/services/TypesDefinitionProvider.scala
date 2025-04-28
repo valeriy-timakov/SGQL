@@ -1,10 +1,10 @@
 package my.valerii_timakov.sgql.services
 
 import my.valerii_timakov.sgql.entity
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{FieldsContainer, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeReferenceDefinition}
-import my.valerii_timakov.sgql.entity.domain.type_values.EntityId
-import my.valerii_timakov.sgql.entity.domain.types.{AbstractArrayEntityType, AbstractEntityType, AbstractObjectEntityType, AbstractPrimitiveEntityType, GlobalTypesMap, ObjectEntitySuperType, ObjectEntityType}
-import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, CombinedSearchCondition, GetFieldsDescriptor, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, NotSearchCondition, ObjectGetFieldsDescriptor, SearchCondition, FieldPathChainCell, SingleFieldSearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{EntityIdTypeDefinition, FieldsContainer, FixedStringTypeDefinition, StringTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeReferenceDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_values.{EntityId, FixedStringId, StringId}
+import my.valerii_timakov.sgql.entity.domain.types.{AbstractArrayEntityType, AbstractEntityType, AbstractObjectEntityType, AbstractPrimitiveEntityType, EntitySuperType, GlobalTypesMap, ObjectEntitySuperType, ObjectEntityType}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, CombinedSearchCondition, FieldPathChainCell, GetFieldsDescriptor, GlobalConstants, IsOfTypeRawSearchCondition, IsOfTypeSearchCondition, LikeRawSearchCondition, LikeSearchCondition, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, NotSearchCondition, ObjectGetFieldsDescriptor, RawSearchCondition, RawSearchConditionSelfConstructable, SearchCondition, SingleFieldSearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
 import my.valerii_timakov.sgql.entity.{GetFieldsFieldValidateError, GetFieldsFieldsValidateError, GetFieldsParseError, SearchConditionParseError}
 
 import scala.annotation.tailrec
@@ -25,8 +25,12 @@ trait TypesDefinitionProvider:
     def getAllLeafObjectsSubtypes(entityType: ObjectEntitySuperType[_, _]): Set[ObjectEntityType[_, _]]
     def validateGetFieldsDescriptor(descriptor: ObjectGetFieldsDescriptor, entityType: AbstractEntityType[_, _, _]):
         Either[entity.Error, Unit]
-    def validateSearchCondition(condition: SearchCondition, entityType: AbstractEntityType[_, _, _]):
-        Either[SearchConditionParseError, Unit]
+//    def validateSearchCondition(condition: SearchCondition, entityType: AbstractEntityType[_, _, _]):
+//        Either[SearchConditionParseError, Unit]
+    def validateAndParseSearchCondition(
+                                           condition: RawSearchCondition,
+                                           entityType: AbstractEntityType[_, _, _]
+                                       ): Either[SearchConditionParseError, SearchCondition]
 
 object TypesDefinitionProvider:
 
@@ -78,69 +82,112 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                     case _ =>
                         Left(GetFieldsParseError(s"Cannot use GetFieldsDescriptor $descriptor for non object type $entityType!"))
 
-    def validateSearchCondition(
-                                   condition: SearchCondition, 
-                                   entityType: AbstractEntityType[_, _, _]
-                               ): Either[SearchConditionParseError, Unit] =
-        condition match
-            case combined: CombinedSearchCondition =>
-                combined.conditions.map(validateSearchCondition(_, entityType)).collectFirst({ case Left(error) => error })
-                    .map(Left(_))
-                    .getOrElse(Right(Success(())))
-            case not: NotSearchCondition =>
-                validateSearchCondition(not.condition, entityType)
-            case single: SingleFieldSearchCondition =>
-                validateSingleSearchCondition(Some(single.field), entityType, "")
+//    def validateSearchCondition(
+//                                   condition: SearchCondition, 
+//                                   entityType: AbstractEntityType[_, _, _]
+//                               ): Either[SearchConditionParseError, Unit] =
+//        condition match
+//            case combined: CombinedSearchCondition =>
+//                combined.conditions.map(validateSearchCondition(_, entityType)).collectFirst({ case Left(error) => error })
+//                    .map(Left(_))
+//                    .getOrElse(Right(Success(())))
+//            case not: NotSearchCondition =>
+//                validateSearchCondition(not.condition, entityType)
+//            case single: SingleFieldSearchCondition =>
+//                validateSingleSearchCondition(Some(single.field), , entityType, "")
+
+    def validateAndParseSearchCondition(
+                                           condition: RawSearchCondition,
+                                           entityType: AbstractEntityType[_, _, _]
+                               ): Either[SearchConditionParseError, SearchCondition] =
+        validateSingleSearchCondition(Some(condition.field), condition, entityType, "")
                 
     private def validateSingleSearchCondition(
                                                  fieldsChainOpt: Option[FieldPathChainCell],
+                                                 ownerCondition: RawSearchCondition,
                                                  entityType: AbstractEntityType[_, _, _],
                                                  typePrefix: String
-                                       ): Either[SearchConditionParseError, Unit] =
-        (entityType, fieldsChainOpt) match
-            case (objDef: ObjectEntityType[_, _], Some(fieldsChain)) =>
-                validateSingleSearchCondition(fieldsChain, objDef.typeDefinition, s" $typePrefix${objDef.name}")
-            case (objDef: ObjectEntitySuperType[_, _], Some(fieldsChain)) =>
-                fieldsChain.subType match
-                    case Some(subTypeName) =>
-                        globalTypesMap.getTypeByName(subTypeName) match
-                            case Some(subType: ObjectEntityType[_, _]) =>
-                                if (subType.isChildOf(objDef))
-                                    validateSingleSearchCondition(fieldsChain, subType.typeDefinition, s" $typePrefix${subType.name}")
-                                else
-                                    Left(SearchConditionParseError(s"Type $subTypeName is not subtype of $entityType!"))
-                            case None =>
-                                Left(SearchConditionParseError(s"Sub type $subTypeName in condition $fieldsChain not found!"))
-                    case None =>
-                        validateSingleSearchCondition(fieldsChain, objDef.typeDefinition, s" $typePrefix${objDef.name}")
-            case (objDef: AbstractPrimitiveEntityType[_, _, _], Some(FieldPathChainCell("value", None, None))) =>
-                Right(Success(()))
-            case (objDef: AbstractPrimitiveEntityType[_, _, _], None) =>
-                Right(Success(()))
-            case (objDef: AbstractArrayEntityType[_, _], None) =>
-                Right(Success(()))
-            case (objDef: AbstractArrayEntityType[_, _], Some(FieldPathChainCell("value", None, None))) =>
-                Right(Success(()))
+                                       ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
+        (entityType, fieldsChainOpt, ownerCondition) match
+            case (entitySuperType: EntitySuperType[_, _, _], None, IsOfTypeRawSearchCondition(_, entityTypeName)) =>
+                getType(entityTypeName)
+                    .toRight(SearchConditionParseError(s"Type $entityTypeName not found for IsOfTypeSearchCondition! Condition: $ownerCondition"))
+                    .filterOrElse(entityType => entityType.isChildOfRaw(entitySuperType),
+                        SearchConditionParseError(s"Type $entityTypeName is not child of ${entitySuperType.name}! Condition: $ownerCondition"))
+                    .map { entityType =>
+                        IsOfTypeSearchCondition(ownerCondition.field, entityType)
+                    }
+            case (arrayType: AbstractArrayEntityType[_, _], None | Some(FieldPathChainCell(GlobalConstants.entityIdFieldNameForDsc, None)), _) =>
+                //TODO implement for array types
+                Left(SearchConditionParseError(s"SearchCondition for field $fieldsChainOpt of array type ${arrayType.name} is not supported yet!"))
+            case (entityType: AbstractEntityType[_, _, _], Some(FieldPathChainCell(GlobalConstants.entityIdFieldNameForDsc, None)), _) =>
+                parseIdTypeCondition(ownerCondition, entityType.typeDefinition.idType)
+            case (objDef: AbstractObjectEntityType[_, _], Some(fieldsChain), _) =>
+                validateSingleSearchCondition(fieldsChain, ownerCondition, objDef.typeDefinition, s" $typePrefix${objDef.name}")
+            case (primType: AbstractPrimitiveEntityType[_, _, _], None | Some(FieldPathChainCell(GlobalConstants.primitiveTypeValueFieldNameForDsc, None)), _) =>
+                parseValueTypeCondition(ownerCondition, primType.typeDefinition.rootType)
+            case (arrayType: AbstractArrayEntityType[_, _], None | Some(FieldPathChainCell(GlobalConstants.primitiveTypeValueFieldNameForDsc, None)), _) =>
+                //TODO implement for array types
+                Left(SearchConditionParseError(s"SearchCondition for field $fieldsChainOpt of array type ${arrayType.name} is not supported yet!"))
             case _ =>
                 Left(SearchConditionParseError(s"SearchCondition field $fieldsChainOpt is not compatible with type $entityType!"))
 
     @tailrec
     private def validateSingleSearchCondition(
                                                  fieldsChain: FieldPathChainCell,
+                                                 ownerCondition: RawSearchCondition,
                                                  fieldsContainer: FieldsContainer,
                                                  typeName: String, 
-                                             ): Either[SearchConditionParseError, Unit] =
+                                             ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
         (fieldsContainer.allFields.get(fieldsChain.fieldName).map(_.valueType), fieldsChain.nextCell) match
             case (Some(soDef: SimpleObjectTypeDefinition[_]), Some(nextField)) =>
-                validateSingleSearchCondition(nextField, soDef, s" $typeName.${fieldsChain.fieldName}[_]")
+                validateSingleSearchCondition(nextField, ownerCondition, soDef, s" $typeName.${fieldsChain.fieldName}[_]")
             case (Some(refDef: TypeReferenceDefinition[_]), _) =>
-                validateSingleSearchCondition(fieldsChain.nextCell, refDef.referencedType, s" $typeName.${fieldsChain.fieldName}->")
+                validateSingleSearchCondition(fieldsChain.nextCell, ownerCondition, refDef.referencedType, s" $typeName.${fieldsChain.fieldName}->")
             case (Some(primDef: RootPrimitiveTypeDefinition[_]), None) =>
-                Right(Success(()))
+                parseValueTypeCondition(ownerCondition, primDef)
             case (Some(field), _) =>
                 Left(SearchConditionParseError(s"Incompatible combination of search condition field $fieldsChain and found field $field in type $typeName!"))
             case (None, _) =>
                 Left(SearchConditionParseError(s"Search condition field ${fieldsChain.fieldName} not present in corresponding type $typeName!"))
+                
+    private def parseIdTypeCondition(
+                                        ownerCondition: RawSearchCondition,
+                                        idType: EntityIdTypeDefinition[_]
+                                    ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
+        ownerCondition match
+            case condConstr: RawSearchConditionSelfConstructable =>
+                val parser: String => Either[SearchConditionParseError, Any] = 
+                    (value: String) => idType.parse(value).left.map( error =>
+                            SearchConditionParseError(s"Cannot parse value $value to ID type " +
+                                s"${idType.name} for condition $ownerCondition!")
+                        )
+                condConstr.checkValueAndCreate(parser)
+            case likeCond: LikeRawSearchCondition =>
+                val fieldTypeIsString = idType match
+                    case _: FixedStringId => true
+                    case _: StringId => true
+                    case _ => false
+                Right(LikeSearchCondition(likeCond.field, likeCond.value, fieldTypeIsString))
+
+    private def parseValueTypeCondition(
+                                        ownerCondition: RawSearchCondition,
+                                        valueType: RootPrimitiveTypeDefinition[_]
+                                    ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
+        ownerCondition match
+            case condConstr: RawSearchConditionSelfConstructable =>
+                val parser: String => Either[SearchConditionParseError, Any] =
+                    (value: String) => valueType.parse(value).left.map( error =>
+                        SearchConditionParseError(s"Cannot parse value $value to ID type " +
+                            s"${valueType.name} for condition $ownerCondition!")
+                    )
+                condConstr.checkValueAndCreate(parser)
+            case likeCond: LikeRawSearchCondition =>
+                val fieldTypeIsString = valueType match
+                    case _: FixedStringTypeDefinition => true
+                    case StringTypeDefinition => true
+                    case _ => false
+                Right(LikeSearchCondition(likeCond.field, likeCond.value, fieldTypeIsString))
 
     private def validateObjectGetFieldsDescriptor(
                                                descriptor: AbstractObjectGetFieldsDescriptor,

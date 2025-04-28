@@ -15,6 +15,8 @@ object CrudRepositoriesFactory:
             new PostgresCrudRepository(conf.getConfig("postgres"), conf, typesMapper, typeNameMaxLength, fieldMaxLength)
         else
             throw new PersistenceRepositoryTypeNotFoundException
+            
+final case class SqlData(isBetweenSupported: Boolean, likeWildcard: String)
 
 
 trait CrudRepository:

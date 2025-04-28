@@ -35,7 +35,7 @@ class CrudActor(
         .mkString("|")
     private val delimitersPattern = s"($delimiters)".r
 
-    private val searchConditionsParser = SearchConditionsParser(conf.getConfig("search-operators"))
+    private val searchConditionsParser = SearchConditionsParser(conf.getConfig("search-operators"), typesDefinitionProvider)
     private val fieldsDescriptorsParser = FieldsDescriptorsParser(conf)
 
     import CrudActor.*
@@ -149,11 +149,7 @@ class CrudActor(
     : Either[entity.Error, Try[Res]] =
         val searchConditionRes: Either[SearchConditionParseError, Option[SearchCondition]] = searchQueryOpt match
             case Some(searchQuery) => 
-                searchConditionsParser.parse(searchQuery)
-                    .flatMap(searchCondition =>
-                        typesDefinitionProvider.validateSearchCondition(searchCondition, entityType)
-                            .map(_ => Some(searchCondition))
-                    )
+                searchConditionsParser.parse(searchQuery, entityType).map(cond => Some(cond))
             case None =>
                 Right(None)
         searchConditionRes.flatMap(searchConditionMapper) 

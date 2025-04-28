@@ -4,7 +4,7 @@ package my.valerii_timakov.sgql.entity.domain.type_definitions
 import akka.parboiled2.util.Base64
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.domain.type_definitions.LongTypeDefinition.name
-import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BackReferenceValue, BinaryValue, BooleanValue, ByteId, ByteValue, CustomPrimitiveValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, Entity, EntityId, EntityValue, FixedStringId, FixedStringValue, FloatValue, IntId, IntValue, ItemValue, LongId, LongValue, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, ShortIntValue, SimpleObjectValue, StringId, StringValue, TimeValue, UUIDId, UUIDValue, ValueTypes}
+import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, BackReferenceValue, BinaryValue, BooleanValue, ByteId, ByteValue, CustomPrimitiveValue, DateTimeValue, DateValue, DecimalValue, DoubleValue, Entity, EntityId, EntityValue, FixedStringId, FixedStringValue, FloatValue, IntId, IntValue, ItemValue, LongId, LongValue, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, ShortIntValue, SimpleObjectValue, StringId, StringValue, TimeValue, TypeValue, UUIDId, UUIDValue, ValueTypes}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, ArrayEntitySuperType, BackReferenceType, EntitySuperType, EntityType, GlobalTypesMap, ObjectEntitySuperType, PrimitiveEntitySuperType, ReferenceType, SimpleObjectType}
 import my.valerii_timakov.sgql.entity.{SingleMessageError, ValueParseError}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, TypeReinitializationException, WrongStateExcetion}
@@ -48,7 +48,8 @@ sealed abstract class AbstractEntityIdTypeDefinition[V <: EntityId[_, V]]:
     def toJson: JsValue = JsString(name)
 
 
-sealed abstract class EntityIdTypeDefinition[V <: EntityId[_, V]](val name: String) extends AbstractEntityIdTypeDefinition[V]:
+sealed abstract class EntityIdTypeDefinition[V <: EntityId[_, V]](val name: String) extends AbstractEntityIdTypeDefinition[V] with TypeDefinition:
+    type ValueType = V
     def extract(rs: WrappedResultSet, pos: Int): Option[V]
     def parse(value: String): Either[ValueParseError, V] = {
         try {
@@ -172,6 +173,7 @@ sealed trait ReferenceDefinition[ID <: EntityId[_, ID], V <: EntityValue] extend
     def idType: EntityIdTypeDefinition[ID]
     def referencedType: AbstractEntityType[ID, _, _]
     def name: String
+
 
 final case class TypeReferenceDefinition[ID <: EntityId[_, ID]](
                                                          referencedType: AbstractEntityType[ID, _, _],
@@ -470,14 +472,16 @@ object SimpleObjectTypeDefinition:
                     s"Error is impossible - analise if it was thrown!")
 
 
-
-
+sealed trait TypeDefinition:
+    type ValueType = TypeValue
+    def parse(value: String): Either[ValueParseError, ValueType]
 
 sealed trait AbstractRootPrimitiveTypeDefinition:
     def name: String
 
 sealed abstract case class RootPrimitiveTypeDefinition[V <: RootPrimitiveValue[V]](name: String)
-            extends AbstractRootPrimitiveTypeDefinition,  ItemValueTypeDefinition[V]:
+            extends AbstractRootPrimitiveTypeDefinition with ItemValueTypeDefinition[V] with TypeDefinition:
+    type ValueType = V
     def parse(value: String): Either[ValueParseError, V] =
         try {
             Right(parseInner(value))
@@ -716,6 +720,8 @@ final case class CustomPrimitiveTypeDefinition[ID <: EntityId[_, ID], VT <: Cust
     lazy val idType: EntityIdTypeDefinition[ID] = parentNode.fold(_._1, _.typeDefinition.idType)
     lazy val parent: Option[PrimitiveEntitySuperType[ID, _, V]] = parentNode.toOption
 
+    def parse(value: String): Either[ValueParseError, V] =
+        rootType.parse(value)
     def toJson(value: V): JsValue =
         value.toJson
     def parseValue(data: JsValue): Either[ValueParseError, V] =
