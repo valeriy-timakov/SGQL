@@ -25,8 +25,6 @@ trait TypesDefinitionProvider:
     def getAllLeafObjectsSubtypes(entityType: ObjectEntitySuperType[_, _]): Set[ObjectEntityType[_, _]]
     def validateGetFieldsDescriptor(descriptor: ObjectGetFieldsDescriptor, entityType: AbstractEntityType[_, _, _]):
         Either[entity.Error, Unit]
-//    def validateSearchCondition(condition: SearchCondition, entityType: AbstractEntityType[_, _, _]):
-//        Either[SearchConditionParseError, Unit]
     def validateAndParseSearchCondition(
                                            condition: RawSearchCondition,
                                            entityType: AbstractEntityType[_, _, _]
@@ -94,15 +92,15 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
 //            case not: NotSearchCondition =>
 //                validateSearchCondition(not.condition, entityType)
 //            case single: SingleFieldSearchCondition =>
-//                validateSingleSearchCondition(Some(single.field), , entityType, "")
+//                validateAndParseSingleSearchCondition(Some(single.field), , entityType, "")
 
     def validateAndParseSearchCondition(
                                            condition: RawSearchCondition,
                                            entityType: AbstractEntityType[_, _, _]
                                ): Either[SearchConditionParseError, SearchCondition] =
-        validateSingleSearchCondition(Some(condition.field), condition, entityType, "")
+        validateAndParseSingleSearchCondition(Some(condition.field), condition, entityType, "")
                 
-    private def validateSingleSearchCondition(
+    private def validateAndParseSingleSearchCondition(
                                                  fieldsChainOpt: Option[FieldPathChainCell],
                                                  ownerCondition: RawSearchCondition,
                                                  entityType: AbstractEntityType[_, _, _],
@@ -121,11 +119,11 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                 //TODO implement for array types
                 Left(SearchConditionParseError(s"SearchCondition for field $fieldsChainOpt of array type ${arrayType.name} is not supported yet!"))
             case (entityType: AbstractEntityType[_, _, _], Some(FieldPathChainCell(GlobalConstants.entityIdFieldNameForDsc, None)), _) =>
-                parseIdTypeCondition(ownerCondition, entityType.typeDefinition.idType)
+                validateAndParseIdTypeCondition(ownerCondition, entityType.typeDefinition.idType)
             case (objDef: AbstractObjectEntityType[_, _], Some(fieldsChain), _) =>
-                validateSingleSearchCondition(fieldsChain, ownerCondition, objDef.typeDefinition, s" $typePrefix${objDef.name}")
+                validateAndParseSingleSearchCondition(fieldsChain, ownerCondition, objDef.typeDefinition, s" $typePrefix${objDef.name}")
             case (primType: AbstractPrimitiveEntityType[_, _, _], None | Some(FieldPathChainCell(GlobalConstants.primitiveTypeValueFieldNameForDsc, None)), _) =>
-                parseValueTypeCondition(ownerCondition, primType.typeDefinition.rootType)
+                validateAndParseValueTypeCondition(ownerCondition, primType.typeDefinition.rootType)
             case (arrayType: AbstractArrayEntityType[_, _], None | Some(FieldPathChainCell(GlobalConstants.primitiveTypeValueFieldNameForDsc, None)), _) =>
                 //TODO implement for array types
                 Left(SearchConditionParseError(s"SearchCondition for field $fieldsChainOpt of array type ${arrayType.name} is not supported yet!"))
@@ -133,7 +131,7 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                 Left(SearchConditionParseError(s"SearchCondition field $fieldsChainOpt is not compatible with type $entityType!"))
 
     @tailrec
-    private def validateSingleSearchCondition(
+    private def validateAndParseSingleSearchCondition(
                                                  fieldsChain: FieldPathChainCell,
                                                  ownerCondition: RawSearchCondition,
                                                  fieldsContainer: FieldsContainer,
@@ -141,17 +139,17 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                                              ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
         (fieldsContainer.allFields.get(fieldsChain.fieldName).map(_.valueType), fieldsChain.nextCell) match
             case (Some(soDef: SimpleObjectTypeDefinition[_]), Some(nextField)) =>
-                validateSingleSearchCondition(nextField, ownerCondition, soDef, s" $typeName.${fieldsChain.fieldName}[_]")
+                validateAndParseSingleSearchCondition(nextField, ownerCondition, soDef, s" $typeName.${fieldsChain.fieldName}[_]")
             case (Some(refDef: TypeReferenceDefinition[_]), _) =>
-                validateSingleSearchCondition(fieldsChain.nextCell, ownerCondition, refDef.referencedType, s" $typeName.${fieldsChain.fieldName}->")
+                validateAndParseSingleSearchCondition(fieldsChain.nextCell, ownerCondition, refDef.referencedType, s" $typeName.${fieldsChain.fieldName}->")
             case (Some(primDef: RootPrimitiveTypeDefinition[_]), None) =>
-                parseValueTypeCondition(ownerCondition, primDef)
+                validateAndParseValueTypeCondition(ownerCondition, primDef)
             case (Some(field), _) =>
                 Left(SearchConditionParseError(s"Incompatible combination of search condition field $fieldsChain and found field $field in type $typeName!"))
             case (None, _) =>
                 Left(SearchConditionParseError(s"Search condition field ${fieldsChain.fieldName} not present in corresponding type $typeName!"))
                 
-    private def parseIdTypeCondition(
+    private def validateAndParseIdTypeCondition(
                                         ownerCondition: RawSearchCondition,
                                         idType: EntityIdTypeDefinition[_]
                                     ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
@@ -170,7 +168,7 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                     case _ => false
                 Right(LikeSearchCondition(likeCond.field, likeCond.value, fieldTypeIsString))
 
-    private def parseValueTypeCondition(
+    private def validateAndParseValueTypeCondition(
                                         ownerCondition: RawSearchCondition,
                                         valueType: RootPrimitiveTypeDefinition[_]
                                     ): Either[SearchConditionParseError, SingleFieldSearchCondition] =

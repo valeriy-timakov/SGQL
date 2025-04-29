@@ -199,6 +199,16 @@ final case class IsOfTypeRawSearchCondition(field: FieldPathChainCell, entityTyp
     require(field != null, "Field path cannot be null")
     require(entityTypeName != null, "EntityTypeName cannot be null")
 
+final case class IsSubSetRawSearchCondition(field: FieldPathChainCell, value: List[String]) extends RawSearchConditionSelfConstructable:
+    require(field != null, "Field path cannot be null")
+    require(value != null, "Values cannot be null")
+    require(!value.contains(null), "Values items cannot be null")
+
+final case class IsSuperSetRawSearchCondition(field: FieldPathChainCell, value: List[String]) extends RawSearchConditionSelfConstructable:
+    require(field != null, "Field path cannot be null")
+    require(value != null, "Values cannot be null")
+    require(!value.contains(null), "Values items cannot be null")
+
 
 
 sealed trait SearchCondition:
