@@ -113,61 +113,66 @@ final case class Range[V](from: V, to: V)
 
 sealed trait RawSearchCondition:
     def field: FieldPathChainCell
+
+sealed trait RawMultyValuesSearchCondition extends RawSearchCondition:
+    def values: List[String]
     
 sealed trait RawSearchConditionSelfConstructable extends RawSearchCondition:
-    def checkValueAndCreate(
-                               valueParser: String => Either[SearchConditionParseError, Any]
-                           ): Either[SearchConditionParseError, SingleFieldSearchCondition]
-
+    def checkValueAndCreateForOneValue(
+                                     valueParser: String => Either[SearchConditionParseError, Any]
+                                 ): Either[SearchConditionParseError, SingleFieldSearchCondition]
+    def checkValueAndCreateForSet(
+                                     valueParser: String => Either[SearchConditionParseError, Any]
+                                 ): Either[SearchConditionParseError, SingleFieldSearchCondition]
 
 sealed trait RawSimpmpleStringSearchCondition extends RawSearchConditionSelfConstructable:
     def value: String
     def create(field: FieldPathChainCell, value: Any): SingleFieldSearchCondition
-    def checkValueAndCreate(
+    def checkValueAndCreateForOneValue(
                                valueParser: String => Either[SearchConditionParseError, Any]
                            ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
         valueParser(value).map(parsedValue => create(field, parsedValue))
 
-final case class EqRawSearchCondition(field: FieldPathChainCell, value: String) extends RawSimpmpleStringSearchCondition:
+final case class EqRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     
     def create(field: FieldPathChainCell, value: Any): EqSearchCondition =
         EqSearchCondition(field, value)
 
-final case class GtRawSearchCondition(field: FieldPathChainCell, value: String) extends RawSimpmpleStringSearchCondition:
+final case class GtRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     
     def create(field: FieldPathChainCell, value: Any): GtSearchCondition =
         GtSearchCondition(field, value)
 
-final case class GeRawSearchCondition(field: FieldPathChainCell, value: String) extends RawSimpmpleStringSearchCondition:
+final case class GeRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     
     def create(field: FieldPathChainCell, value: Any): GeSearchCondition =
         GeSearchCondition(field, value)
 
-final case class LtRawSearchCondition(field: FieldPathChainCell, value: String) extends RawSimpmpleStringSearchCondition:
+final case class LtRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     
     def create(field: FieldPathChainCell, value: Any): LtSearchCondition =
         LtSearchCondition(field, value)
 
-final case class LeRawSearchCondition(field: FieldPathChainCell, value: String) extends RawSimpmpleStringSearchCondition:
+final case class LeRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     
     def create(field: FieldPathChainCell, value: Any): LeSearchCondition =
         LeSearchCondition(field, value)
 
-final case class BetweenRawSearchCondition(field: FieldPathChainCell, value: Range[String]) extends RawSearchConditionSelfConstructable:
+final case class BetweenRawSearchCondition(field: FieldPathChainCell, value: Range[String], allItems: Boolean) extends RawSearchConditionSelfConstructable:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     
-    def checkValueAndCreate(
+    def checkValueAndCreateForOneValue(
                                valueParser: String => Either[SearchConditionParseError, Any]
                            ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
         valueParser(value.from).flatMap(fromValue => 
@@ -176,14 +181,19 @@ final case class BetweenRawSearchCondition(field: FieldPathChainCell, value: Ran
             )
         )
 
-final case class InRawSearchCondition(field: FieldPathChainCell, value: List[String]) extends RawSearchConditionSelfConstructable:
+final case class InRawSearchCondition(
+                                         field: FieldPathChainCell, 
+                                         values: List[String], 
+                                         allItems: Boolean
+                                     ) extends RawSearchConditionSelfConstructable, RawMultyValuesSearchCondition:
     require(field != null, "Field path cannot be null")
-    require(value != null, "Value cannot be null")
+    require(values != null, "Values cannot be null")
+    require(!values.contains(null), "Values items cannot be null")
 
-    def checkValueAndCreate(
+    def checkValueAndCreateForOneValue(
                                valueParser: String => Either[SearchConditionParseError, Any]
                            ): Either[SearchConditionParseError, InSearchCondition] =
-        value.foldLeft(Right(Nil): Either[SearchConditionParseError, List[Any]]) {
+        values.foldLeft(Right(Nil): Either[SearchConditionParseError, List[Any]]) {
                 case (Right(acc), valueItem) =>
                     valueParser(valueItem).map(_ :: acc)
                 case (left@Left(_), _) =>
@@ -191,23 +201,52 @@ final case class InRawSearchCondition(field: FieldPathChainCell, value: List[Str
             }
             .map(parsedValue => InSearchCondition(field, parsedValue))
 
-final case class LikeRawSearchCondition(field: FieldPathChainCell, value: String) extends RawSearchCondition:
+final case class LikeRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
 
-final case class IsOfTypeRawSearchCondition(field: FieldPathChainCell, entityTypeName: String) extends RawSearchCondition:
+final case class IsOfTypeRawSearchCondition(field: FieldPathChainCell, entityTypeName: String, allItems: Boolean) extends RawSearchCondition:
     require(field != null, "Field path cannot be null")
     require(entityTypeName != null, "EntityTypeName cannot be null")
 
-final case class IsSubSetRawSearchCondition(field: FieldPathChainCell, value: List[String]) extends RawSearchConditionSelfConstructable:
+final case class IsSubSetRawSearchCondition(
+                                               field: FieldPathChainCell, 
+                                               values: List[String]
+                                           ) extends RawSearchConditionSelfConstructable, RawMultyValuesSearchCondition:
     require(field != null, "Field path cannot be null")
-    require(value != null, "Values cannot be null")
-    require(!value.contains(null), "Values items cannot be null")
+    require(values != null, "Values cannot be null")
+    require(!values.contains(null), "Values items cannot be null")
 
-final case class IsSuperSetRawSearchCondition(field: FieldPathChainCell, value: List[String]) extends RawSearchConditionSelfConstructable:
+final case class IsSuperSetRawSearchCondition(
+                                                 field: FieldPathChainCell, 
+                                                 values: List[String]
+                                             ) extends RawSearchConditionSelfConstructable, RawMultyValuesSearchCondition:
     require(field != null, "Field path cannot be null")
-    require(value != null, "Values cannot be null")
-    require(!value.contains(null), "Values items cannot be null")
+    require(values != null, "Values cannot be null")
+    require(!values.contains(null), "Values items cannot be null")
+
+final case class IsEqualsSetRawSearchCondition(
+                                                 field: FieldPathChainCell, 
+                                                 values: List[String]
+                                             ) extends RawSearchConditionSelfConstructable, RawMultyValuesSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(values != null, "Values cannot be null")
+    require(!values.contains(null), "Values items cannot be null")
+
+final case class IsIntersectsRawSearchCondition(
+                                                   field: FieldPathChainCell, 
+                                                   values: List[String]
+                                               ) extends RawSearchConditionSelfConstructable, RawMultyValuesSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(values != null, "Values cannot be null")
+    require(!values.contains(null), "Values items cannot be null")
+
+final case class IsEmptyRawSearchCondition(
+                                              field: FieldPathChainCell
+                                          ) extends RawSearchConditionSelfConstructable, RawMultyValuesSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(values != null, "Values cannot be null")
+    require(!values.contains(null), "Values items cannot be null")
 
 
 
@@ -221,6 +260,38 @@ sealed trait SearchCondition:
      */    
     def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String
     def expectedSubTypeName: Option[String] = None
+
+final case class NotSearchCondition(condition: SearchCondition) extends SearchCondition:
+    require(condition != null, "Condition cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String =
+        "NOT (" + condition.toSQL(sqlData, translateFieldPath, bindParameter) + ")"
+
+sealed trait CombinedSearchCondition extends SearchCondition:
+    def conditions: List[SearchCondition]
+    def ::(condition: SearchCondition): CombinedSearchCondition
+
+final case class AndSearchCondition(conditions: List[SearchCondition]) extends CombinedSearchCondition:
+    require(conditions != null, "Conditions cannot be null")
+    require(conditions.nonEmpty, "Conditions cannot be empty")
+    require(!conditions.contains(null), "Conditions cannot be null")
+    def ::(condition: SearchCondition): AndSearchCondition = AndSearchCondition(condition :: conditions)
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String =
+        conditions.map("(" + _.toSQL(sqlData, translateFieldPath, bindParameter) + ")").mkString(" AND ")
+
+object AndSearchCondition:
+    def apply(conditions: SearchCondition*): AndSearchCondition = AndSearchCondition(conditions.toList)
+
+final case class OrSearchCondition(conditions: List[SearchCondition]) extends CombinedSearchCondition:
+    require(conditions != null, "Conditions cannot be null")
+    require(conditions.nonEmpty, "Conditions cannot be empty")
+    require(!conditions.contains(null), "Conditions cannot be null")
+    def ::(condition: SearchCondition): OrSearchCondition = OrSearchCondition(condition :: conditions)
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String =
+        conditions.map(_.toSQL(sqlData, translateFieldPath, bindParameter)).mkString(" OR ")
+
+object OrSearchCondition:
+    def apply(conditions: SearchCondition*): OrSearchCondition = OrSearchCondition(conditions.toList)
+
 sealed trait SingleFieldSearchCondition extends SearchCondition:
     def field: FieldPathChainCell
 
@@ -279,34 +350,76 @@ final case class IsOfTypeSearchCondition(field: FieldPathChainCell, entityType: 
         translateFieldPath(idPath) + " IS NOT NULL"
     def expectedSubTypeName: Option[String] = Some(entityType.name)
     
-final case class NotSearchCondition(condition: SearchCondition) extends SearchCondition:
-    require(condition != null, "Condition cannot be null")
-    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String =
-        "NOT (" + condition.toSQL(sqlData, translateFieldPath, bindParameter) + ")"
-        
-sealed trait CombinedSearchCondition extends SearchCondition:
-    def conditions: List[SearchCondition]
-    def ::(condition: SearchCondition): CombinedSearchCondition
-    
-final case class AndSearchCondition(conditions: List[SearchCondition]) extends CombinedSearchCondition:
-    require(conditions != null, "Conditions cannot be null")
-    require(conditions.nonEmpty, "Conditions cannot be empty")
-    require(!conditions.contains(null), "Conditions cannot be null")
-    def ::(condition: SearchCondition): AndSearchCondition = AndSearchCondition(condition :: conditions)
-    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String =
-        conditions.map("(" + _.toSQL(sqlData, translateFieldPath, bindParameter) + ")").mkString(" AND ")
-        
-object AndSearchCondition:
-    def apply(conditions: SearchCondition*): AndSearchCondition = AndSearchCondition(conditions.toList)
-    
-final case class OrSearchCondition(conditions: List[SearchCondition]) extends CombinedSearchCondition:
-    require(conditions != null, "Conditions cannot be null")
-    require(conditions.nonEmpty, "Conditions cannot be empty")
-    require(!conditions.contains(null), "Conditions cannot be null")
-    def ::(condition: SearchCondition): OrSearchCondition = OrSearchCondition(condition :: conditions)
-    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String =
-        conditions.map(_.toSQL(sqlData, translateFieldPath, bindParameter)).mkString(" OR ")
-        
-object OrSearchCondition:
-    def apply(conditions: SearchCondition*): OrSearchCondition = OrSearchCondition(conditions.toList)
-    
+//Array search conditions
+
+final case class ArrayEqSearchCondition(field: FieldPathChainCell, value: Any, allItems: Boolean) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(value != null, "Value cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
+final case class ArrayGtSearchCondition(field: FieldPathChainCell, value: Any, allItems: Boolean) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(value != null, "Value cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
+final case class ArrayGeSearchCondition(field: FieldPathChainCell, value: Any, allItems: Boolean) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(value != null, "Value cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
+final case class ArrayLtSearchCondition(field: FieldPathChainCell, value: Any, allItems: Boolean) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(value != null, "Value cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
+final case class ArrayLeSearchCondition(field: FieldPathChainCell, value: Any, allItems: Boolean) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(value != null, "Value cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
+final case class ArrayBetweenSearchCondition(field: FieldPathChainCell, value: Range[Any], allItems: Boolean) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(value != null, "Value cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
+
+final case class ArrayLikeSearchCondition(field: FieldPathChainCell, value: String, fieldTypeIsString: Boolean, allItems: Boolean) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(value != null, "Value cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
+
+final case class ArrayIsOfTypeSearchCondition(field: FieldPathChainCell, entityType: AbstractEntityType[_, _, _]) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(entityType != null, "EntityType cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
+    def expectedSubTypeName: Option[String] = Some(entityType.name)
+
+final case class IsSubSetSearchCondition(
+                                               field: FieldPathChainCell,
+                                               values: List[String]
+                                           ) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(values != null, "Values cannot be null")
+    require(!values.contains(null), "Values items cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
+
+final case class IsSuperSetSearchCondition(
+                                                 field: FieldPathChainCell,
+                                                 values: List[String]
+                                             ) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(values != null, "Values cannot be null")
+    require(!values.contains(null), "Values items cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
+
+final case class IsEqualSetSearchCondition(
+                                                 field: FieldPathChainCell,
+                                                 values: List[String]
+                                             ) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(values != null, "Values cannot be null")
+    require(!values.contains(null), "Values items cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
+
+final case class IsIntersectsSearchCondition(
+                                                   field: FieldPathChainCell,
+                                                   values: List[String]
+                                               ) extends SingleFieldSearchCondition:
+    require(field != null, "Field path cannot be null")
+    require(values != null, "Values cannot be null")
+    require(!values.contains(null), "Values items cannot be null")
+    def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO

@@ -3,7 +3,7 @@ package my.valerii_timakov.sgql.services
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.SearchConditionParseError
 import my.valerii_timakov.sgql.entity.domain.types.EntityType
-import my.valerii_timakov.sgql.entity.read_modiriers.{AndSearchCondition, BetweenRawSearchCondition, BetweenSearchCondition, CombinedSearchCondition, EqRawSearchCondition, EqSearchCondition, FieldPathChainCell, GeRawSearchCondition, GeSearchCondition, GlobalConstants, GtRawSearchCondition, GtSearchCondition, InRawSearchCondition, InSearchCondition, IsOfTypeRawSearchCondition, IsOfTypeSearchCondition, LeRawSearchCondition, LeSearchCondition, LikeRawSearchCondition, LikeSearchCondition, LtRawSearchCondition, LtSearchCondition, NotSearchCondition, OrSearchCondition, Range, RawSearchCondition, SearchCondition}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AndSearchCondition, BetweenRawSearchCondition, BetweenSearchCondition, CombinedSearchCondition, EqRawSearchCondition, EqSearchCondition, FieldPathChainCell, GeRawSearchCondition, GeSearchCondition, GlobalConstants, GtRawSearchCondition, GtSearchCondition, InRawSearchCondition, InSearchCondition, IsEmptyRawSearchCondition, IsEqualsSetRawSearchCondition, IsIntersectsRawSearchCondition, IsOfTypeRawSearchCondition, IsOfTypeSearchCondition, IsSubSetRawSearchCondition, IsSuperSetRawSearchCondition, LeRawSearchCondition, LeSearchCondition, LikeRawSearchCondition, LikeSearchCondition, LtRawSearchCondition, LtSearchCondition, NotSearchCondition, OrSearchCondition, Range, RawSearchCondition, SearchCondition}
 
 import java.util.regex.Pattern
 import scala.jdk.StreamConverters.*
@@ -23,21 +23,32 @@ class SearchConditionsParser(
     private final val LikeConditionSign = conf.getString("like")
     private final val InConditionSign = conf.getString("in")
     private final val IsConditionSign = conf.getString("is")
+    private final val AllConditionSign = conf.getString("all")
+    private final val IsSubSetConditionSign = conf.getString("subset")
+    private final val IsSuperSetConditionSign = conf.getString("superset")
+    private final val IsIntersectsConditionSign = conf.getString("intersects")
+    private final val IsEqualsSetConditionSign = conf.getString("equalsset")
+    private final val IsEmptyConditionSign = conf.getString("empty")
     private final val AndOperatorSign = conf.getString("and")
     private final val OrOperatorSign = conf.getString("or")
     private final val NotOperatorSign = conf.getString("not")
     private final val Wildcard = conf.getString("wildcard")
-    private final val AllConditionsLine = List(EqConditionSign, GraterThanConditionSign, LessThanConditionSign,
+    private final val AllUniConditionsLine = List(EqConditionSign, GraterThanConditionSign, LessThanConditionSign,
         GraterOrEqualConditionSign, LessOrEqualConditionSign, LikeConditionSign, InConditionSign, IsConditionSign)
         .map(Pattern.quote)
+        .map(sign => Pattern.quote(AllConditionSign) + "?" + sign)
         .mkString("|")
-    private final val ConditionStartRE = s"""^([\\w_]+(\\.[\\w_]+)*)($AllConditionsLine)""".r
+    private final val AllSetConditionsLine = List(IsSubSetConditionSign, IsSuperSetConditionSign, IsIntersectsConditionSign, 
+        IsEqualsSetConditionSign, IsEmptyConditionSign)
+        .map(Pattern.quote)
+        .mkString("|")
+    private final val ConditionStartRE = s"""^([\\w_]+(\\.[\\w_]+)*)($AllUniConditionsLine|$AllSetConditionsLine)""".r
     private final val ValueEndRE = """\+|\*""".r
     private final val ValueEndInsideParenthesisRE = """(?<!\\)[+*)]""".r
     private final val IntervalMiddleMark = ".."
     private final val ValueEndInsideListRE = """(?<!\\),""".r
 
-    private final val conditionConstructors: Map[String, (FieldPathChainCell, String) => RawSearchCondition] = Map(
+    private final val uniConditionConstructors: Map[String, (FieldPathChainCell, String, Boolean) => RawSearchCondition] = Map(
         EqConditionSign -> EqRawSearchCondition.apply,
         GraterThanConditionSign -> GtRawSearchCondition.apply,
         LessThanConditionSign -> LtRawSearchCondition.apply,
@@ -45,6 +56,13 @@ class SearchConditionsParser(
         LessOrEqualConditionSign -> LeRawSearchCondition.apply,
         LikeConditionSign -> LikeRawSearchCondition.apply,
         IsConditionSign -> IsOfTypeRawSearchCondition.apply,
+    )
+    
+    private final val setConditionConstructors: Map[String, (FieldPathChainCell, List[String]) => RawSearchCondition] = Map(
+        IsSubSetConditionSign -> IsSubSetRawSearchCondition.apply,
+        IsSuperSetConditionSign -> IsSuperSetRawSearchCondition.apply, 
+        IsIntersectsConditionSign -> IsIntersectsRawSearchCondition.apply,
+        IsEqualsSetConditionSign -> IsEqualsSetRawSearchCondition.apply, 
     )
 
     def parse(input: String, entityType: EntityType[_, _, _]): Either[SearchConditionParseError, SearchCondition] =
@@ -158,24 +176,38 @@ class SearchConditionsParser(
                     Left(SearchConditionParseError(s"Empty field name in search condition $input!"))
                 else
                     val fieldsChain = parseFieldsChain(fieldName)
-                    val operator = match1.group(3)
+                    val operatorRaw = match1.group(3)
                     val inputRest = input.substring(match1.end(0))
+                    val (operator, all) = 
+                        if (operatorRaw.startsWith(AllConditionSign)) {
+                            val operatorWithoutAll = operatorRaw.substring(AllConditionSign.length)
+                            (operatorWithoutAll, true)
+                        } else {
+                            (operatorRaw, false)
+                        }
+                    
                     val searchCondition = operator match
                         case `EqConditionSign` | `GraterThanConditionSign` | `LessThanConditionSign` |
                              `GraterOrEqualConditionSign` | `LessOrEqualConditionSign` | `LikeConditionSign` | `IsConditionSign` =>
-                            val constructor = conditionConstructors(operator)
+                            val constructor = uniConditionConstructors(operator)
                             var (value, rest) = parseValue(inputRest, insideParenthesis)
                             if (operator == LikeConditionSign) {
                                 value = value.replace(Wildcard, GlobalConstants.searchWildcard)
                             }
-                            (constructor(fieldsChain, value), rest)
+                            (constructor(fieldsChain, value, all), rest)
                         case `InConditionSign` =>
                             parseInterval(inputRest, insideParenthesis) match
                                 case Right((value, rest)) =>
-                                    (BetweenRawSearchCondition(fieldsChain, value), rest)
+                                    (BetweenRawSearchCondition(fieldsChain, value, all), rest)
                                 case Left(_) =>
                                     val (value, rest) = parseValues(inputRest, insideParenthesis)
-                                    (InRawSearchCondition(fieldsChain, value), rest)
+                                    (InRawSearchCondition(fieldsChain, value, all), rest)
+                        case `IsSubSetConditionSign` | `IsSuperSetConditionSign` | `IsIntersectsConditionSign` | `IsEqualsSetConditionSign` =>
+                            val constructor = setConditionConstructors(operator)
+                            val (value, rest) = parseValues(inputRest, insideParenthesis)
+                            (constructor(fieldsChain, value), rest)
+                        case `IsEmptyConditionSign` =>
+                            (IsEmptyRawSearchCondition(fieldsChain), inputRest)
                     Right(searchCondition)
             )
             .getOrElse(Left(SearchConditionParseError(s"Search condition not found! Invalid input: $input!")))
