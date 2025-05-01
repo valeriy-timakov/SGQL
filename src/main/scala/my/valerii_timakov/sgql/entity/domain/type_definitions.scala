@@ -43,6 +43,12 @@ object GlobalSerializationData:
     def json: JsonSerializationData = _json.getOrElse(throw new WrongStateExcetion("Formats not initialized!"))
 
 
+sealed trait TypeDefinition:
+    type ValueType = TypeValue
+    def parse(value: String): Either[ValueParseError, ValueType]
+    def name: String
+    def isString: Boolean = false
+
 sealed abstract class AbstractEntityIdTypeDefinition[V <: EntityId[_, V]]:
     def name: String
     def toJson: JsValue = JsString(name)
@@ -113,6 +119,7 @@ case object StringIdTypeDefinition extends EntityIdTypeDefinition[StringId]("Str
     def toJson(value: StringId): JsValue = JsString(value.value)
     def parse(value: JsValue): Either[ValueParseError, StringId] =
         parseString(value, rootCause => Left(new ValueParseError(name, value.toString, rootCause))).map(StringId.apply)
+    override def isString: Boolean = true
     protected override def parseInner(value: String): StringId = StringId(value)
 
 case class FixedStringIdTypeDefinition(length: Int) extends EntityIdTypeDefinition[FixedStringId](FixedStringIdTypeDefinition.name):
@@ -122,6 +129,7 @@ case class FixedStringIdTypeDefinition(length: Int) extends EntityIdTypeDefiniti
     def parse(value: JsValue): Either[ValueParseError, FixedStringId] =
         parseString(value, rootCause => Left(new ValueParseError(name, value.toString, rootCause))).map(FixedStringId(_, this))
     protected override def parseInner(value: String): FixedStringId = FixedStringId(value, this)
+    override def isString: Boolean = true
 
 case object FixedStringIdTypeDefinition extends AbstractEntityIdTypeDefinition[FixedStringId]:
     val name = "FixedString"
@@ -471,11 +479,6 @@ object SimpleObjectTypeDefinition:
                 throw new ConsistencyException(s"Not correct ID in simple object parent type: $parent! " +
                     s"Error is impossible - analise if it was thrown!")
 
-
-sealed trait TypeDefinition:
-    type ValueType = TypeValue
-    def parse(value: String): Either[ValueParseError, ValueType]
-
 sealed trait AbstractRootPrimitiveTypeDefinition:
     def name: String
 
@@ -615,6 +618,7 @@ object StringTypeDefinition extends RootPrimitiveTypeDefinition[StringValue]("St
         parseString(value, rootCause => Left(new ValueParseError(name, value.toString, rootCause))).map(StringValue.apply)
     def createValue(value: String): StringValue = StringValue(value)
     def extract(rs: WrappedResultSet, pos: Int): Option[StringValue] = rs.stringOpt(pos).map(createValue)
+    override def isString: Boolean = true
     protected override def parseInner(value: String): StringValue = StringValue(value)
 
 class FixedStringTypeDefinition(val length: Int)
@@ -624,6 +628,7 @@ class FixedStringTypeDefinition(val length: Int)
         parseString(value, rootCause => Left(new ValueParseError(name, value.toString, rootCause))).map(createValue)
     def createValue(value: String): FixedStringValue = FixedStringValue(value, this)
     def extract(rs: WrappedResultSet, pos: Int): Option[FixedStringValue] = rs.stringOpt(pos).map(createValue)
+    override def isString: Boolean = true
     protected override def parseInner(value: String): FixedStringValue = createValue(value)
 
 object FixedStringTypeDefinition extends AbstractRootPrimitiveTypeDefinition:
