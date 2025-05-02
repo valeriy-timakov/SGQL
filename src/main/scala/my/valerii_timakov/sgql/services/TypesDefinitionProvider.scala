@@ -209,7 +209,7 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                         SearchConditionParseError(s"Cannot parse value $value to ID type " +
                             s"${valueType.name} for condition $ownerCondition!")
                     )
-                condConstr.checkValueAndCreateForOneValue(parser, isSet)
+                condConstr.parseValueAndCreate(parser, isSet)
             case likeCond: LikeRawSearchCondition =>
                 Right(likeCond.createForOneValue(valueType.isString, isSet))
 
@@ -224,7 +224,7 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                         SearchConditionParseError(s"Cannot parse value $value to ID type " +
                             s"${valueType.name} for condition $ownerCondition!")
                     )
-                condConstr.checkValueAndCreateForOneValue(parser, true)
+                condConstr.parseValueAndCreate(parser, true)
             case likeCond: LikeRawSearchCondition =>
                 Right(likeCond.createForOneValue(valueType.isString, true))
 

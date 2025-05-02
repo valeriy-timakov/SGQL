@@ -118,7 +118,7 @@ sealed trait RawMultyValuesSearchCondition extends RawSearchCondition:
     def values: List[String]
     
 sealed trait RawSearchConditionSelfConstructable extends RawSearchCondition:
-    def checkValueAndCreateForOneValue(
+    def parseValueAndCreate(
                                      valueParser: String => Either[SearchConditionParseError, Any],
                                      isSet: Boolean
                                  ): Either[SearchConditionParseError, SingleFieldSearchCondition]
@@ -126,13 +126,13 @@ sealed trait RawSearchConditionSelfConstructable extends RawSearchCondition:
 sealed trait RawSimpmpleStringSearchCondition extends RawSearchConditionSelfConstructable:
     def value: String
     def createForOneValue(value: Any): SingleFieldSearchCondition
-    def createForOneSet(value: Any): ArraySingleFieldSearchCondition
-    def checkValueAndCreateForOneValue(
+    def createForSet(value: Any): ArraySingleFieldSearchCondition
+    def parseValueAndCreate(
         valueParser: String => Either[SearchConditionParseError, Any],
         isSet: Boolean
     ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
         if (isSet)
-            valueParser(value).map(parsedValue => createForOneSet(parsedValue))
+            valueParser(value).map(parsedValue => createForSet(parsedValue))
         else
             valueParser(value).map(parsedValue => createForOneValue(parsedValue))
 
@@ -142,7 +142,7 @@ final case class EqRawSearchCondition(field: FieldPathChainCell, value: String, 
 
     def createForOneValue(value: Any): EqSearchCondition =
         EqSearchCondition(field, value)
-    def createForOneSet(value: Any): ArrayEqSearchCondition =
+    def createForSet(value: Any): ArrayEqSearchCondition =
         ArrayEqSearchCondition(field, value, allItems)
 
 final case class GtRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
@@ -151,7 +151,7 @@ final case class GtRawSearchCondition(field: FieldPathChainCell, value: String, 
     
     def createForOneValue(value: Any): GtSearchCondition =
         GtSearchCondition(field, value)
-    def createForOneSet(value: Any): ArrayGtSearchCondition =
+    def createForSet(value: Any): ArrayGtSearchCondition =
         ArrayGtSearchCondition(field, value, allItems)
 
 final case class GeRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
@@ -160,7 +160,7 @@ final case class GeRawSearchCondition(field: FieldPathChainCell, value: String, 
     
     def createForOneValue(value: Any): GeSearchCondition =
         GeSearchCondition(field, value)
-    def createForOneSet(value: Any): ArrayGeSearchCondition =
+    def createForSet(value: Any): ArrayGeSearchCondition =
         ArrayGeSearchCondition(field, value, allItems)
 
 final case class LtRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
@@ -169,7 +169,7 @@ final case class LtRawSearchCondition(field: FieldPathChainCell, value: String, 
     
     def createForOneValue(value: Any): LtSearchCondition =
         LtSearchCondition(field, value)
-    def createForOneSet(value: Any): ArrayLtSearchCondition =
+    def createForSet(value: Any): ArrayLtSearchCondition =
         ArrayLtSearchCondition(field, value, allItems)
 
 final case class LeRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
@@ -178,14 +178,14 @@ final case class LeRawSearchCondition(field: FieldPathChainCell, value: String, 
     
     def createForOneValue(value: Any, isSet: Boolean): LeSearchCondition =
         LeSearchCondition(field, value)
-    def createForOneSet(value: Any): ArrayLeSearchCondition =
+    def createForSet(value: Any): ArrayLeSearchCondition =
         ArrayLeSearchCondition(field, value, allItems)
 
 final case class BetweenRawSearchCondition(field: FieldPathChainCell, value: Range[String], allItems: Boolean) extends RawSearchConditionSelfConstructable:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     
-    def checkValueAndCreateForOneValue(
+    def parseValueAndCreate(
                                valueParser: String => Either[SearchConditionParseError, Any],
                                isSet: Boolean
                            ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
@@ -211,7 +211,7 @@ final case class InRawSearchCondition(
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
 
-    def checkValueAndCreateForOneValue(
+    def parseValueAndCreate(
         valueParser: String => Either[SearchConditionParseError, Any],
         isSet: Boolean
     ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
