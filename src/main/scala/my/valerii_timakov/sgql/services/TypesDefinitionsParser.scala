@@ -15,7 +15,7 @@ type AnyTypeDef = ReferenceData | SimpleObjectData
 case class ReferenceData(refTypeName: String, refFieldName: Option[String], unique: Boolean = false)
 case class FieldData(name: String, typeDef: AnyTypeDef, isNullable: Boolean)
 case class ObjectData(idOrParent: Either[IdTypeRef, String], fields: List[FieldData])
-case class ArrayData(idOrParent: Either[IdTypeRef, String], elementTypesNames: List[ReferenceData])
+case class ArrayData(idOrParent: Either[IdTypeRef, String], elementTypeName: Option[ReferenceData])
 
 case class SimpleObjectData(parent: Option[String], fields: List[FieldData])
 
@@ -127,10 +127,10 @@ object TypesDefinitionsParser extends DefinitionsParser[TypesRootPackageData]:
             case idTypeRef: IdTypeRef => ObjectTypeData(typeName.name, ObjectData(Left(idTypeRef), fields), typeName.mandatoryConreteType)
             case parentName: String => ObjectTypeData(typeName.name, ObjectData(Right(parentName), fields), typeName.mandatoryConreteType)
     }, "objectType")
-    private def arrayType: Parser[ArrayTypeData] = log(typeName ~ ((opt(ArrayTypeDefinition.name) ~> idType) | typeRefName) ~ array ^^ {
-        case typeName ~ idOrParent ~ elements => idOrParent match
-            case idTypeRef: IdTypeRef =>  ArrayTypeData(typeName.name, ArrayData(Left(idTypeRef), elements), typeName.mandatoryConreteType)
-            case parentName: String => ArrayTypeData(typeName.name, ArrayData(Right(parentName), elements), typeName.mandatoryConreteType)
+    private def arrayType: Parser[ArrayTypeData] = log(typeName ~ ((opt(ArrayTypeDefinition.name) ~> idType) | typeRefName) ~ typeReference ^^ {
+        case typeName ~ idOrParent ~ elementsType => idOrParent match
+            case idTypeRef: IdTypeRef =>  ArrayTypeData(typeName.name, ArrayData(Left(idTypeRef), Some(elementsType)), typeName.mandatoryConreteType)
+            case parentName: String => ArrayTypeData(typeName.name, ArrayData(Right(parentName), Some(elementsType)), typeName.mandatoryConreteType)
     }, "arrayType")
     private def primitiveType: Parser[PrimitiveTypeData] = log(typeName ~ typeRefName ~ opt(idType) ^^ {
         case typeName ~ parentTypeName ~ idType => PrimitiveTypeData(typeName.name, idType.map(_.name), parentTypeName, typeName.mandatoryConreteType)

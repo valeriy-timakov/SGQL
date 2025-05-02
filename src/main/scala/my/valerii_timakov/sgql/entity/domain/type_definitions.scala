@@ -742,16 +742,24 @@ object ArrayTypeDefinition:
     val name = "Array"
 
 final case class ArrayTypeDefinition[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
-    private var _elementTypes: Option[Set[ArrayItemTypeDefinition]],
-    idOrParent: Either[EntityIdTypeDefinition[ID], ArrayEntitySuperType[ID, _]]
+    private var _elementType: Option[ArrayItemTypeDefinition],
+    idOrParent: Either[EntityIdTypeDefinition[ID], ArrayEntitySuperType[ID, _]],
+    private var _initialized: Boolean = false,
 ) extends EntityTypeDefinition[ID, VT, Seq[ItemValue]]:
-    def elementTypes: Set[ArrayItemTypeDefinition] = _elementTypes
-        .getOrElse(throw new WrongStateExcetion("Array element types not initialized!"))
-    def setChildren(elementTypesValues: Set[ArrayItemTypeDefinition]): Unit =
-        if (_elementTypes.nonEmpty) throw new TypeReinitializationException
-        _elementTypes = Some(elementTypesValues)
+    def elementType: Option[ArrayItemTypeDefinition] = 
+        if (!_initialized)
+            throw new WrongStateExcetion("Array element types not initialized!")
+        _elementType
+    def setChild(elementTypeValue: Option[ArrayItemTypeDefinition]): Unit =
+        if (_initialized) 
+            throw new TypeReinitializationException
+        (elementTypeValue, idOrParent) match
+            case (None, Left(_)) =>
+                throw new ConsistencyException("Array type without parent type shoud have element type!")
+            case _ => //do nothing
+        _elementType = elementTypeValue
     lazy val allElementTypes: Map[String, ArrayItemTypeDefinition] =
-        elementTypes.map(v => v.name -> v).toMap ++ parent.map(_.typeDefinition.allElementTypes).getOrElse(Map.empty[String, ArrayItemTypeDefinition])
+        elementType.map(v => v.name -> v).toMap ++ parent.map(_.typeDefinition.allElementTypes).getOrElse(Map.empty[String, ArrayItemTypeDefinition])
 
     lazy val idType: EntityIdTypeDefinition[ID] = idOrParent.fold(identity, _.typeDefinition.idType)
     lazy val parent: Option[ArrayEntitySuperType[ID, _]] = idOrParent.toOption

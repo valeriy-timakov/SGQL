@@ -118,7 +118,7 @@ case class ItemTypePersistenceDataFinal(
         TableReferenceDataWrapper(tableName, idColumn, idColumn.columnType)
 
 case class ArrayTypePersistenceDataFinal(
-    items: Set[ItemTypePersistenceDataFinal],
+    items: Option[ItemTypePersistenceDataFinal],
     idType: PersistenceFieldType,
     typeName: String,
 ) extends TypePersistenceDataFinal:
@@ -544,10 +544,10 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
                 case p => throw new ConsistencyException(
                     s"Persistence data for type $typeName is not ArrayTypePersistenceData type $p!")
             }
-            .getOrElse(ArrayTypePersistenceData(typeName, Map.empty))
+            .getOrElse(ArrayTypePersistenceData(typeName, None))
 
         ArrayTypePersistenceDataFinal(
-            valueType.elementTypes.map(et =>
+            valueType.elementType.map(et =>
                 val itemTypeName = et.valueType match
                     case TypeReferenceDefinition(referencedType) => referencedType.name
                     case td: AbstractRootPrimitiveTypeDefinition => td.name
@@ -568,22 +568,21 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
             typeName
         )
 
-    private def convertPrimitiveToArrayItemData(valueType: ArrayTypeDefinition[_, _], typeName: String, tableName: Option[String], idColumn: Option[PrimitiveValuePersistenceData], valueColumn: Option[PrimitiveValuePersistenceData]) = {
+    private def convertPrimitiveToArrayItemData(
+                                                   valueType: ArrayTypeDefinition[_, _], 
+                                                   typeName: String, tableName: Option[String], 
+                                                   idColumn: Option[PrimitiveValuePersistenceData], 
+                                                   valueColumn: Option[PrimitiveValuePersistenceData]
+                                               ) = {
         val arrayItemType = valueColumn.flatMap(_.columnType)
         arrayItemType match
             case None =>
-                if (valueType.elementTypes.size == 1)
-                    val itemTypeName: String = valueType.elementTypes.head.name
-                    ArrayTypePersistenceData(typeName, Map(itemTypeName ->
-                        ArrayItemPersistenceData(tableName, idColumn, valueColumn)))
-                else
-                    throw new ConsistencyException(
-                        s"Primitive persistence data for array type $typeName could not be converted to " +
-                            s"array persitence data, because item persistence type is not defined and " +
-                            s"array value type has more than one item!")
+                val itemTypeName: String = valueType.elementType.head.name
+                ArrayTypePersistenceData(typeName, valueType.elementType.map() Map(itemTypeName ->
+                    ArrayItemPersistenceData(tableName, idColumn, valueColumn)))
             case Some(persistenceType) =>
                 val consistentType = typesMapper.getConsistentArrayItemType(persistenceType)
-                val typeDefinition = valueType.elementTypes
+                val typeDefinition = valueType.elementType
                     .find(_.valueType == consistentType)
                     .getOrElse(throw new ConsistencyException(
                         s"Primitive persistence data for array type $typeName could not be converted to " +

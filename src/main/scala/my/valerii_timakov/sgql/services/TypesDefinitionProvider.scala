@@ -151,7 +151,7 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
             case (entityType: AbstractEntityType[_, _, _], Some(FieldPathChainCell(GlobalConstants.entityIdFieldNameForDsc, None)), _) =>
                 validateAndParseOneValueTypeCondition(ownerCondition, entityType.typeDefinition.idType, false)
             case (arrayType: AbstractArrayEntityType[_, _], None | Some(FieldPathChainCell(GlobalConstants.primitiveTypeValueFieldNameForDsc, None)), _) =>
-                validateAndParseArrayValueTypeCondition(ownerCondition, arrayType.typeDefinition.elementTypes)
+                validateAndParseArrayValueTypeCondition(ownerCondition, arrayType.typeDefinition.elementType)
             case (primType: AbstractPrimitiveEntityType[_, _, _], None | Some(FieldPathChainCell(GlobalConstants.primitiveTypeValueFieldNameForDsc, None)), _) =>
                 validateAndParseOneValueTypeCondition(ownerCondition, primType.typeDefinition.rootType, false)
             case (objDef: AbstractObjectEntityType[_, _], Some(fieldsChain), _) =>

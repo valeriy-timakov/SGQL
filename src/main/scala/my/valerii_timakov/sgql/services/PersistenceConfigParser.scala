@@ -80,6 +80,7 @@ case class ReferenceValuePersistenceData(
 ) 
 
 type ArrayValuePersistenceData = PrimitiveValuePersistenceData | ColumnPersistenceData
+
 case class FieldPersistenceData (
     fieldName: String, 
     columnData: ValuePersistenceData
@@ -107,14 +108,14 @@ case class PrimitiveTypePersistenceData(
         this(typeName, data.tableName, data.idColumn, data.valueColumn)
 
 class ArrayItemPersistenceData(
-    val tableName: Option[String],
-    val idColumn: Option[PrimitiveValuePersistenceData],
-    val valueColumn: Option[ArrayValuePersistenceData],
+    val tableName: String,
+    val idColumn: PrimitiveValuePersistenceData,
+    val valueColumn: ArrayValuePersistenceData,
 )
 
 class ArrayTypePersistenceData(
     val typeName: String,
-    val itemsMap: Map[String, ArrayItemPersistenceData],
+    val itemsMap: Option[ArrayItemPersistenceData],
 ) extends AbstractTypePersistenceData
 
 class ObjectTypePersistenceData(

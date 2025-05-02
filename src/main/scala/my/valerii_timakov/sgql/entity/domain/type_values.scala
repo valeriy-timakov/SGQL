@@ -226,11 +226,11 @@ private def checkValue(value: RootPrimitiveValue[_], definition: CustomPrimitive
 
 
 private def checkArrayData(value: Seq[ItemValue], definition: ArrayTypeDefinition[_, _]): Unit =
-    val acceptableItemsTypes = definition.elementTypes.map(_.name)
+    val acceptableItemsTypes = definition.elementType.map(_.name)
     value.foreach(item =>
         if acceptableItemsTypes.contains(item.valueType.name) then
             throw new ConsistencyException(s"Array item type ${item.valueType} does not match provided " +
-                s"element type ${definition.elementTypes.head.valueType}!")
+                s"element type ${definition.elementType.map(_.valueType)}!")
     )
     
 private def checkObjectTypeData(

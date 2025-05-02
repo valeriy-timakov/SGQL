@@ -85,9 +85,9 @@ class TypesDefinitionsLoaderImpl(conf: Config) extends TypesDefinitionsLoader:
                         case arrDef: ArrayTypeDefinition[_, _] =>
                             val typePrefix = typeNamespace(typeFullName)
                             rawTypesDataMap.get(typeFullName) match
-                                case Some(ArrayTypeData(_, ArrayData(_, elementTypesNames), _)) =>
-                                    val elementTypes = elementTypesNames.map(parser.parseArrayItemTypeDef(_, typePrefix, typesMap))
-                                    arrDef.setChildren(elementTypes.toSet)
+                                case Some(ArrayTypeData(_, ArrayData(_, elementTypeName), _)) =>
+                                    val elementType = elementTypeName.map(parser.parseArrayItemTypeDef(_, typePrefix, typesMap))
+                                    arrDef.setChild(elementType)
                                 case _ => throw new NoTypeFound(typeFullName)
                         case objDef: ObjectTypeDefinition[_, _] =>
                             val typePrefix = typeNamespace(typeFullName)
