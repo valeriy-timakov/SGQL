@@ -147,10 +147,10 @@ sealed trait AbstractTypeDefinition:
                 //                "id" -> idOrParentType.left.toOption.map(_._1.toJson).getOrElse(JsNull)
             )
         case RootPrimitiveTypeDefinition(name) => JsString(name)
-        case ArrayTypeDefinition(elementsType, parentType) => JsObject(
+        case ArrayTypeDefinition(elementsType, parentType, _) => JsObject(
             "type" -> JsString("Array"),
             "parent" -> parentType.map(p => JsString(p.name)).getOrElse(JsNull),
-            "elements" -> JsArray(elementsType.getOrElse(Set.empty).map(v => JsString(v.name)).toVector))
+            "elements" -> elementsType.map(v => JsString(v.name)).orNull)
         case ObjectTypeDefinition(fields, parentType) => JsObject(
             "type" -> JsString("Object"),
             "parent" -> parentType.map(p => JsString(p.name)).getOrElse(JsNull),
@@ -196,6 +196,14 @@ final case class TypeReferenceDefinition[ID <: EntityId[_, ID]](
             "type" -> JsString(referencedType.name),
             "value" -> value.refValueOpt.map(v => v.toJson).getOrElse(JsNull),
         )
+
+    override def equals(obj: Any): Boolean =
+        obj match
+            case that: TypeReferenceDefinition[ID] => 
+                this.referencedType == that.referencedType
+            case _ =>
+                false
+                
     def parse(value: JsValue): Either[my.valerii_timakov.sgql.entity.SingleMessageError, ReferenceValue[ID]] =
         value match
             case JsObject(fields) =>
@@ -742,15 +750,18 @@ object ArrayTypeDefinition:
     val name = "Array"
 
 final case class ArrayTypeDefinition[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
-    private var _elementType: Option[ArrayItemTypeDefinition],
+    private var _elementType: Option[ItemValueTypeDefinition[_]],
     idOrParent: Either[EntityIdTypeDefinition[ID], ArrayEntitySuperType[ID, _]],
     private var _initialized: Boolean = false,
 ) extends EntityTypeDefinition[ID, VT, Seq[ItemValue]]:
-    def elementType: Option[ArrayItemTypeDefinition] = 
+    lazy val elementType: ItemValueTypeDefinition[_] = 
         if (!_initialized)
             throw new WrongStateExcetion("Array element types not initialized!")
-        _elementType
-    def setChild(elementTypeValue: Option[ArrayItemTypeDefinition]): Unit =
+        _elementType.getOrElse(
+            parent.map(_.typeDefinition.elementType)
+                .getOrElse(throw new ConsistencyException("Array type without parent type shoud have element type!"))
+        )
+    def setChild(elementTypeValue: Option[ItemValueTypeDefinition[_]]): Unit =
         if (_initialized) 
             throw new TypeReinitializationException
         (elementTypeValue, idOrParent) match
@@ -758,15 +769,16 @@ final case class ArrayTypeDefinition[ID <: EntityId[_, ID], VT <: ArrayValue[ID,
                 throw new ConsistencyException("Array type without parent type shoud have element type!")
             case _ => //do nothing
         _elementType = elementTypeValue
-    lazy val allElementTypes: Map[String, ArrayItemTypeDefinition] =
-        elementType.map(v => v.name -> v).toMap ++ parent.map(_.typeDefinition.allElementTypes).getOrElse(Map.empty[String, ArrayItemTypeDefinition])
+    lazy val allElementTypes: Set[ItemValueTypeDefinition[_]] =
+        parent
+            .map(_.typeDefinition.allElementTypes + elementType)
+            .getOrElse(Set.empty[ItemValueTypeDefinition[_]])
 
     lazy val idType: EntityIdTypeDefinition[ID] = idOrParent.fold(identity, _.typeDefinition.idType)
     lazy val parent: Option[ArrayEntitySuperType[ID, _]] = idOrParent.toOption
 
     def toJson(value: Seq[ItemValue]): JsValue =
         if (allElementTypes.size == 1)
-            val onlyTypeDef = allElementTypes.head._2
             JsArray(value.map(v => v.toJson).toVector)
         else
             JsArray(value.map(v =>
@@ -781,22 +793,23 @@ final case class ArrayTypeDefinition[ID <: EntityId[_, ID], VT <: ArrayValue[ID,
             case JsArray(items) =>
                 boundary {
                     if (allElementTypes.size == 1)
-                        val onlyTypeDef = allElementTypes.head._2
+                        val onlyTypeDef = elementType
                         Right(items.map(item =>
-                            onlyTypeDef.valueType.parse(item) match
+                            elementType.parse(item) match
                                 case Right(value) =>
                                     value.asInstanceOf[ItemValue]
                                 case Left(error) =>
                                     break( Left(ValueParseError("Array", item.toString, error.message)) )
                         ))
                     else
+                        val typesMap = allElementTypes.map(t => t.name -> t).toMap
                         Right(items.map {
                             case item@JsObject(fields) =>
                                 (fields.get("type"), fields.get("value")) match
                                     case (Some(JsString(typeName)), Some(value: JsValue)) =>
-                                        allElementTypes.get(typeName) match
+                                        typesMap.get(typeName) match
                                             case Some(typeDef) =>
-                                                typeDef.valueType.parse(value) match
+                                                typeDef.parse(value) match
                                                     case Right(parsedValue) =>
                                                         parsedValue.asInstanceOf[ItemValue]
                                                     case Left(error) =>

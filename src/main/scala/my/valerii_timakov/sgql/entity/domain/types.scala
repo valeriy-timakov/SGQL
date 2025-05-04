@@ -145,6 +145,12 @@ sealed abstract class AbstractNamedType extends AbstractType:
         this.id = Some(id)
     def getId: Long = id.getOrElse(throw new ConsistencyException(s"Type $name has no id yet!"))
 
+    override def equals(obj: Any): Boolean =
+        obj match
+            case that: AbstractNamedType =>
+                this.getId == that.getId
+            case _ => false
+
 case class RootPrimitiveType[V <: RootPrimitiveValue[V]](typeDefinition: RootPrimitiveTypeDefinition[V]) extends AbstractNamedType, ItemValueType
 
 sealed abstract class AbstractEntityType[ID <: EntityId[_, ID], VT <: Entity[ID, VT, V], V <: ValueTypes] extends AbstractNamedType:

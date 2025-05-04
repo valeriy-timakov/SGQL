@@ -2,7 +2,7 @@ package my.valerii_timakov.sgql.services
 
 import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.TypesDefinitionsParseError
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractRootPrimitiveTypeDefinition, ArrayItemTypeDefinition, ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinition, FixedStringIdTypeDefinition, FixedStringTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, idTypesMap, primitiveFieldTypesMap}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{AbstractEntityIdTypeDefinition, AbstractRootPrimitiveTypeDefinition, ArrayItemTypeDefinition, ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinition, FixedStringIdTypeDefinition, FixedStringTypeDefinition, ItemValueTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition, idTypesMap, primitiveFieldTypesMap}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractEntityType, AbstractObjectEntityType, ArrayEntitySuperType, ArrayEntityType, CustomPrimitiveEntityType, EntitySuperType, EntityType, ObjectEntitySuperType, ObjectEntityType, PrimitiveEntitySuperType}
 import my.valerii_timakov.sgql.exceptions.*
 import my.valerii_timakov.sgql.services.TypesDefinitionsParser.IdTypeRef
@@ -46,7 +46,7 @@ class TypesDefinitionsLoaderImpl(conf: Config) extends TypesDefinitionsLoader:
                                 typesMapBuilder += concreteName ->
                                     ArrayEntityType(concreteName, ArrayTypeDefinition(None, Right(parent)))
                                 generatedConcreteTypes += concreteName -> 
-                                    ArrayTypeData(concreteName, ArrayData(Right(name), List()), mandatoryConrete)
+                                    ArrayTypeData(concreteName, ArrayData(Right(name), None), mandatoryConrete)
                             }
                         case ObjectTypeData(_, ObjectData(idOrParent, _), mandatoryConrete) =>
                             val parent = parser.parseObjectSupertypeChain(name, idOrParent, typePrefix)
@@ -250,12 +250,12 @@ private class AbstractTypesParser(rawTypesDataMap: Map[String, TypeData], defaul
                 
     def parseArrayItemTypeDef(rowData: ReferenceData,
                               typePrefix: Option[String],
-                              typesMap: Map[String, AbstractEntityType[_, _, _]]): ArrayItemTypeDefinition =
+                              typesMap: Map[String, AbstractEntityType[_, _, _]]): ItemValueTypeDefinition[_] =
         parseReferenceType(rowData, typePrefix, typesMap) match
             case refData: TypeReferenceDefinition[_] =>
-                ArrayItemTypeDefinition(refData)
+                refData
             case refData: RootPrimitiveTypeDefinition[_] =>
-                ArrayItemTypeDefinition(refData)
+                refData
             case _ =>
                 throw new ConsistencyException("Only reference or root primitive types could be array items! " +
                     s"Type ${rowData.refTypeName} is trying to be array item!")

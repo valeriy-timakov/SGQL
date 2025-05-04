@@ -258,56 +258,84 @@ class PostgresCrudRepository(
                 }
                 .fold(Some(()))( (acc, res) => if acc.isDefined then res else None )
 
-        def updateArrayValues(
-                                 persData: ArrayTypePersistenceDataFinal,
-                                 id: EntityId[_, _],
-                                 values: Seq[ItemValue]
-                             ): Option[Unit]=
-            val tmpData = splitValuesByTypes(values, persData)
-            tmpData.map { case (persData, items) =>
-                    SQL(s"DELETE FROM $typesSchemaName.${persData.tableName} WHERE ${esc(persData.idColumn.columnName)} = ?")
-                        .bind(id.value)
-                        .update.apply()
-                    val valuesLine = items.zipWithIndex.map{ case (v, i) => s"VALUES ( :id, :v$i )"}.mkString(", ")
-                    val params = items.zipWithIndex.map { case (v, i) => s"v$i" -> v }
-                    val res = SQL(
+        def updateArrayValues(id: EntityId[_, _], values: Seq[ItemValue], arrType: AbstractArrayEntityType[_ , _]): Option[Unit] =
+            val persData: ArrayTypePersistenceDataFinal = arrType.persistenceData
+            
+            val (currTypeValues, otherTypeValues) = values
+                .map(value => 
+                    if (value.valueType.typeDefinition == arrType.typeDefinition.elementType)
+                        (Some(value), None)
+                    else
+                        (None, Some(value))
+                )
+                .foldLeft((List.empty[ItemValue], List.empty[ItemValue])) {
+                    case ((currTypeValues, otherTypeValues), (Some(currTypeValue), None)) =>
+                        (currTypeValue :: currTypeValues, otherTypeValues)
+                    case ((currTypeValues, otherTypeValues), (None, Some(otherTypeValue))) =>
+                        (currTypeValues, otherTypeValue :: otherTypeValues)
+                }
+            
+                SQL(s"DELETE FROM $typesSchemaName.${persData.tableName} WHERE ${esc(persData.idColumn.columnName)} = ?")
+                    .bind(id.value)
+                    .update.apply()
+                
+                if (currTypeValues.isEmpty) {
+                    val valuesLine = currTypeValues.zipWithIndex.map { case (v, i) => s"VALUES ( :id, :v$i )" }.mkString(", ")
+                    val params = currTypeValues.zipWithIndex.map { case (v, i) => s"v$i" -> v }
+                    val resCount = SQL(
                         s"""INSERT INTO $typesSchemaName.${persData.tableName}
-                                    ( ${esc(persData.idColumn.columnName)}, ${esc(persData.valueColumn.columnName)} )
-                                    $valuesLine"""
+                            ( ${esc(persData.idColumn.columnName)}, ${esc(persData.valueColumn.columnName)} )
+                            $valuesLine"""
                     )
                         .bindByName(params :+ "id" -> id.value: _*)
                         .update.apply()
-                    mapColColuntResult(res,  s"Multiple entities updated for id: ${entity.id}!", items.size)
+                    val currResult = mapColColuntResult(resCount,
+                        s"Multiple entities updated for id: ${entity.id}!", currTypeValues.size)
                 }
-                .fold(Some(()))( (acc, res) => if acc.isDefined then res else None )
+                
+                if (arrType.typeDefinition.parent.isEmpty && otherTypeValues.nonEmpty) {
+                    throw new ConsistencyException(
+                        s"Array type ${arrType.name} has no parent type, but there are values with still not " +
+                            s"founf types: $otherTypeValues!")
+                }
+                
+                val parentsResult = arrType.typeDefinition.parent.map(parentType =>
+                    //should be called event for empty array - to delete present values
+                    updateArrayValues(id, otherTypeValues, parentType)
+                )
+                
+                Some(())
+            
+            
 
-        val persistenceData = entity.typeDefinition.persistenceData
-        (entity, persistenceData) match
-            case (
-                CustomPrimitiveValue(id, value, _),
-                PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn)
-            ) =>
-                updatePrimitiveValue(tableName, idColumn, valueColumn, id, value)
-            case (
-                ObjectValue(_, filedValuesMap, entityType),
-                ObjectTypePersistenceDataFinal(tableName, idColumn, fieldsPersistenceData, _)
-            ) =>
-                updateObjectValue(tableName, idColumn, entityType, fieldsPersistenceData, filedValuesMap)
-            case (
-                ArrayValue(id, values, _),
-                persData: ArrayTypePersistenceDataFinal
-            ) =>
-                updateArrayValues(persData, id, values)
+        entity match
+            case cpValue @ CustomPrimitiveValue(id, value, _) =>
+                val persData = cpValue.typeDefinition.persistenceData
+                updatePrimitiveValue(persData.tableName, persData.idColumn, persData.valueColumn, id, value)
+            case objValue @ ObjectValue(_, filedValuesMap, entityType) =>
+                val persData = objValue.typeDefinition.persistenceData
+                updateObjectValue(persData.tableName, persData.idColumn, entityType, persData.fields, filedValuesMap)
+            case arrValue: ArrayValue[_ , _] =>
+                updateArrayValues(arrValue.id, arrValue.value, arrValue.typeDefinition)
             case _ => throw new ConsistencyException(s"Entity value is of not known type, or persistence data not " +
-                s"compatible! Entity: $entity. Persistence data: $persistenceData")
+                s"compatible! Entity: $entity. Persistence data: ${entity.typeDefinition.persistenceData}")
 
     def delete(entityType: EntityType[_, _, _], id: EntityId[_, _])(implicit session: DBSession): Option[Unit] =
-        def deleteArrayValues(tablesData: Set[ItemTypePersistenceDataFinal]): Option[Unit] =
+        def deleteArraysValues(tablesData: Set[ItemTypePersistenceDataFinal]): Option[Unit] =
             val res = tablesData.map(tableData =>
                 SQL(s"""DELETE FROM $typesSchemaName.${tableData.tableName} WHERE ${esc(tableData.idColumn.columnName)} = ?""")
                     .bind(id.value)
                     .update.apply()
             ).sum
+            if (res == 0)
+                None
+            else
+                Some(())
+        def deleteArrayValues(tableName: String, idColumn: PrimitiveValuePersistenceDataFinal): Option[Unit] =
+            val res = 
+                SQL(s"""DELETE FROM $typesSchemaName.$tableName WHERE ${esc(idColumn.columnName)} = ?""")
+                    .bind(id.value)
+                    .update.apply()
             if (res == 0)
                 None
             else
@@ -325,8 +353,8 @@ class PostgresCrudRepository(
                 getAllObjectTables(objectType, persistanceData)
                     .map((tableName, idColumnName) => deleteSingleValue(tableName, idColumnName))
                     .fold(Some(()))( (acc, res) => if acc.isDefined then res else None )
-            case (arrayType: ArrayEntityType[_, _], ArrayTypePersistenceDataFinal(items, _, _)) =>
-                deleteArrayValues(items)
+            case (arrayType: ArrayEntityType[_, _], ArrayTypePersistenceDataFinal(tableName, idColumn, _, _, _)) =>
+                deleteArrayValues(tableName, idColumn)
 
     def get[ID1 <: EntityId[_, ID1]](
                                         entityType: EntityType[ID1, _, _],
@@ -1678,26 +1706,23 @@ class PostgresCrudRepository(
                         else checkAndFixExistingSingleValueTable(tableName, idColumn, valueColumn.columnName,
                             valueColumn.columnType, false)
                     Nil
-                case ArrayTypePersistenceDataFinal(items, idType, typeName) =>
+                case ArrayTypePersistenceDataFinal(tableName, idColumn, valueColumn, idType, typeName) =>
                     if (integerTypes.contains(idType))
                         SQL(s"""
                             CREATE SEQUENCE IF NOT EXISTS $typesSchemaName.${getSequenceName(typeName)}
                                 START WITH 1  INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
                         """.stripMargin).execute.apply()
-                    items.view.flatMap {
-                        case ItemTypePersistenceDataFinal(tableName, idColumn, valueColumn) =>
-                            val (valueColumnName, valueColumnType, refData) = valueColumn match
-                                case PrimitiveValuePersistenceDataFinal(valueColumnName, valueColumnType, _) =>
-                                    (valueColumnName, valueColumnType, Nil)
-                                case ref: ReferenceValuePersistenceDataFinal =>
-                                    (ref.columnName, ref.refTableData.idColumnType,
-                                        ref.refTableData.data.map(RefData(tableName, ref.columnName, _)).toList)
-                            if !existingTableNames.contains(tableName)
-                                then createSingleValueTable(tableName, idColumn, valueColumnName, valueColumnType, true)
-                                else checkAndFixExistingSingleValueTable(tableName, idColumn, valueColumnName,
-                                    valueColumnType, true)
-                            refData
-                    }
+                    val (valueColumnName, valueColumnType, refData) = valueColumn match
+                        case PrimitiveValuePersistenceDataFinal(valueColumnName, valueColumnType, _) =>
+                            (valueColumnName, valueColumnType, Nil)
+                        case ref: ReferenceValuePersistenceDataFinal =>
+                            (ref.columnName, ref.refTableData.idColumnType,
+                                ref.refTableData.data.map(RefData(tableName, ref.columnName, _)).toList)
+                    if !existingTableNames.contains(tableName)
+                        then createSingleValueTable(tableName, idColumn, valueColumnName, valueColumnType, true)
+                        else checkAndFixExistingSingleValueTable(tableName, idColumn, valueColumnName,
+                            valueColumnType, true)
+                    refData
                 case ObjectTypePersistenceDataFinal(tableName, idColumn, fields, parent) =>
                     if !existingTableNames.contains(tableName)
                         then createObjectValueTable(tableName, idColumn, fields)

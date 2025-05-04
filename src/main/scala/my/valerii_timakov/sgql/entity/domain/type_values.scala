@@ -191,7 +191,7 @@ final case class ArrayValue[ID <: EntityId[_, ID], VT <: ArrayValue[ID, VT]](
     typeDefinition: ArrayEntityType[ID, VT]
 ) extends Entity[ID, VT, Seq[ItemValue]]:
     checkId(id, typeDefinition.typeDefinition.idType)
-    checkArrayData(value, typeDefinition.typeDefinition)
+    checkArrayData(value, typeDefinition)
     def cloneWithId(newId: ID): VT = this.copy(id = newId).asInstanceOf[VT]
 
 final case class ObjectValue[ID <: EntityId[_, ID], VT <: ObjectValue[ID, VT]](
@@ -225,12 +225,13 @@ private def checkValue(value: RootPrimitiveValue[_], definition: CustomPrimitive
         throw new ConsistencyException(s"Expected value type $definition does not match provided type ${value.valueType}!")
 
 
-private def checkArrayData(value: Seq[ItemValue], definition: ArrayTypeDefinition[_, _]): Unit =
-    val acceptableItemsTypes = definition.elementType.map(_.name)
+private def checkArrayData(value: Seq[ItemValue], arrayType: ArrayEntityType[_, _]): Unit =
+    val definition = arrayType.typeDefinition
+    val acceptableItemsTypes = definition.allElementTypes.map(_.name)
     value.foreach(item =>
         if acceptableItemsTypes.contains(item.valueType.name) then
-            throw new ConsistencyException(s"Array item type ${item.valueType} does not match provided " +
-                s"element type ${definition.elementType.map(_.valueType)}!")
+            throw new ConsistencyException(s"Array item type ${item.valueType} does not match ${arrayType.name} array " +
+                s"element types $acceptableItemsTypes!")
     )
     
 private def checkObjectTypeData(

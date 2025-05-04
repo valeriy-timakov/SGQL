@@ -1,7 +1,7 @@
 package my.valerii_timakov.sgql.services
 
 import my.valerii_timakov.sgql.entity
-import my.valerii_timakov.sgql.entity.domain.type_definitions.{ArrayItemTypeDefinition, EntityIdTypeDefinition, FieldsContainer, FixedStringTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringTypeDefinition, TypeDefinition, TypeReferenceDefinition}
+import my.valerii_timakov.sgql.entity.domain.type_definitions.{ArrayItemTypeDefinition, EntityIdTypeDefinition, FieldsContainer, FixedStringTypeDefinition, ItemValueTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, StringTypeDefinition, TypeDefinition, TypeReferenceDefinition}
 import my.valerii_timakov.sgql.entity.domain.type_values.{EntityId, FixedStringId, StringId}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractArrayEntityType, AbstractEntityType, AbstractObjectEntityType, AbstractPrimitiveEntityType, ArrayEntitySuperType, EntitySuperType, GlobalTypesMap, ObjectEntitySuperType, ObjectEntityType}
 import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AllGetFieldsDescriptor, CombinedSearchCondition, FieldPathChainCell, GetFieldsDescriptor, GlobalConstants, IsOfTypeRawSearchCondition, IsOfTypeSearchCondition, LikeRawSearchCondition, LikeSearchCondition, ListGetFieldsDescriptor, NestedGetFieldsDescriptor, NotSearchCondition, ObjectGetFieldsDescriptor, RawSearchCondition, RawSearchConditionSelfConstructable, SearchCondition, SingleFieldSearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor}
@@ -151,7 +151,7 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
             case (entityType: AbstractEntityType[_, _, _], Some(FieldPathChainCell(GlobalConstants.entityIdFieldNameForDsc, None)), _) =>
                 validateAndParseOneValueTypeCondition(ownerCondition, entityType.typeDefinition.idType, false)
             case (arrayType: AbstractArrayEntityType[_, _], None | Some(FieldPathChainCell(GlobalConstants.primitiveTypeValueFieldNameForDsc, None)), _) =>
-                validateAndParseArrayValueTypeCondition(ownerCondition, arrayType.typeDefinition.elementType)
+                validateAndParseArrayValueTypeCondition(ownerCondition, arrayType.typeDefinition.allElementTypes)
             case (primType: AbstractPrimitiveEntityType[_, _, _], None | Some(FieldPathChainCell(GlobalConstants.primitiveTypeValueFieldNameForDsc, None)), _) =>
                 validateAndParseOneValueTypeCondition(ownerCondition, primType.typeDefinition.rootType, false)
             case (objDef: AbstractObjectEntityType[_, _], Some(fieldsChain), _) =>
@@ -215,17 +215,18 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
 
     private def validateAndParseArrayValueTypeCondition(
                                                          ownerCondition: RawSearchCondition,
-                                                         elementTypes: Set[ArrayItemTypeDefinition]
-                                                     ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
-        ownerCondition match
-            case condConstr: RawSearchConditionSelfConstructable =>
-                val parser: String => Either[SearchConditionParseError, Any] =
-                    (value: String) => valueType.parse(value).left.map( error =>
-                        SearchConditionParseError(s"Cannot parse value $value to ID type " +
-                            s"${valueType.name} for condition $ownerCondition!")
-                    )
-                condConstr.parseValueAndCreate(parser, true)
-            case likeCond: LikeRawSearchCondition =>
-                Right(likeCond.createForOneValue(valueType.isString, true))
+                                                         elementTypes: Set[ItemValueTypeDefinition[_]]
+                                                     ): Either[SearchConditionParseError, SingleFieldSearchCondition] = ???
+    //todo
+//        ownerCondition match
+//            case condConstr: RawSearchConditionSelfConstructable =>
+//                val parser: String => Either[SearchConditionParseError, Any] =
+//                    (value: String) => valueType.parse(value).left.map( error =>
+//                        SearchConditionParseError(s"Cannot parse value $value to ID type " +
+//                            s"${valueType.name} for condition $ownerCondition!")
+//                    )
+//                condConstr.parseValueAndCreate(parser, true)
+//            case likeCond: LikeRawSearchCondition =>
+//                Right(likeCond.createForOneValue(valueType.isString, true))
 
 

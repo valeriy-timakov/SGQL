@@ -109,26 +109,18 @@ case class PrimitiveTypePersistenceDataFinal(
     override def getReferenceData: TableReferenceDataWrapper = 
         TableReferenceDataWrapper(tableName, idColumn, idColumn.columnType)
 
-case class ItemTypePersistenceDataFinal(
+case class ArrayTypePersistenceDataFinal(
     tableName: String,
     idColumn: PrimitiveValuePersistenceDataFinal,
     valueColumn: OneValuePersistenceDataFinal,
-) extends TypePersistenceDataFinal:
-    override def getReferenceData: TableReferenceDataWrapper =
-        TableReferenceDataWrapper(tableName, idColumn, idColumn.columnType)
-
-case class ArrayTypePersistenceDataFinal(
-    items: Option[ItemTypePersistenceDataFinal],
     idType: PersistenceFieldType,
     typeName: String,
 ) extends TypePersistenceDataFinal:
-    if items.map(_.idColumn.columnType).exists(_ != idType)
-        then throw new ConsistencyException(s"Array ID types has are different! Types: $idType")
+    if (idColumn.columnType != idType)
+        throw new ConsistencyException(s"Array ID types has are different! Types: $idType")
     def getTableName: Option[String] = None
     override def getReferenceData: TableReferenceDataWrapper =
         TableReferenceDataWrapper(idType)
-    lazy val itemsMap: Map[PersistenceFieldType, ItemTypePersistenceDataFinal] = 
-        items.map(item => item.valueColumn.columnType -> item).toMap
         
 sealed trait AbstractObjectPersistenceData:
     def fields: Map[String, ValuePersistenceDataFinal]
@@ -243,7 +235,7 @@ trait PersistenceConfigLoader:
 class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceMapper) extends PersistenceConfigLoader:
 
     private val tableReferenceFactory = new TableReferenceFactory()
-    private var typesDataPersistenceMap: Map[String, AbstractTypePersistenceData] = Map.empty
+    private var typesDataPersistenceMap: Map[String, TypePersistenceData] = Map.empty
     private val columnNameParentPrefix = conf.getString("column-name-parent-prefix")
     private val columnNameSuperParentPrefix = conf.getString("column-name-super-parent-prefix")
     private val nameSubnamesDelimiter = conf.getString("column-name-subnames-delimiter")
@@ -277,11 +269,14 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
             columnsUsages(columnName) = columnUsage
 
     private class TableNamesChecker:
-        val tableNames: mutable.Set[String] = mutable.Set()
-        def addAndCheckUsage(tableName: String): Unit =
-            if (tableNames.contains(tableName))
-                throw new ConsistencyException(s"Table name $tableName is not unique!")
-            tableNames += tableName
+        val table2typeNamesMap: mutable.Map[String, String] = mutable.Map()
+        def addAndCheckUsage(tableName: String, typeName: String): Unit =
+            if (table2typeNamesMap.contains(tableName))
+                throw new ConsistencyException(s"Table name $tableName is not unique! Already used for" +
+                    s" type ${table2typeNamesMap(tableName)}")
+            table2typeNamesMap += tableName -> typeName
+        def isUnique(sqlName: String): Boolean =
+            !table2typeNamesMap.contains(sqlName)
 
     override def getTypeToTableMap: Map[String, String] = sqlTableNamesMap
 
@@ -305,158 +300,60 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
             case Left(err: TypesDefinitionsParseError) =>
                 throw new TypesLoadExceptionException(err)
 
-    private case class TypeNameData(name: String, subNames: List[String])
+    private case class TypeNameData(name: String)
 
     private def mapTypeNamesToShortestUniqueNames(
                                                      typesDefinitionsMap: Map[String, AbstractEntityType[_, _, _]],
-                                                     persistenceDataMap: Map[String, AbstractTypePersistenceData]
+                                                     persistenceDataMap: Map[String, TypePersistenceData]
     ): Map[String, String] =
         val originalNames = typesDefinitionsMap.keySet
         val resMap = mutable.Map[String, String]()
         val tableNamesChecker = new TableNamesChecker()
-        val rest: Iterable[TypeNameData] = typesDefinitionsMap
-            .map((name, typeDef) =>
-                val subTypesNames =  typeDef.typeDefinition match
-                    case arr: ArrayTypeDefinition[_, _] => arr.allElementTypes.map(_._2.name).toList
-                    case _ => List.empty
-                persistenceDataMap.get(name)
-                    .map {
-                        case singleTaleType: TypePersistenceData => List(None -> singleTaleType.tableName)
-                        case arrayType: ArrayTypePersistenceData =>
-                            if subTypesNames.isEmpty then throw new ConsistencyException(
-                                s"Type $name defined as single in persistence, where it is array type in definition!")
-                            subTypesNames.map(itemTypeName =>
-                                Some(itemTypeName) ->  arrayType.itemsMap.get(itemTypeName).flatMap(_.tableName)
-                            )
-                    }.map(itemNamePairs =>
-                        val notFoundTypeItemsNames = itemNamePairs.map (itemNamePair =>
-                            val itemTypeName = itemNamePair._1
-                            itemNamePair._2 match
-                                case Some(tableName) =>
-                                    tableNamesChecker.addAndCheckUsage(tableName)
-                                    val typeName = name + itemTypeName.map(typeItemNameDelimiter + _).getOrElse("")
-                                    resMap += typeName -> tableName
-                                    None
-                                case None =>
-                                    Some(itemTypeName)
-                        )
-                        .filter(_.isDefined)
-                        .map(_.get)
-                        if notFoundTypeItemsNames.isEmpty
-                            then None
-                            else Some(TypeNameData(name, notFoundTypeItemsNames
-                                .filter(_.isDefined)
-                                .map(_.get)))
-                    )
-                    .getOrElse(Some(TypeNameData(name, subTypesNames)))
+        val rest: Iterable[String] = originalNames
+            .filter(name =>
+                persistenceDataMap.get(name).forall(_.tableName match
+                    case Some(tableName) =>
+                        tableNamesChecker.addAndCheckUsage(tableName, name)
+                        resMap += name -> tableName
+                        false
+                    case None =>
+                        true)
             )
-            .filter(_.isDefined)
-            .map(_.get)
 
-        addShortestUniqueNames(rest, 0, resMap, tableNamesChecker)
+        addShortestUniqueNames(rest.toSet, 0, resMap, tableNamesChecker)
 
         resMap.toMap
 
     @tailrec
     private def addShortestUniqueNames(
-        originalNamesData: Iterable[TypeNameData],
+        originalNames: Set[String],
         level: Int,
         resMap: mutable.Map[String, String],
         tableNamesChecker: TableNamesChecker,
     ): Unit =
-
-        def addToResMap(from: mutable.Map[String, TypeNameData]): Unit =
-            from.foreach((sqlName, typeNameData) =>
-                if (typeNameData.subNames.isEmpty)
-                    tableNamesChecker.addAndCheckUsage(sqlName)
-                    resMap += typeNameData.name -> sqlName
-                else
-                    val subResMap = mutable.Map[String, String]()
-                    addShortestUniqueSubNames(sqlName, typeNameData.subNames, 0, subResMap, tableNamesChecker)
-                    typeNameData.subNames.foreach(subName =>
-                        resMap += (typeNameData.name + typeItemNameDelimiter + subName) -> tableName(sqlName, subResMap(subName))
-                    )
+        val nonUniqueSet: Set[String] = originalNames
+            .flatMap(originalName =>
+                findNthFromEnd(originalName, level, TypesDefinitionsParser.NAMESPACES_DELIMITER) match
+                    case Some(pos) =>
+                        val shortName = tableNameFromTypeName(originalName.substring(pos + 1))
+                        Some(originalName, shortName)
+                    case None =>
+                        val tableName = tableNameFromTypeName(originalName)
+                        resMap += originalName -> tableName
+                        None
+            ).flatMap( (originalName, tableName) =>
+                if (tableNamesChecker.isUnique(tableName)) {
+                    resMap += originalName -> tableName
+                    None
+                } else {
+                    Some(originalName)
+                }
             )
-
-        val uniqueMap = mutable.Map[String, TypeNameData]()
-        val nonUniqueMap = mutable.Map[String, TypeNameData]()
-        val nonUniqueShortNamesSet = mutable.Set[String]()
-        val mandatoryMap = mutable.Map[String, TypeNameData]()
-
-        originalNamesData.foreach( typeNameData =>
-            val (name, subNames) = (typeNameData.name, typeNameData.subNames)
-            findNthFromEnd(name, level, TypesDefinitionsParser.NAMESPACES_DELIMITER) match
-                case Some(pos) =>
-                    val shortName = tableNameFromTypeName( name.substring(pos + 1) )
-                    if (uniqueMap.contains(shortName))
-                        nonUniqueMap += name -> typeNameData
-                        nonUniqueShortNamesSet += shortName
-                    else
-                        uniqueMap += shortName -> typeNameData
-                case None =>
-                    mandatoryMap += tableNameFromTypeName(name) -> typeNameData
-        )
-
-        addToResMap(mandatoryMap)
-        addToResMap(uniqueMap
-            .filter((sqlName, _) =>
-                val nonUnique = nonUniqueShortNamesSet.contains(sqlName) || mandatoryMap.contains(sqlName)
-                if (nonUnique)
-                    val tmpNameData = uniqueMap(sqlName)
-                    nonUniqueMap += tmpNameData.name -> tmpNameData
-                !nonUnique
-            )
-        )
-
-        if nonUniqueMap.nonEmpty
-            then addShortestUniqueNames(nonUniqueMap.values, level + 1, resMap, tableNamesChecker)
-
-    @tailrec
-    private def addShortestUniqueSubNames(
-        rootName: String,
-        originalNames: Iterable[String],
-        level: Int,
-        resMap: mutable.Map[String, String],
-        tableNamesChecker: TableNamesChecker,
-    ): Unit =
-
-        val uniqueMap = mutable.Map[String, String]()
-        val nonUniqueSet = mutable.Set[String]()
-        val nonUniqueShortNamesSet = mutable.Set[String]()
-        val mandatoryMap = mutable.Map[String, String]()
-
-        originalNames.foreach(name =>
-            findNthFromEnd(name, level, TypesDefinitionsParser.NAMESPACES_DELIMITER) match
-                case Some(pos) =>
-                    val shortName = tableNameFromTypeName(name.substring(pos + 1))
-                    if (uniqueMap.contains(shortName))
-                        nonUniqueSet += name
-                        nonUniqueShortNamesSet += shortName
-                    else
-                        uniqueMap += shortName -> name
-                case None =>
-                    mandatoryMap += tableNameFromTypeName(name) -> name
-        )
-
-        mandatoryMap.foreach((sqlName, name) =>
-            tableNamesChecker.addAndCheckUsage( tableName(rootName, sqlName) )
-            resMap += name -> sqlName
-        )
-        uniqueMap
-            .filter((sqlName, _) =>
-                val nonUnique = nonUniqueShortNamesSet.contains(sqlName) || mandatoryMap.contains(sqlName)
-                if (nonUnique)
-                    nonUniqueSet += uniqueMap(sqlName)
-                !nonUnique
-            )
-            .foreach((sqlName, name) =>
-                tableNamesChecker.addAndCheckUsage( tableName(rootName, sqlName) )
-                resMap += name -> sqlName
-            )
-
+        
         if nonUniqueSet.nonEmpty
-            then addShortestUniqueSubNames(rootName, nonUniqueSet, level + 1, resMap, tableNamesChecker)
-
+            then addShortestUniqueNames(nonUniqueSet, level + 1, resMap, tableNamesChecker)
+    
+    
     private def tableName(prefix: String, subName: String): String =
         prefix + nameSubnamesDelimiter + subName
 
@@ -472,7 +369,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
         None
 
     private def mergeTypePersistenceData(typeDef: AbstractEntityType[_, _, _],
-                                         parsed: Option[AbstractTypePersistenceData]): TypePersistenceDataFinal =
+                                         parsed: Option[TypePersistenceData]): TypePersistenceDataFinal =
         typeDef match
             case ot: ObjectEntityType[_, _] => mergeObjectTypePersistenceData(ot.name, ot.typeDefinition, parsed)
             case ost: ObjectEntitySuperType[_, _] => mergeObjectTypePersistenceData(ost.name, ost.typeDefinition, parsed)
@@ -485,7 +382,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
 
     private def mergeObjectTypePersistenceData(typeName: String,
                                                typeDefinition: ObjectTypeDefinition[_, _],
-                                               persistenceDataOpt: Option[AbstractTypePersistenceData]
+                                               persistenceDataOpt: Option[TypePersistenceData]
                                               ): ObjectTypePersistenceDataFinal =
         val persistenceData = persistenceDataOpt
             .map(p =>
@@ -533,68 +430,60 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
         allFields
 
     private def mergeArrayTypePersistenceData(typeName: String,
-                                              valueType: ArrayTypeDefinition[_, _],
-                                              persistenceDataOpt: Option[AbstractTypePersistenceData]
+                                              typeDef: ArrayTypeDefinition[_, _],
+                                              persistenceDataOpt: Option[TypePersistenceData]
                                              ): TypePersistenceDataFinal =
         val parsedData = persistenceDataOpt
             .map {
                 case arrayTypePersistenceData: ArrayTypePersistenceData => arrayTypePersistenceData
                 case PrimitiveTypePersistenceData(typeName, tableName, idColumn, valueColumn) =>
-                    convertPrimitiveToArrayItemData(valueType, typeName, tableName, idColumn, valueColumn)
+                    convertPrimitiveToArrayItemData(typeDef, typeName, tableName, idColumn, valueColumn)
                 case p => throw new ConsistencyException(
                     s"Persistence data for type $typeName is not ArrayTypePersistenceData type $p!")
             }
-            .getOrElse(ArrayTypePersistenceData(typeName, None))
-
+            .getOrElse(new ArrayTypePersistenceData(typeName, None, None, None))
+        
+        val itemTypeName = typeDef.elementType match
+            case TypeReferenceDefinition(referencedType) => referencedType.name
+            case td: AbstractRootPrimitiveTypeDefinition => td.name
+        parsedData.idColumn.foreach(idColumn =>
+            checkEntityIdAndPersistenceTypeConsistency(typeDef.idType, idColumn, () =>
+                s"Array item ID column for type $typeName and item type $itemTypeName"))
         ArrayTypePersistenceDataFinal(
-            valueType.elementType.map(et =>
-                val itemTypeName = et.valueType match
-                    case TypeReferenceDefinition(referencedType) => referencedType.name
-                    case td: AbstractRootPrimitiveTypeDefinition => td.name
-                val parsedElementData = parsedData.itemsMap.getOrElse(itemTypeName, ArrayItemPersistenceData(None, None, None))
-                parsedElementData.idColumn.foreach(idColumn =>
-                    checkEntityIdAndPersistenceTypeConsistency(valueType.idType, idColumn, () =>
-                        s"Array item ID column for type $typeName and item type $itemTypeName"))
-                ItemTypePersistenceDataFinal(
-                    parsedElementData.tableName.getOrElse(sqlTableNamesMap(typeName + typeItemNameDelimiter + itemTypeName)),
-                    mergeIdTypeDefinition(valueType.idType, parsedElementData.idColumn),
-                    toArrayItemValuePersistenceDataFinal(
-                        checkAndBypassDefaultsArrayItemPersistenceData(et, parsedElementData.valueColumn, typeName), 
-                        et.valueType, 
-                        typeName)
-                )
-            ), 
-            getIdFieldType(valueType.idType), 
-            typeName
+            parsedData.tableName.getOrElse(sqlTableNamesMap(typeName + typeItemNameDelimiter + itemTypeName)),
+            mergeIdTypeDefinition(typeDef.idType, parsedData.idColumn),
+            toArrayItemValuePersistenceDataFinal(
+                checkAndBypassDefaultsArrayItemPersistenceData(typeDef.elementType, parsedData.valueColumn, typeName),
+                typeDef.elementType,
+                typeName),
+            getIdFieldType(typeDef.idType), typeName
         )
+
 
     private def convertPrimitiveToArrayItemData(
                                                    valueType: ArrayTypeDefinition[_, _], 
-                                                   typeName: String, tableName: Option[String], 
+                                                   typeName: String,
+                                                   tableName: Option[String], 
                                                    idColumn: Option[PrimitiveValuePersistenceData], 
                                                    valueColumn: Option[PrimitiveValuePersistenceData]
                                                ) = {
-        val arrayItemType = valueColumn.flatMap(_.columnType)
-        arrayItemType match
+        valueColumn.flatMap(_.columnType) match
             case None =>
-                val itemTypeName: String = valueType.elementType.head.name
-                ArrayTypePersistenceData(typeName, valueType.elementType.map() Map(itemTypeName ->
-                    ArrayItemPersistenceData(tableName, idColumn, valueColumn)))
+                new ArrayTypePersistenceData(typeName, tableName, idColumn, valueColumn)
             case Some(persistenceType) =>
                 val consistentType = typesMapper.getConsistentArrayItemType(persistenceType)
-                val typeDefinition = valueType.elementType
-                    .find(_.valueType == consistentType)
+                valueType.allElementTypes
+                    .find(_ == consistentType)
                     .getOrElse(throw new ConsistencyException(
                         s"Primitive persistence data for array type $typeName could not be converted to " +
                             s"array persitence data, because item persistence type $persistenceType has " +
                             s"no corresponding type definition array value items types!"))
-                ArrayTypePersistenceData(typeName, Map(typeDefinition.name ->
-                    ArrayItemPersistenceData(tableName, idColumn, valueColumn)))
+                new ArrayTypePersistenceData(typeName, tableName, idColumn, valueColumn)
     }
 
     private def mergePrimitiveTypePersistenceData(typeName: String,
                                                   valueType: CustomPrimitiveTypeDefinition[_, _, _],
-                                                  parsed: Option[AbstractTypePersistenceData]): TypePersistenceDataFinal =
+                                                  parsed: Option[TypePersistenceData]): TypePersistenceDataFinal =
 
         val parsedData = parsed
             .map(p =>
@@ -818,13 +707,13 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
             )
 
     private def checkAndBypassDefaultsArrayItemPersistenceData(
-                                                                  itemType: ArrayItemTypeDefinition,
+                                                                  itemType: ItemValueTypeDefinition[_],
                                                                   fieldsPersistenceData: Option[ArrayValuePersistenceData],
                                                                   typeName: String ): ArrayValuePersistenceData =
         val itemDescriptionProvider = () => s"Item $itemType of type $typeName"
         fieldsPersistenceData
             .map(persistData =>
-                itemType.valueType match
+                itemType match
                     case fieldType: AbstractRootPrimitiveTypeDefinition =>
                         checkRootPrimitivePersistenceData(persistData, fieldType, itemDescriptionProvider)
                     case TypeReferenceDefinition(referencedType) =>
@@ -835,7 +724,7 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
 
                 persistData
             )
-            .getOrElse(itemType.valueType match
+            .getOrElse(itemType match
                 case fieldType: AbstractRootPrimitiveTypeDefinition =>
                     PrimitiveValuePersistenceData(None, None)
                 case TypeReferenceDefinition(_) =>
@@ -1020,8 +909,13 @@ class PersistenceConfigLoaderImpl(conf: Config, typesMapper: TypesToPersistenceM
 
         PrimitiveValuePersistenceDataFinal(colName(columnNameFinal), persisType, isNullable)
                     
-    private def tableNameFromTypeName(typeName: String): String = camelCaseToSnakeCase(typeName).replace(TypesDefinitionsParser.NAMESPACES_DELIMITER.toString, "_")
-    private def columnNameFromFieldName(fieldName: String): String = camelCaseToSnakeCase(fieldName)
+    private def tableNameFromTypeName(typeName: String): String =
+        camelCaseToSnakeCase(typeName)
+            .replace(TypesDefinitionsParser.NAMESPACES_DELIMITER.toString, "_")
+
+    private def columnNameFromFieldName(fieldName: String): String =
+        camelCaseToSnakeCase(fieldName)
+
     private def camelCaseToSnakeCase(name: String): String =
         if (name.isEmpty)
             name
