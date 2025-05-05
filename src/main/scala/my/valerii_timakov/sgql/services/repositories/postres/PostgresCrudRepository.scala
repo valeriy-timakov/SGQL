@@ -4,13 +4,14 @@ import com.typesafe.config.Config
 import my.valerii_timakov.sgql.entity.domain.type_definitions.{ArrayTypeDefinition, CustomPrimitiveTypeDefinition, EntityIdTypeDefinition, FieldTypeDefinition, FieldValueTypeDefinition, FieldsContainer, FixedStringIdTypeDefinition, ItemValueTypeDefinition, ObjectTypeDefinition, RootPrimitiveTypeDefinition, SimpleObjectTypeDefinition, TypeBackReferenceDefinition, TypeReferenceDefinition}
 import my.valerii_timakov.sgql.entity.domain.type_values.{ArrayValue, ByteId, CustomPrimitiveValue, Entity, EntityId, EntityValue, FixedStringId, IntId, ItemValue, LongId, ObjectValue, ReferenceValue, RootPrimitiveValue, ShortIntId, SimpleObjectValue, StringId, UUIDId, ValueTypes}
 import my.valerii_timakov.sgql.entity.domain.types.{AbstractArrayEntityType, AbstractEntityType, AbstractObjectEntityType, AbstractPrimitiveEntityType, ArrayEntityType, CustomPrimitiveEntityType, EntityType, ObjectEntitySuperType, ObjectEntityType, PrimitiveEntitySuperType}
-import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AbstractObjectGetFieldsDescriptorExpanded, AbstractSingleFieldGetFieldsDescriptor, AllGetFieldsDescriptor, AllInBackReferenceGetFieldsDescriptor, CombinedSearchCondition, FieldPathChainCell, GlobalConstants, GetDescriptorChainCell, ListGetFieldsDescriptor, ListSubObjectGetFieldsDescriptor, ListSubObjectGetFieldsDescriptorExpanded, NestedGetFieldsDescriptor, NestedGetFieldsDescriptorExpanded, NotSearchCondition, ObjectGetFieldsDescriptor, PrimitiveGetFieldsDescriptor, SearchCondition, SingleFieldSearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor, SubObjectGetFieldsDescriptorExpanded}
+import my.valerii_timakov.sgql.entity.read_modiriers.{AbstractObjectGetFieldsDescriptor, AbstractObjectGetFieldsDescriptorExpanded, AbstractSingleFieldGetFieldsDescriptor, AllGetFieldsDescriptor, AllInBackReferenceGetFieldsDescriptor, CombinedSearchCondition, FieldPathChainCell, GetDescriptorChainCell, GlobalConstants, ListGetFieldsDescriptor, ListSubObjectGetFieldsDescriptor, ListSubObjectGetFieldsDescriptorExpanded, NestedGetFieldsDescriptor, NestedGetFieldsDescriptorExpanded, NotSearchCondition, ObjectGetFieldsDescriptor, PrimitiveGetFieldsDescriptor, SearchCondition, SingleFieldSearchCondition, SingleGetFieldsDescriptor, SubObjectGetFieldsDescriptor, SubObjectGetFieldsDescriptorExpanded}
 import my.valerii_timakov.sgql.exceptions.{ConsistencyException, DbTableMigrationException, NotInitializedException}
 import my.valerii_timakov.sgql.services.*
 import scalikejdbc.*
 
 import java.sql.ResultSet
 import java.util.UUID
+import scala.annotation.tailrec
 import scala.collection.mutable
 
 implicit val uuidTypeBinder: TypeBinder[UUID] = TypeBinder[UUID](
@@ -128,19 +129,12 @@ class PostgresCrudRepository(
                 )
                 .getOrElse(throw new ConsistencyException("Id is not returned!"))
 
-        def insertArrayValues(typeName: String, values: Seq[ItemValue], persData: ArrayTypePersistenceDataFinal): EntityId[_, _] =
-            val id = getNextId(typeName, persData.idType)
-            splitValuesByTypes(values, persData).foreach { case (persData, items) =>
-                    val valuesLine = items.zipWithIndex.map { case (v, i) => s"VALUES ( :id, :v$i )" }.mkString(", ")
-                    val params = items.zipWithIndex.map { case (v, i) => s"v$i" -> v }
-                    val res = SQL(
-                        s"""INSERT INTO $typesSchemaName.${persData.tableName}
-                                ( ${esc(persData.idColumn.columnName)}, ${esc(persData.valueColumn.columnName)} )
-                                $valuesLine"""
-                    )
-                        .bindByName(params :+ "id" -> id.value: _*)
-                        .update.apply()
-                    mapColColuntResult(res, s"Multiple entities updated for id: $id!", items.size)
+        def insertArrayValues(values: Seq[ItemValue], arrType: AbstractArrayEntityType[_ , _]): EntityId[_, _] =
+            val persData: ArrayTypePersistenceDataFinal = arrType.persistenceData
+            val id = getNextId(arrType.name, persData.idType)
+            splitValuesByTypes(values, arrType)
+                .foreach { case (persData, itemValues)  =>
+                    this.insertArrayValues(persData, id, itemValues)
                 }
             id
             
@@ -196,25 +190,25 @@ class PostgresCrudRepository(
                 .apply()
                 .getOrElse(throw new ConsistencyException(s"Id od sequence for type $typeName is not returned!"))
 
-        (data, entityType, entityType.persistenceData ) match
+        (data, entityType) match
             case (
                 value: RootPrimitiveValue[_],
-                CustomPrimitiveEntityType(_, _),
-                PrimitiveTypePersistenceDataFinal(tableName, idColumn, valueColumn)
+                primType@CustomPrimitiveEntityType(_, _)
             ) =>
-                insertPrimitiveValue(tableName, idColumn, valueColumn.columnName, value.value)
+                val persData = primType.persistenceData
+                insertPrimitiveValue(persData.tableName, persData.idColumn, persData.valueColumn.columnName, value.value)
             case (
                 filedValuesMap:  Map[String, EntityValue],
-                ObjectEntityType(_, valueType),
-                ObjectTypePersistenceDataFinal(tableName, idColumn, fieldsPersistenceData, parentPersistenceData)
+                objType@ObjectEntityType(_, valueType)
             ) =>
-                insertObjectValue(tableName, idColumn, filedValuesMap, fieldsPersistenceData, valueType.parent, entityType.name)
+                val persData = objType.persistenceData
+                insertObjectValue(persData.tableName, persData.idColumn, filedValuesMap, persData.fields, 
+                    valueType.parent, entityType.name)
             case (
                 values: Seq[ItemValue],
-                ArrayEntityType(typeName, _),
-                persData: ArrayTypePersistenceDataFinal
+                arrType@ArrayEntityType(typeName, _)
             ) =>
-                insertArrayValues(typeName, values, persData)
+                insertArrayValues(values, arrType)
             case _ => throw new ConsistencyException(s"Entity value $data is of not known type $entityType, or " +
                 s"persistence data  ${entityType.persistenceData} not compatible!")
 
@@ -258,53 +252,16 @@ class PostgresCrudRepository(
                 }
                 .fold(Some(()))( (acc, res) => if acc.isDefined then res else None )
 
-        def updateArrayValues(id: EntityId[_, _], values: Seq[ItemValue], arrType: AbstractArrayEntityType[_ , _]): Option[Unit] =
+
+        def updateArrayValues(id: EntityId[_, _], values: Seq[ItemValue], arrType: AbstractArrayEntityType[_ , _]): Unit =
             val persData: ArrayTypePersistenceDataFinal = arrType.persistenceData
-            
-            val (currTypeValues, otherTypeValues) = values
-                .map(value => 
-                    if (value.valueType.typeDefinition == arrType.typeDefinition.elementType)
-                        (Some(value), None)
-                    else
-                        (None, Some(value))
-                )
-                .foldLeft((List.empty[ItemValue], List.empty[ItemValue])) {
-                    case ((currTypeValues, otherTypeValues), (Some(currTypeValue), None)) =>
-                        (currTypeValue :: currTypeValues, otherTypeValues)
-                    case ((currTypeValues, otherTypeValues), (None, Some(otherTypeValue))) =>
-                        (currTypeValues, otherTypeValue :: otherTypeValues)
-                }
-            
-                SQL(s"DELETE FROM $typesSchemaName.${persData.tableName} WHERE ${esc(persData.idColumn.columnName)} = ?")
-                    .bind(id.value)
-                    .update.apply()
-                
-                if (currTypeValues.isEmpty) {
-                    val valuesLine = currTypeValues.zipWithIndex.map { case (v, i) => s"VALUES ( :id, :v$i )" }.mkString(", ")
-                    val params = currTypeValues.zipWithIndex.map { case (v, i) => s"v$i" -> v }
-                    val resCount = SQL(
-                        s"""INSERT INTO $typesSchemaName.${persData.tableName}
-                            ( ${esc(persData.idColumn.columnName)}, ${esc(persData.valueColumn.columnName)} )
-                            $valuesLine"""
-                    )
-                        .bindByName(params :+ "id" -> id.value: _*)
+            splitValuesByTypes(values, arrType)
+                .foreach { (persData, itemValues) =>
+                    SQL(s"DELETE FROM $typesSchemaName.${persData.tableName} WHERE ${esc(persData.idColumn.columnName)} = ?")
+                        .bind(id.value)
                         .update.apply()
-                    val currResult = mapColColuntResult(resCount,
-                        s"Multiple entities updated for id: ${entity.id}!", currTypeValues.size)
+                    insertArrayValues(persData, id, itemValues)
                 }
-                
-                if (arrType.typeDefinition.parent.isEmpty && otherTypeValues.nonEmpty) {
-                    throw new ConsistencyException(
-                        s"Array type ${arrType.name} has no parent type, but there are values with still not " +
-                            s"founf types: $otherTypeValues!")
-                }
-                
-                val parentsResult = arrType.typeDefinition.parent.map(parentType =>
-                    //should be called event for empty array - to delete present values
-                    updateArrayValues(id, otherTypeValues, parentType)
-                )
-                
-                Some(())
             
             
 
@@ -317,20 +274,21 @@ class PostgresCrudRepository(
                 updateObjectValue(persData.tableName, persData.idColumn, entityType, persData.fields, filedValuesMap)
             case arrValue: ArrayValue[_ , _] =>
                 updateArrayValues(arrValue.id, arrValue.value, arrValue.typeDefinition)
+                Some(())
             case _ => throw new ConsistencyException(s"Entity value is of not known type, or persistence data not " +
                 s"compatible! Entity: $entity. Persistence data: ${entity.typeDefinition.persistenceData}")
 
     def delete(entityType: EntityType[_, _, _], id: EntityId[_, _])(implicit session: DBSession): Option[Unit] =
-        def deleteArraysValues(tablesData: Set[ItemTypePersistenceDataFinal]): Option[Unit] =
-            val res = tablesData.map(tableData =>
-                SQL(s"""DELETE FROM $typesSchemaName.${tableData.tableName} WHERE ${esc(tableData.idColumn.columnName)} = ?""")
-                    .bind(id.value)
-                    .update.apply()
-            ).sum
-            if (res == 0)
-                None
-            else
-                Some(())
+//        def deleteArraysValues(tablesData: Set[ItemTypePersistenceDataFinal]): Option[Unit] =
+//            val res = tablesData.map(tableData =>
+//                SQL(s"""DELETE FROM $typesSchemaName.${tableData.tableName} WHERE ${esc(tableData.idColumn.columnName)} = ?""")
+//                    .bind(id.value)
+//                    .update.apply()
+//            ).sum
+//            if (res == 0)
+//                None
+//            else
+//                Some(())
         def deleteArrayValues(tableName: String, idColumn: PrimitiveValuePersistenceDataFinal): Option[Unit] =
             val res = 
                 SQL(s"""DELETE FROM $typesSchemaName.$tableName WHERE ${esc(idColumn.columnName)} = ?""")
@@ -1092,6 +1050,69 @@ class PostgresCrudRepository(
 
         (sameTableData, soParentTableDescripros ++ nestedTDs)
 
+
+    @tailrec
+    private def splitValuesByTypes(
+                              itemValues: Seq[ItemValue], arrType: AbstractArrayEntityType[_, _]
+                          ): List[(ArrayTypePersistenceDataFinal, List[ItemValue])] =
+        val (currTypeValues, otherTypeValues) = itemValues
+            .map(itemValue =>
+                if (itemValue.valueType.typeDefinition == arrType.typeDefinition.elementType)
+                    (Some(itemValue), None)
+                else
+                    (None, Some(itemValue))
+            )
+            .foldLeft((List.empty[ItemValue], List.empty[ItemValue])) {
+                case ((currTypeValues, otherTypeValues), (Some(currTypeValue), None)) =>
+                    (currTypeValue :: currTypeValues, otherTypeValues)
+                case ((currTypeValues, otherTypeValues), (None, Some(otherTypeValue))) =>
+                    (currTypeValues, otherTypeValue :: otherTypeValues)
+            }
+        val arrParentType = arrType.typeDefinition.parent
+        if (arrParentType.isEmpty)
+            if (otherTypeValues.nonEmpty)
+                throw new ConsistencyException(
+                    s"Array type ${arrType.name} has no parent type, but there are values with still not " +
+                        s"found types: $otherTypeValues!")
+            else
+                List(arrType.persistenceData -> currTypeValues)
+        else
+            arrType.persistenceData -> currTypeValues :: splitValuesByTypes(otherTypeValues, arrParentType.get)
+
+
+    private def insertArrayValues(
+                                     persData: ArrayTypePersistenceDataFinal,
+                                     id: EntityId[_, _],
+                                     itemValues: List[ItemValue]
+                                 )(implicit session: DBSession): Unit =
+        if (itemValues.nonEmpty)
+            val (valuesLine, params): (StringBuilder, List[(String, Any)]) = itemValues
+                .zipWithIndex
+                .map { case (itemValue, idx) =>
+                    val value = itemValue match
+                        case primValue: RootPrimitiveValue[_] =>
+                            primValue.value
+                        case refValue: ReferenceValue[_] =>
+                            refValue.refId.value
+                    (s"(:id, :v$idx )", s"v$idx" -> value)
+                }
+                .foldLeft((StringBuilder(), List.empty[(String, Any)])) {
+                    case ((valuesLine, params), (valueLine, param)) =>
+                        (valuesLine ++= valueLine, params :+ param)
+                }
+
+            val resCount = SQL(
+                    s"""INSERT INTO $typesSchemaName.${persData.tableName}
+                    ( ${esc(persData.idColumn.columnName)}, ${esc(persData.valueColumn.columnName)} )
+                    VALUES ${valuesLine.toString()}"""
+                )
+                .bindByName(params :+ "id" -> id.value: _*)
+                .update.apply()
+            if (resCount != itemValues.size)
+                throw new ConsistencyException(
+                    s"Wrong count of inserted values for id: $id! Expected ${itemValues.size} rows, " +
+                        s"but got $resCount!")
+
     private def parseFieldsDescriptiors(
                                            fieldsDescriptors: List[NestedGetFieldsDescriptorExpanded],
                                            objectTypeDef: FieldsContainer,
@@ -1288,24 +1309,6 @@ class PostgresCrudRepository(
                                 getColumnsValues(parentFields, fields, parent.typeDefinition.parent, parentTableName,
                                     idColumn, typeName, (level + 1).toByte)
                         case _ => throw new ConsistencyException("Parent is not Object!")
-
-
-    private def splitValuesByTypes(
-                                      values: Seq[ItemValue],
-                                      persData: ArrayTypePersistenceDataFinal
-                                  ): Map[ItemTypePersistenceDataFinal, Seq[Any]] =
-        values.map {
-            case pv: RootPrimitiveValue[_] => (
-                persData.itemsMap.getOrElse(typesMapper.getValueFieldType(pv.valueType.typeDefinition),
-                    throw new ConsistencyException(s"Item value type is not found! ${pv.valueType.typeDefinition}")),
-                pv.value
-            )
-            case rv: ReferenceValue[_] => (
-                persData.itemsMap.getOrElse(typesMapper.getIdFieldType(rv.valueType.typeDefinition.idType),
-                    throw new ConsistencyException(s"Item id type is not found! ${rv.valueType.typeDefinition.idType}")),
-                rv.refId.value
-            )
-        }.groupMap(_._1)(_._2)
 
     private def getSequenceName(typeName: String): String = esc(typeName + sequenceSuffix)
 
