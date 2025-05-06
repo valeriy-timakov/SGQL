@@ -216,17 +216,16 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
     private def validateAndParseArrayValueTypeCondition(
                                                          ownerCondition: RawSearchCondition,
                                                          elementTypes: Set[ItemValueTypeDefinition[_]]
-                                                     ): Either[SearchConditionParseError, SingleFieldSearchCondition] = ???
-    //todo
-//        ownerCondition match
-//            case condConstr: RawSearchConditionSelfConstructable =>
-//                val parser: String => Either[SearchConditionParseError, Any] =
-//                    (value: String) => valueType.parse(value).left.map( error =>
-//                        SearchConditionParseError(s"Cannot parse value $value to ID type " +
-//                            s"${valueType.name} for condition $ownerCondition!")
-//                    )
-//                condConstr.parseValueAndCreate(parser, true)
-//            case likeCond: LikeRawSearchCondition =>
-//                Right(likeCond.createForOneValue(valueType.isString, true))
+                                                     ): Either[SearchConditionParseError, SingleFieldSearchCondition] = 
+        ownerCondition match
+            case condConstr: RawSearchConditionSelfConstructable =>
+                val parser: String => Either[SearchConditionParseError, Any] =
+                    (value: String) => valueType.parse(value).left.map( error =>
+                        SearchConditionParseError(s"Cannot parse value $value to ID type " +
+                            s"${valueType.name} for condition $ownerCondition!")
+                    )
+                condConstr.parseValueAndCreate(parser, true)
+            case likeCond: LikeRawSearchCondition =>
+                Right(likeCond.createForOneValue(valueType.isString, true))
 
 
