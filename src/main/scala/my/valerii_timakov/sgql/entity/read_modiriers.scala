@@ -111,6 +111,16 @@ case class FieldPathChainCell(fieldName: String, nextCell: Option[FieldPathChain
 
 final case class Range[V](from: V, to: V)
 
+final case class SpecifiedArrayValue[V](arrType: Option[AbstractArrayEntityType[_, _]], value: V)
+
+object SpecifiedArrayValue:
+    def apply[V](arrType: AbstractArrayEntityType[_, _], value: V): SpecifiedArrayValue[V] =
+        SpecifiedArrayValue(Some(arrType), value)
+    def apply[V](value: V): SpecifiedArrayValue[V] =
+        SpecifiedArrayValue(None, value)
+
+type SpecifiedArrayValueCommon = SpecifiedArrayValue[Any]
+
 sealed trait RawSearchCondition:
     def field: FieldPathChainCell
 
@@ -120,104 +130,117 @@ sealed trait RawMultyValuesSearchCondition extends RawSearchCondition:
 type ValueParser = String => Either[SearchConditionParseError, Any]
     
 sealed trait RawSearchConditionSelfConstructable extends RawSearchCondition:
-    def parseValueAndCreate(
-                                     valueParser: ValueParser,
-                                     isSet: Boolean
-                                 ): Either[SearchConditionParseError, SingleFieldSearchCondition]
+    type ValueType
+
+    def parseValueAndCreate(valueParser: ValueParser, isSet: Boolean
+                           ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
+        parseValue(valueParser).map(create(isSet))
+
+    def parseValueAndCreate(valueParsersMap: Map[AbstractArrayEntityType[_, _], ValueParser]
+                           ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
+        parseValueByMap(valueParsersMap).map(createForSet)
+
+    protected def parseValueByMap(
+                                     valueParsersMap: Map[AbstractArrayEntityType[_, _], ValueParser]
+                                 ): Either[SearchConditionParseError, List[SpecifiedArrayValue[ValueType]]] =
+        val (result, errors) = valueParsersMap
+            .map((arrType, valueParser) =>
+                arrType -> parseValue(valueParser)
+            )
+            .foldLeft((Nil, Nil): (List[SpecifiedArrayValue[ValueType]], List[(AbstractArrayEntityType[_, _], SearchConditionParseError)])) {
+                case ((acc, errors), (arrType, parseResult)) =>
+                    parseResult match
+                        case Right(value) => (SpecifiedArrayValue(arrType, value) :: acc, errors)
+                        case Left(error) => (acc, arrType -> error :: errors)
+            }
+        if (result.nonEmpty)
+            Right(result)
+        else
+            val errorMessage = errors.map(e => s" - ${e._1.name}: ${e._2.message}").mkString(";\n")
+            Left(SearchConditionParseError(s"Error parsing value for array condition! All types parse fails: $errorMessage"))
+
+    protected def create(isSet: Boolean)(value: ValueType): SingleFieldSearchCondition =
+        if (isSet)
+            createForSet(List(SpecifiedArrayValue(value)))
+        else
+            createForOneValue(value)
+
+    protected def createForOneValue(value: ValueType): SingleFieldSearchCondition
+    protected def createForSet(value: List[SpecifiedArrayValue[ValueType]]): ArraySingleFieldSearchCondition
+    protected def parseValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType]
 
 sealed trait RawSimpmpleStringSearchCondition extends RawSearchConditionSelfConstructable:
+    type ValueType = Any
+
     def value: String
-    def createForOneValue(value: Any): SingleFieldSearchCondition
-    def createForSet(value: List[(AbstractArrayEntityType[_, _], Any)]): ArraySingleFieldSearchCondition
-    def parseValueAndCreate(
-        valueParsers: ValueParser | Map[AbstractArrayEntityType[_, _], ValueParser]
-    ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
-        valueParsers match 
-            case valueParser: ValueParser =>
-                valueParser(value).map(parsedValue => createForOneValue(parsedValue))
-            case valueParsersMap: Map[AbstractArrayEntityType[_, _], ValueParser] =>
-                val (result, errors) = valueParsersMap
-                    .map((arrType, valueParser) =>                        
-                        arrType -> valueParser(value)
-                    )
-                    .foldLeft((Nil, Nil): (List[(AbstractArrayEntityType[_, _], Any)], List[(AbstractArrayEntityType[_, _], SearchConditionParseError)])) {
-                        case ((acc, errors), (arrType, parseResult)) =>
-                            parseResult match
-                                case Right(value) => (arrType -> value :: acc, errors)
-                                case Left(error) => (acc, arrType -> error :: errors)
-                    }
-                if (result.nonEmpty)
-                    Right(createForSet(result))
-                else 
-                    val errorMessage = errors.map(e => s" - ${e._1.name}: ${e._2.message}").mkString(";\n")
-                    Left(SearchConditionParseError(s"Error parsing value for array condition! All types parse fails: $errorMessage"))
+
+    protected def parseValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType] =
+        valueParser(value)
+
 
 final case class EqRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
 
-    def createForOneValue(value: Any): EqSearchCondition =
+    protected def createForOneValue(value: Any): EqSearchCondition =
         EqSearchCondition(field, value)
-    def createForSet(value: List[(AbstractArrayEntityType[_, _], Any)]): ArrayEqSearchCondition =
+    protected def createForSet(value: List[SpecifiedArrayValueCommon]): ArrayEqSearchCondition =
         ArrayEqSearchCondition(field, value, allItems)
 
 final case class GtRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
-    
-    def createForOneValue(value: Any): GtSearchCondition =
+
+    protected def createForOneValue(value: Any): GtSearchCondition =
         GtSearchCondition(field, value)
-    def createForSet(value: List[(AbstractArrayEntityType[_, _], Any)]): ArrayGtSearchCondition =
+    protected def createForSet(value: List[SpecifiedArrayValueCommon]): ArrayGtSearchCondition =
         ArrayGtSearchCondition(field, value, allItems)
 
 final case class GeRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
-    
-    def createForOneValue(value: Any): GeSearchCondition =
+
+    protected def createForOneValue(value: Any): GeSearchCondition =
         GeSearchCondition(field, value)
-    def createForSet(value: List[(AbstractArrayEntityType[_, _], Any)]): ArrayGeSearchCondition =
+    protected def createForSet(value: List[SpecifiedArrayValueCommon]): ArrayGeSearchCondition =
         ArrayGeSearchCondition(field, value, allItems)
 
 final case class LtRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
-    
-    def createForOneValue(value: Any): LtSearchCondition =
+
+    protected def createForOneValue(value: Any): LtSearchCondition =
         LtSearchCondition(field, value)
-    def createForSet(value: List[(AbstractArrayEntityType[_, _], Any)]): ArrayLtSearchCondition =
+    protected def createForSet(value: List[SpecifiedArrayValueCommon]): ArrayLtSearchCondition =
         ArrayLtSearchCondition(field, value, allItems)
 
 final case class LeRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSimpmpleStringSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
-    
-    def createForOneValue(value: Any, isSet: Boolean): LeSearchCondition =
+
+    protected def createForOneValue(value: Any, isSet: Boolean): LeSearchCondition =
         LeSearchCondition(field, value)
-    def createForSet(value: List[(AbstractArrayEntityType[_, _], Any)]): ArrayLeSearchCondition =
+    protected def createForSet(value: List[SpecifiedArrayValueCommon]): ArrayLeSearchCondition =
         ArrayLeSearchCondition(field, value, allItems)
 
 final case class BetweenRawSearchCondition(field: FieldPathChainCell, value: Range[String], allItems: Boolean) extends RawSearchConditionSelfConstructable:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
-    
-    def parseValueAndCreate(
-                               valueParser: ValueParser,
-                               arrayTypesSet: Set[AbstractArrayEntityType[_, _]]
-                           ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
-        if (arrayTypesSet.nonEmpty)
-            valueParser(value.from).flatMap(fromValue =>
-                valueParser(value.to).map(toValue =>
-                    //List[(AbstractArrayEntityType[_, _], Range[Any])]
-                    ArrayBetweenSearchCondition(field, Range(fromValue, toValue), allItems)
-                )
+
+    type ValueType = Range[Any]
+
+    protected def createForOneValue(value: ValueType): SingleFieldSearchCondition =
+        BetweenSearchCondition(field, value)
+
+    protected def createForSet(value: List[SpecifiedArrayValue[ValueType]]): ArraySingleFieldSearchCondition =
+        ArrayBetweenSearchCondition(field, value, allItems)
+
+    protected def parseValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType] =
+        valueParser(value.from).flatMap(fromValue =>
+            valueParser(value.to).map(toValue =>
+                Range(fromValue, toValue)
             )
-        else
-            valueParser(value.from).flatMap(fromValue =>
-                valueParser(value.to).map(toValue =>
-                    BetweenSearchCondition(field, Range(fromValue, toValue))
-                )
-            )
+        )
 
 final case class InRawSearchCondition(
                                          field: FieldPathChainCell, 
@@ -227,6 +250,40 @@ final case class InRawSearchCondition(
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
+
+    type ValueType = List[Any]
+
+    protected def createForOneValue(value: ValueType): SingleFieldSearchCondition =
+        InSearchCondition(field, value)
+
+    protected def createForSet(value: List[SpecifiedArrayValue[ValueType]]): ArraySingleFieldSearchCondition =
+        throw new NotImplementedError("createForSet is not implemented for InRawSearchCondition")
+
+    protected def parseValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType] =
+        values.foldLeft(Right(Nil): Either[SearchConditionParseError, List[Any]]) {
+            case (Right(acc), valueItem) =>
+                valueParser(valueItem).map(_ :: acc)
+            case (left@Left(_), _) =>
+                left
+        }
+    private def parseValues(valueParser: ValueParser): (List[SearchConditionParseError], ValueType) =
+        values.foldLeft((Nil, Nil): (List[SearchConditionParseError], List[Any])) {
+            case ((parsedValues, errors), valueItem) =>
+                valueParser(valueItem) match
+                    case Right(parsedValue) =>
+                        (parsedValues, parsedValue :: errors)
+                    case Left(error) =>
+                        (error :: parsedValues, errors)
+        }
+
+
+
+    def parseValueAndCreate(valueParser: ValueParser, isSet: Boolean
+                           ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
+        valueParser(value).map(parsedValue => createForOneValue(parsedValue))
+    def parseValueAndCreate(valueParsersMap: Map[AbstractArrayEntityType[_, _], ValueParser]
+                           ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
+        parseValueByMap(value, valueParsersMap).map(createForSet)
 
     def parseValueAndCreate(
         valueParser: ValueParser,
@@ -299,7 +356,7 @@ final case class IsSubSetRawSearchCondition(
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
-    def create(values: Map[AbstractArrayEntityType[_, _], List[Any]]): IsSubSetSearchCondition =
+    def create(values: List[SpecifiedArrayValue[List[Any]]]): IsSubSetSearchCondition =
         IsSubSetSearchCondition(field, values)
 
 final case class IsSuperSetRawSearchCondition(
@@ -309,7 +366,7 @@ final case class IsSuperSetRawSearchCondition(
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
-    def create(values: Map[AbstractArrayEntityType[_, _], List[Any]]): IsSuperSetSearchCondition =
+    def create(values: List[SpecifiedArrayValue[List[Any]]]): IsSuperSetSearchCondition =
         IsSuperSetSearchCondition(field, values)
 
 final case class IsEqualsSetRawSearchCondition(
@@ -319,7 +376,7 @@ final case class IsEqualsSetRawSearchCondition(
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
-    def create(values: Map[AbstractArrayEntityType[_, _], List[Any]]): IsEqualSetSearchCondition =
+    def create(values: List[SpecifiedArrayValue[List[Any]]]): IsEqualSetSearchCondition =
         IsEqualSetSearchCondition(field, values)
 
 final case class IsIntersectsRawSearchCondition(
@@ -329,7 +386,7 @@ final case class IsIntersectsRawSearchCondition(
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
-    def create(values: Map[AbstractArrayEntityType[_, _], List[Any]]): IsIntersectsSearchCondition =
+    def create(values: List[SpecifiedArrayValue[List[Any]]]): IsIntersectsSearchCondition =
         IsIntersectsSearchCondition(field, values)
 
 final case class IsEmptyRawSearchCondition(
@@ -448,30 +505,30 @@ sealed trait ArraySingleFieldSearchCondition extends SingleFieldSearchCondition
 
 final case class ArrayEqSearchCondition(
                                            field: FieldPathChainCell,
-                                           value: List[(AbstractArrayEntityType[_, _], Any)],
+                                           value: List[SpecifiedArrayValueCommon],
                                            allItems: Boolean
                                        ) extends ArraySingleFieldSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
 
-final case class ArrayGtSearchCondition(field: FieldPathChainCell, value: List[(AbstractArrayEntityType[_, _], Any)], allItems: Boolean) extends ArraySingleFieldSearchCondition:
+final case class ArrayGtSearchCondition(field: FieldPathChainCell, value: List[SpecifiedArrayValueCommon], allItems: Boolean) extends ArraySingleFieldSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
-final case class ArrayGeSearchCondition(field: FieldPathChainCell, value: List[(AbstractArrayEntityType[_, _], Any)], allItems: Boolean) extends ArraySingleFieldSearchCondition:
+final case class ArrayGeSearchCondition(field: FieldPathChainCell, value: List[SpecifiedArrayValueCommon], allItems: Boolean) extends ArraySingleFieldSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
-final case class ArrayLtSearchCondition(field: FieldPathChainCell, value: List[(AbstractArrayEntityType[_, _], Any)], allItems: Boolean) extends ArraySingleFieldSearchCondition:
+final case class ArrayLtSearchCondition(field: FieldPathChainCell, value: List[SpecifiedArrayValueCommon], allItems: Boolean) extends ArraySingleFieldSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
-final case class ArrayLeSearchCondition(field: FieldPathChainCell, value: List[(AbstractArrayEntityType[_, _], Any)], allItems: Boolean) extends ArraySingleFieldSearchCondition:
+final case class ArrayLeSearchCondition(field: FieldPathChainCell, value: List[SpecifiedArrayValueCommon], allItems: Boolean) extends ArraySingleFieldSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
-final case class ArrayBetweenSearchCondition(field: FieldPathChainCell, value: List[(AbstractArrayEntityType[_, _], Range[Any])], allItems: Boolean) extends ArraySingleFieldSearchCondition:
+final case class ArrayBetweenSearchCondition(field: FieldPathChainCell, value: List[SpecifiedArrayValue[Range[Any]]], allItems: Boolean) extends ArraySingleFieldSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
     def toSQL(sqlData: SqlData, translateFieldPath: FieldPathChainCell => String, bindParameter: Any => String): String = ??? //TODO
@@ -489,7 +546,7 @@ final case class ArrayIsOfTypeSearchCondition(field: FieldPathChainCell, entityT
 
 final case class IsSubSetSearchCondition(
                                                field: FieldPathChainCell,
-                                               values: Map[AbstractArrayEntityType[_, _], List[Any]]
+                                               values: List[SpecifiedArrayValue[List[Any]]]
                                            ) extends ArraySingleFieldSearchCondition:
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
@@ -498,7 +555,7 @@ final case class IsSubSetSearchCondition(
 
 final case class IsSuperSetSearchCondition(
                                                  field: FieldPathChainCell,
-                                                 values: Map[AbstractArrayEntityType[_, _], List[Any]]
+                                                 values: List[SpecifiedArrayValue[List[Any]]]
                                              ) extends ArraySingleFieldSearchCondition:
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
@@ -507,7 +564,7 @@ final case class IsSuperSetSearchCondition(
 
 final case class IsEqualSetSearchCondition(
                                                  field: FieldPathChainCell,
-                                                 values: Map[AbstractArrayEntityType[_, _], List[Any]]
+                                                 values: List[SpecifiedArrayValue[List[Any]]]
                                              ) extends ArraySingleFieldSearchCondition:
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
@@ -516,7 +573,7 @@ final case class IsEqualSetSearchCondition(
 
 final case class IsIntersectsSearchCondition(
                                                    field: FieldPathChainCell,
-                                                   values: Map[AbstractArrayEntityType[_, _], List[Any]]
+                                                   values: List[SpecifiedArrayValue[List[Any]]]
                                                ) extends ArraySingleFieldSearchCondition:
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
