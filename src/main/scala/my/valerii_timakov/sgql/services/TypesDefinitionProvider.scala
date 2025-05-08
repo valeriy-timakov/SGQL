@@ -172,7 +172,7 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
             .filterOrElse(entityType => entityType.isChildOfRaw(entitySuperType),
                 SearchConditionParseError(s"Type ${condition.entityTypeName} is not child of ${entitySuperType.name}! " +
                     s"Condition: $ownerCondition"))
-            .map (condition.createForOneValue(_, isSet))
+            .map (condition.create(_, isSet))
 
     @tailrec
     private def validateAndParseSingleSearchConditionOnObjectContent(
@@ -211,7 +211,7 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                     )
                 condConstr.parseValueAndCreate(parser, isSet)
             case likeCond: LikeRawSearchCondition =>
-                Right(likeCond.createForOneValue(valueType.isString, isSet))
+                Right(likeCond.create(valueType.isString, isSet))
 
     private def validateAndParseArrayValueTypeCondition(
                                                          ownerCondition: RawSearchCondition,
@@ -226,6 +226,6 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                     )
                 condConstr.parseValueAndCreate(parser, true)
             case likeCond: LikeRawSearchCondition =>
-                Right(likeCond.createForOneValue(valueType.isString, true))
+                Right(likeCond.create(valueType.isString, true))
 
 

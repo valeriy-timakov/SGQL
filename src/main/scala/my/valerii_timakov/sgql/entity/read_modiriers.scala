@@ -134,7 +134,7 @@ sealed trait RawSearchConditionSelfConstructable extends RawSearchCondition:
 
     def parseValueAndCreate(valueParser: ValueParser, isSet: Boolean
                            ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
-        parseValue(valueParser).map(create(isSet))
+        parseSingleValue(valueParser).map(create(isSet))
 
     def parseValueAndCreate(valueParsersMap: Map[AbstractArrayEntityType[_, _], ValueParser]
                            ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
@@ -164,6 +164,9 @@ sealed trait RawSearchConditionSelfConstructable extends RawSearchCondition:
             createForSet(List(SpecifiedArrayValue(value)))
         else
             createForOneValue(value)
+
+    protected def parseSingleValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType] =
+        parseValue(valueParser)
 
     protected def createForOneValue(value: ValueType): SingleFieldSearchCondition
     protected def createForSet(value: List[SpecifiedArrayValue[ValueType]]): ArraySingleFieldSearchCondition
@@ -253,69 +256,62 @@ final case class InRawSearchCondition(
 
     type ValueType = List[Any]
 
-    protected def createForOneValue(value: ValueType): SingleFieldSearchCondition =
-        InSearchCondition(field, value)
+    protected def parseValueByMap(
+                                     valueParsersMap: Map[AbstractArrayEntityType[_, _], ValueParser]
+                                 ): Either[SearchConditionParseError, List[SpecifiedArrayValue[ValueType]]] =
+        val (notParsedValues, errors, result) = valueParsersMap
+            .map((arrType, valueParser) =>
+                arrType -> parseValue(valueParser)
+            )
+            .foldLeft((Set(), Nil, Nil): (Set[String], List[(AbstractArrayEntityType[_, _], List[SearchConditionParseError])], List[SpecifiedArrayValue[ValueType]])) {
+                case ((notParsedValuesSet, errorsWithTypes, acc), (arrType, (typeErrors, parseResult))) =>
+                    val (notParsedValues, errors) = typeErrors
+                        .foldLeft((Nil, Nil): (List[String], List[SearchConditionParseError])) {
+                            case ((notParsedValues, errors), (notParsedValue, error)) =>
+                                (notParsedValue :: notParsedValues, error :: errors)
+                        }
+                    (notParsedValuesSet.intersect(notParsedValues.toSet), arrType -> errors :: errorsWithTypes, SpecifiedArrayValue(arrType, parseResult) :: acc)
+            }
 
-    protected def createForSet(value: List[SpecifiedArrayValue[ValueType]]): ArraySingleFieldSearchCondition =
-        throw new NotImplementedError("createForSet is not implemented for InRawSearchCondition")
+        if (notParsedValues.nonEmpty)
+            val errorMessage = errors.map(e => s" - ${e._1.name}: ${e._2.map(_.message).mkString("; ")}").mkString(";\n")
+            Left(SearchConditionParseError(s"Error parsing value for array condition! Not parsed values left: " +
+                s"${notParsedValues.mkString(", ")}; All types parse fails: $errorMessage"))
+        else
+            Right(result)
 
-    protected def parseValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType] =
+    override protected def parseSingleValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType] =
         values.foldLeft(Right(Nil): Either[SearchConditionParseError, List[Any]]) {
             case (Right(acc), valueItem) =>
                 valueParser(valueItem).map(_ :: acc)
             case (left@Left(_), _) =>
                 left
         }
-    private def parseValues(valueParser: ValueParser): (List[SearchConditionParseError], ValueType) =
-        values.foldLeft((Nil, Nil): (List[SearchConditionParseError], List[Any])) {
+
+    private def parseValue(valueParser: ValueParser): (List[(String, SearchConditionParseError)], ValueType) =
+        values.foldLeft((Nil, Nil): (List[(String, SearchConditionParseError)], List[Any])) {
             case ((parsedValues, errors), valueItem) =>
                 valueParser(valueItem) match
                     case Right(parsedValue) =>
                         (parsedValues, parsedValue :: errors)
                     case Left(error) =>
-                        (error :: parsedValues, errors)
+                        (valueItem -> error :: parsedValues, errors)
         }
 
+    protected def createForOneValue(value: ValueType): SingleFieldSearchCondition =
+        InSearchCondition(field, value)
 
-
-    def parseValueAndCreate(valueParser: ValueParser, isSet: Boolean
-                           ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
-        valueParser(value).map(parsedValue => createForOneValue(parsedValue))
-    def parseValueAndCreate(valueParsersMap: Map[AbstractArrayEntityType[_, _], ValueParser]
-                           ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
-        parseValueByMap(value, valueParsersMap).map(createForSet)
-
-    def parseValueAndCreate(
-        valueParser: ValueParser,
-        isSet: Boolean
-    ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
-        if (isSet)
-            values.foldLeft(Right(Nil): Either[SearchConditionParseError, List[Any]]) {
-                    case (Right(acc), valueItem) =>
-                        valueParser(valueItem).map(_ :: acc)
-                    case (left@Left(_), _) =>
-                        left
-                }
-                .map(parsedValue =>
-                    if allItems then
-                        IsSubSetSearchCondition(field, parsedValue)
-                    else
-                        IsIntersectsSearchCondition(field, parsedValue)
-                )
+    protected def createForSet(value: List[SpecifiedArrayValue[ValueType]]): ArraySingleFieldSearchCondition =
+        if allItems then
+            IsSubSetSearchCondition(field, value)
         else
-            values.foldLeft(Right(Nil): Either[SearchConditionParseError, List[Any]]) {
-                    case (Right(acc), valueItem) =>
-                        valueParser(valueItem).map(_ :: acc)
-                    case (left@Left(_), _) =>
-                        left
-                }
-                .map(parsedValue => InSearchCondition(field, parsedValue))
+            IsIntersectsSearchCondition(field, value)
 
 final case class LikeRawSearchCondition(field: FieldPathChainCell, value: String, allItems: Boolean) extends RawSearchCondition:
     require(field != null, "Field path cannot be null")
     require(value != null, "Value cannot be null")
-    def createForOneValue(isStringOrFieldTypes: Boolean | Set[AbstractArrayEntityType[_, _]],
-                          isSet: Boolean): SingleFieldSearchCondition =
+    def create(isStringOrFieldTypes: Boolean | Set[AbstractArrayEntityType[_, _]],
+               isSet: Boolean): SingleFieldSearchCondition =
         (isStringOrFieldTypes, isSet) match
             case (isString: Boolean, false) =>
                 LikeSearchCondition(field, value, isString)
@@ -328,8 +324,8 @@ final case class LikeRawSearchCondition(field: FieldPathChainCell, value: String
 final case class IsOfTypeRawSearchCondition(field: FieldPathChainCell, entityTypeName: String, allItems: Boolean) extends RawSearchCondition:
     require(field != null, "Field path cannot be null")
     require(entityTypeName != null, "EntityTypeName cannot be null")
-    def createForOneValue(entityType: AbstractEntityType[_, _, _],
-                          isSet: Boolean): SingleFieldSearchCondition =
+    def create(entityType: AbstractEntityType[_, _, _],
+               isSet: Boolean): SingleFieldSearchCondition =
         if (isSet)
             ArrayIsOfTypeSearchCondition(field, entityType)
         else
@@ -338,6 +334,7 @@ final case class IsOfTypeRawSearchCondition(field: FieldPathChainCell, entityTyp
 sealed trait RawSetOnlySearchConditionSelfConstructable extends RawSearchCondition:
     def create(value: List[Any]): SingleFieldSearchCondition
     def values: List[String]
+    //TODO: check compatibility with changes applyed to InRawSearchCondition
     def checkValueAndCreateForSet(
         valueParser: ValueParser
     ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
@@ -395,7 +392,7 @@ final case class IsEmptyRawSearchCondition(
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
-    def createForSet(): IsEmptySearchCondition =
+    def create(): IsEmptySearchCondition =
         IsEmptySearchCondition(field)
 
 
