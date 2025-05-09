@@ -134,7 +134,7 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                     }
                     .getOrElse(Left(GetFieldsFieldValidateError(s"GetFieldDescriptor field ${descriptor.fieldName} not " +
                         s"present in corresponding type $entityType!")))
-                
+
     private def validateAndParseSingleSearchConditionOnAbstractType(
                                                  fieldsChainOpt: Option[FieldPathChainCell],
                                                  ownerCondition: RawSearchCondition,
@@ -174,29 +174,6 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                     s"Condition: $ownerCondition"))
             .map (condition.create(_, isSet))
 
-    @tailrec
-    private def validateAndParseSingleSearchConditionOnObjectContent(
-                                                 fieldsChain: FieldPathChainCell,
-                                                 ownerCondition: RawSearchCondition,
-                                                 fieldsContainer: FieldsContainer,
-                                                 typeName: String, 
-                                             ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
-        (fieldsContainer.allFields.get(fieldsChain.fieldName).map(_.valueType), fieldsChain.nextCell) match
-            case (Some(soDef: SimpleObjectTypeDefinition[_]), Some(nextField)) =>
-                validateAndParseSingleSearchConditionOnObjectContent(nextField, ownerCondition, soDef,
-                    s" $typeName.${fieldsChain.fieldName}[_]")
-            case (Some(refDef: TypeReferenceDefinition[_]), _) =>
-                validateAndParseSingleSearchConditionOnAbstractType(fieldsChain.nextCell, ownerCondition,
-                    refDef.referencedType, s" $typeName.${fieldsChain.fieldName}->")
-            case (Some(primDef: RootPrimitiveTypeDefinition[_]), None) =>
-                validateAndParseOneValueTypeCondition(ownerCondition, primDef, false)
-            case (Some(field), _) =>
-                Left(SearchConditionParseError(s"Incompatible combination of search condition field $fieldsChain and " +
-                    s"found field $field in type $typeName!"))
-            case (None, _) =>
-                Left(SearchConditionParseError(s"Search condition field ${fieldsChain.fieldName} not present in " +
-                    s"corresponding type $typeName!"))
-
     private def validateAndParseOneValueTypeCondition(
         ownerCondition: RawSearchCondition,
         valueType: TypeDefinition,
@@ -227,5 +204,28 @@ class TypesDefinitionProviderImpl(globalTypesMap: GlobalTypesMap) extends TypesD
                 condConstr.parseValueAndCreate(parser, true)
             case likeCond: LikeRawSearchCondition =>
                 Right(likeCond.create(valueType.isString, true))
+
+    @tailrec
+    private def validateAndParseSingleSearchConditionOnObjectContent(
+                                                                        fieldsChain: FieldPathChainCell,
+                                                                        ownerCondition: RawSearchCondition,
+                                                                        fieldsContainer: FieldsContainer,
+                                                                        typeName: String,
+                                                                    ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
+        (fieldsContainer.allFields.get(fieldsChain.fieldName).map(_.valueType), fieldsChain.nextCell) match
+            case (Some(soDef: SimpleObjectTypeDefinition[_]), Some(nextField)) =>
+                validateAndParseSingleSearchConditionOnObjectContent(nextField, ownerCondition, soDef,
+                    s" $typeName.${fieldsChain.fieldName}[_]")
+            case (Some(refDef: TypeReferenceDefinition[_]), _) =>
+                validateAndParseSingleSearchConditionOnAbstractType(fieldsChain.nextCell, ownerCondition,
+                    refDef.referencedType, s" $typeName.${fieldsChain.fieldName}->")
+            case (Some(primDef: RootPrimitiveTypeDefinition[_]), None) =>
+                validateAndParseOneValueTypeCondition(ownerCondition, primDef, false)
+            case (Some(field), _) =>
+                Left(SearchConditionParseError(s"Incompatible combination of search condition field $fieldsChain and " +
+                    s"found field $field in type $typeName!"))
+            case (None, _) =>
+                Left(SearchConditionParseError(s"Search condition field ${fieldsChain.fieldName} not present in " +
+                    s"corresponding type $typeName!"))
 
 

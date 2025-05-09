@@ -121,20 +121,34 @@ object SpecifiedArrayValue:
 
 type SpecifiedArrayValueCommon = SpecifiedArrayValue[Any]
 
-sealed trait RawSearchCondition:
+type ValueParser = String => Either[SearchConditionParseError, Any]
+
+sealed trait RawSearchCondition:        
     def field: FieldPathChainCell
 
-sealed trait RawMultyValuesSearchCondition extends RawSearchCondition:
-    def values: List[String]
-    
-type ValueParser = String => Either[SearchConditionParseError, Any]
-    
-sealed trait RawSearchConditionSelfConstructable extends RawSearchCondition:
+sealed trait RawParseableMultiValuesSearchCondition extends RawSearchCondition:
     type ValueType
+    protected def parseValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType]
+    protected def createForSet(value: List[SpecifiedArrayValue[ValueType]]): ArraySingleFieldSearchCondition
+        
+sealed trait RawSearchConditionSingleValueSelfConstructable extends RawParseableMultiValuesSearchCondition:
 
     def parseValueAndCreate(valueParser: ValueParser, isSet: Boolean
                            ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
         parseSingleValue(valueParser).map(create(isSet))
+
+    protected def parseSingleValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType] =
+        parseValue(valueParser)
+
+    protected def create(isSet: Boolean)(value: ValueType): SingleFieldSearchCondition =
+        if (isSet)
+            createForSet(List(SpecifiedArrayValue(value)))
+        else
+            createForOneValue(value)
+
+    protected def createForOneValue(value: ValueType): SingleFieldSearchCondition
+
+sealed trait RawSearchConditionArrayValueSelfConstructable extends RawParseableMultiValuesSearchCondition:
 
     def parseValueAndCreate(valueParsersMap: Map[AbstractArrayEntityType[_, _], ValueParser]
                            ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
@@ -159,18 +173,60 @@ sealed trait RawSearchConditionSelfConstructable extends RawSearchCondition:
             val errorMessage = errors.map(e => s" - ${e._1.name}: ${e._2.message}").mkString(";\n")
             Left(SearchConditionParseError(s"Error parsing value for array condition! All types parse fails: $errorMessage"))
 
-    protected def create(isSet: Boolean)(value: ValueType): SingleFieldSearchCondition =
-        if (isSet)
-            createForSet(List(SpecifiedArrayValue(value)))
+
+sealed trait RawMultyValuesSearchCondition extends RawSearchConditionArrayValueSelfConstructable:
+    type ValueType = List[Any]
+    
+    def values: List[String]
+
+    override protected def parseValueByMap(
+                                              valueParsersMap: Map[AbstractArrayEntityType[_, _], ValueParser]
+                                          ): Either[SearchConditionParseError, List[SpecifiedArrayValue[ValueType]]] =
+        val (notParsedValues, errors, result) = valueParsersMap
+            .map((arrType, valueParser) =>
+                arrType -> parseValue(valueParser)
+            )
+            .foldLeft(
+                (Set(), Nil, Nil): (
+                    Set[String],
+                        List[(AbstractArrayEntityType[_, _],
+                            List[SearchConditionParseError])], List[SpecifiedArrayValue[ValueType]]
+                    )
+            ) {
+                case (
+                    (notParsedValuesSet, errorsWithTypes, acc),
+                    (arrType, (typeErrors, parseResult))
+                    ) =>
+                    val (notParsedValues, errors) = typeErrors
+                        .foldLeft((Nil, Nil): (List[String], List[SearchConditionParseError])) {
+                            case ((notParsedValues, errors), (notParsedValue, error)) =>
+                                (notParsedValue :: notParsedValues, error :: errors)
+                        }
+                    (
+                        notParsedValuesSet.intersect(notParsedValues.toSet),
+                        arrType -> errors :: errorsWithTypes, SpecifiedArrayValue(arrType, parseResult) :: acc
+                    )
+            }
+
+        if (notParsedValues.nonEmpty)
+            val errorMessage = errors.map(e => s" - ${e._1.name}: ${e._2.map(_.message).mkString("; ")}").mkString(";\n")
+            Left(SearchConditionParseError(s"Error parsing value for array condition! Not parsed values left: " +
+                s"${notParsedValues.mkString(", ")}; All types parse fails: $errorMessage"))
         else
-            createForOneValue(value)
+            Right(result)
 
-    protected def parseSingleValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType] =
-        parseValue(valueParser)
-
-    protected def createForOneValue(value: ValueType): SingleFieldSearchCondition
-    protected def createForSet(value: List[SpecifiedArrayValue[ValueType]]): ArraySingleFieldSearchCondition
-    protected def parseValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType]
+    private def parseValue(valueParser: ValueParser): (List[(String, SearchConditionParseError)], ValueType) =
+        values.foldLeft((Nil, Nil): (List[(String, SearchConditionParseError)], List[Any])) {
+            case ((parsedValues, errors), valueItem) =>
+                valueParser(valueItem) match
+                    case Right(parsedValue) =>
+                        (parsedValues, parsedValue :: errors)
+                    case Left(error) =>
+                        (valueItem -> error :: parsedValues, errors)
+        }
+    
+sealed trait RawSearchConditionSelfConstructable extends RawSearchConditionSingleValueSelfConstructable 
+                    with RawSearchConditionArrayValueSelfConstructable
 
 sealed trait RawSimpmpleStringSearchCondition extends RawSearchConditionSelfConstructable:
     type ValueType = Any
@@ -249,36 +305,10 @@ final case class InRawSearchCondition(
                                          field: FieldPathChainCell, 
                                          values: List[String], 
                                          allItems: Boolean
-                                     ) extends RawSearchConditionSelfConstructable, RawMultyValuesSearchCondition:
+                                     ) extends RawSearchConditionSelfConstructable with RawMultyValuesSearchCondition:
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
-
-    type ValueType = List[Any]
-
-    protected def parseValueByMap(
-                                     valueParsersMap: Map[AbstractArrayEntityType[_, _], ValueParser]
-                                 ): Either[SearchConditionParseError, List[SpecifiedArrayValue[ValueType]]] =
-        val (notParsedValues, errors, result) = valueParsersMap
-            .map((arrType, valueParser) =>
-                arrType -> parseValue(valueParser)
-            )
-            .foldLeft((Set(), Nil, Nil): (Set[String], List[(AbstractArrayEntityType[_, _], List[SearchConditionParseError])], List[SpecifiedArrayValue[ValueType]])) {
-                case ((notParsedValuesSet, errorsWithTypes, acc), (arrType, (typeErrors, parseResult))) =>
-                    val (notParsedValues, errors) = typeErrors
-                        .foldLeft((Nil, Nil): (List[String], List[SearchConditionParseError])) {
-                            case ((notParsedValues, errors), (notParsedValue, error)) =>
-                                (notParsedValue :: notParsedValues, error :: errors)
-                        }
-                    (notParsedValuesSet.intersect(notParsedValues.toSet), arrType -> errors :: errorsWithTypes, SpecifiedArrayValue(arrType, parseResult) :: acc)
-            }
-
-        if (notParsedValues.nonEmpty)
-            val errorMessage = errors.map(e => s" - ${e._1.name}: ${e._2.map(_.message).mkString("; ")}").mkString(";\n")
-            Left(SearchConditionParseError(s"Error parsing value for array condition! Not parsed values left: " +
-                s"${notParsedValues.mkString(", ")}; All types parse fails: $errorMessage"))
-        else
-            Right(result)
 
     override protected def parseSingleValue(valueParser: ValueParser): Either[SearchConditionParseError, ValueType] =
         values.foldLeft(Right(Nil): Either[SearchConditionParseError, List[Any]]) {
@@ -286,16 +316,6 @@ final case class InRawSearchCondition(
                 valueParser(valueItem).map(_ :: acc)
             case (left@Left(_), _) =>
                 left
-        }
-
-    private def parseValue(valueParser: ValueParser): (List[(String, SearchConditionParseError)], ValueType) =
-        values.foldLeft((Nil, Nil): (List[(String, SearchConditionParseError)], List[Any])) {
-            case ((parsedValues, errors), valueItem) =>
-                valueParser(valueItem) match
-                    case Right(parsedValue) =>
-                        (parsedValues, parsedValue :: errors)
-                    case Left(error) =>
-                        (valueItem -> error :: parsedValues, errors)
         }
 
     protected def createForOneValue(value: ValueType): SingleFieldSearchCondition =
@@ -331,67 +351,53 @@ final case class IsOfTypeRawSearchCondition(field: FieldPathChainCell, entityTyp
         else
             IsOfTypeSearchCondition(field, entityType)
 
-sealed trait RawSetOnlySearchConditionSelfConstructable extends RawSearchCondition:
-    def create(value: List[Any]): SingleFieldSearchCondition
-    def values: List[String]
-    //TODO: check compatibility with changes applyed to InRawSearchCondition
-    def checkValueAndCreateForSet(
-        valueParser: ValueParser
-    ): Either[SearchConditionParseError, SingleFieldSearchCondition] =
-        values.foldLeft(Right(Nil): Either[SearchConditionParseError, List[Any]]) {
-                case (Right(acc), valueItem) =>
-                    valueParser(valueItem).map(_ :: acc)
-                case (left@Left(_), _) =>
-                    left
-            }
-            .map(parsedValue => create(parsedValue))
+sealed trait RawSetOnlySearchConditionSelfConstructable extends RawMultyValuesSearchCondition
+    
 
 final case class IsSubSetRawSearchCondition(
                                                field: FieldPathChainCell, 
                                                values: List[String]
-                                           ) extends RawSetOnlySearchConditionSelfConstructable, RawMultyValuesSearchCondition:
+                                           ) extends RawSetOnlySearchConditionSelfConstructable:
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
-    def create(values: List[SpecifiedArrayValue[List[Any]]]): IsSubSetSearchCondition =
+    def createForSet(values: List[SpecifiedArrayValue[List[Any]]]): IsSubSetSearchCondition =
         IsSubSetSearchCondition(field, values)
 
 final case class IsSuperSetRawSearchCondition(
                                                  field: FieldPathChainCell, 
                                                  values: List[String]
-                                             ) extends RawSetOnlySearchConditionSelfConstructable, RawMultyValuesSearchCondition:
+                                             ) extends RawSetOnlySearchConditionSelfConstructable:
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
-    def create(values: List[SpecifiedArrayValue[List[Any]]]): IsSuperSetSearchCondition =
+    def createForSet(values: List[SpecifiedArrayValue[List[Any]]]): IsSuperSetSearchCondition =
         IsSuperSetSearchCondition(field, values)
 
 final case class IsEqualsSetRawSearchCondition(
                                                  field: FieldPathChainCell, 
                                                  values: List[String]
-                                             ) extends RawSetOnlySearchConditionSelfConstructable, RawMultyValuesSearchCondition:
+                                             ) extends RawSetOnlySearchConditionSelfConstructable:
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
-    def create(values: List[SpecifiedArrayValue[List[Any]]]): IsEqualSetSearchCondition =
+    def createForSet(values: List[SpecifiedArrayValue[List[Any]]]): IsEqualSetSearchCondition =
         IsEqualSetSearchCondition(field, values)
 
 final case class IsIntersectsRawSearchCondition(
                                                    field: FieldPathChainCell, 
                                                    values: List[String]
-                                               ) extends RawSetOnlySearchConditionSelfConstructable, RawMultyValuesSearchCondition:
+                                               ) extends RawSetOnlySearchConditionSelfConstructable:
     require(field != null, "Field path cannot be null")
     require(values != null, "Values cannot be null")
     require(!values.contains(null), "Values items cannot be null")
-    def create(values: List[SpecifiedArrayValue[List[Any]]]): IsIntersectsSearchCondition =
+    def createForSet(values: List[SpecifiedArrayValue[List[Any]]]): IsIntersectsSearchCondition =
         IsIntersectsSearchCondition(field, values)
 
 final case class IsEmptyRawSearchCondition(
                                               field: FieldPathChainCell
-                                          ) extends RawSearchCondition, RawMultyValuesSearchCondition:
+                                          ) extends RawSearchCondition:
     require(field != null, "Field path cannot be null")
-    require(values != null, "Values cannot be null")
-    require(!values.contains(null), "Values items cannot be null")
     def create(): IsEmptySearchCondition =
         IsEmptySearchCondition(field)
 
